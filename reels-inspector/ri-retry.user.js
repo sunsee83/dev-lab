@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      2.1.1
+// @version      2.2.0
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '2.1.1';
+    var VERSION = '2.2.0';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var SNAP_KEY = 'ri:snapshots:v1';
     var POST_KEY = 'ri:posts:v1';
@@ -655,42 +655,83 @@
         return el;
     }
 
-    function wingMetric(parent, id, label, hostId) {
-        var row = panelEl('div', 'display:block;min-height:39px;padding:6px 0 5px;border-bottom:1px solid rgba(255,255,255,.075);');
-        var lab = panelEl('div', 'font-size:9px;line-height:1.05;color:rgba(255,255,255,.52);white-space:nowrap;', label);
-        var val = panelEl('div', 'margin-top:3px;font-size:12.5px;line-height:1.12;font-weight:700;color:#fff;white-space:normal;word-break:break-word;', '—');
-        if (hostId) row.id = hostId;
-        val.id = id;
-        row.appendChild(lab); row.appendChild(val); parent.appendChild(row);
+    function directMetricRow(key) {
+        var row = document.createElement('div');
+        row.setAttribute('data-ri-metric', key);
+        row.style.cssText = 'display:none;white-space:nowrap;font:750 11.5px/1.08 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.25px;color:#fff;-webkit-text-stroke:.28px rgba(0,0,0,.72);text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 2px rgba(0,0,0,.55);';
         return row;
     }
 
-    function setTextOrHide(valueId, hostId, value) {
-        var el = document.getElementById(valueId), host = document.getElementById(hostId);
-        if (!el || !host) return;
-        if (value === null || value === undefined || value === '') host.style.display = 'none';
-        else { host.style.display = 'block'; el.textContent = value; }
+    function setDirectMetric(box, key, value) {
+        var row = box && box.querySelector('[data-ri-metric="' + key + '"]');
+        if (!row) return;
+        if (value === null || value === undefined || value === '') {
+            row.style.display = 'none';
+            row.textContent = '';
+        } else {
+            if (row.textContent !== value) row.textContent = value;
+            row.style.display = 'block';
+        }
     }
 
-    function updatePanel(data) {
-        var er = engagementRate(data), growth = growth24h(data), multiple = accountMultiple(data), media = '';
-        setTextOrHide('ri-v-views', 'ri-row-views', fmt(data.views));
-        setTextOrHide('ri-v-likes', 'ri-row-likes', fmt(data.likes));
-        setTextOrHide('ri-v-comments', 'ri-row-comments', fmt(data.comments));
-        setTextOrHide('ri-v-reposts', 'ri-row-reposts', fmt(data.reposts));
-        setTextOrHide('ri-v-er', 'ri-row-er', er !== null ? fmtPercent(er) : '');
-        setTextOrHide('ri-v-growth', 'ri-row-growth', growth !== null ? fmtGrowth(growth) : '');
-        setTextOrHide('ri-v-multiple', 'ri-row-multiple', multiple !== null ? fmtMultiple(multiple) : '');
-        setTextOrHide('ri-v-date', 'ri-row-date', data.date || '');
-        if (data.duration !== null && data.duration !== undefined) media += Number(data.duration).toFixed(1) + '초';
-        if (data.width && data.height) media += (media ? ' · ' : '') + data.width + '×' + data.height;
-        setTextOrHide('ri-v-media', 'ri-row-media', media);
+    function updateDetailMetrics(data) {
+        var box = document.getElementById('ri-detail-metrics');
+        var er, growth, multiple;
+        if (!box || !data) return;
+        er = engagementRate(data);
+        growth = growth24h(data);
+        multiple = accountMultiple(data);
+        setDirectMetric(box, 'views', data.views !== null && data.views !== undefined ? '▶ ' + fmt(data.views) : '');
+        setDirectMetric(box, 'likes', data.likes !== null && data.likes !== undefined ? '♥ ' + fmt(data.likes) : '');
+        setDirectMetric(box, 'comments', data.comments !== null && data.comments !== undefined ? '● ' + fmt(data.comments) : '');
+        setDirectMetric(box, 'reposts', data.reposts !== null && data.reposts !== undefined ? '↻ ' + fmt(data.reposts) : '');
+        setDirectMetric(box, 'er', er !== null ? 'ER ' + fmtPercent(er) : '');
+        setDirectMetric(box, 'growth', growth !== null ? '24h ' + fmtGrowth(growth) : '');
+        setDirectMetric(box, 'multiple', multiple !== null ? fmtMultiple(multiple) : '');
+        setDirectMetric(box, 'date', data.date ? String(data.date).slice(5).replace('-', '/') : '');
+    }
+
+    function removeDetailMetrics() {
+        var box = document.getElementById('ri-detail-metrics');
+        if (box) box.remove();
+    }
+
+    function syncDetailMetrics() {
+        var code, box, quick, now;
+        if (!detailPage()) {
+            removeDetailMetrics();
+            return;
+        }
+        code = codeFromUrl(location.href);
+        if (!code) return;
+        box = document.getElementById('ri-detail-metrics');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'ri-detail-metrics';
+            box.style.cssText = 'position:fixed;left:8px;top:clamp(92px,16vh,150px);z-index:2147483500;display:flex;flex-direction:column;align-items:flex-start;gap:5px;max-width:122px;pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;';
+            ['views','likes','comments','reposts','er','growth','multiple','date'].forEach(function (key) { box.appendChild(directMetricRow(key)); });
+            document.documentElement.appendChild(box);
+        }
+        quick = merge({code: code}, currentDomData());
+        quick = merge(quick, cache[code]);
+        updateDetailMetrics(quick);
+        now = Date.now();
+        if (!box.__riFetching && (!box.__riLastFetch || now - box.__riLastFetch > 2200)) {
+            box.__riFetching = true;
+            box.__riLastFetch = now;
+            currentData().then(function (data) {
+                if (document.getElementById('ri-detail-metrics') && code === codeFromUrl(location.href)) updateDetailMetrics(data);
+            }).catch(function () {}).then(function () {
+                var currentBox = document.getElementById('ri-detail-metrics');
+                if (currentBox) currentBox.__riFetching = false;
+            });
+        }
     }
 
     function wingAction(text, icon, fn) {
         var b = document.createElement('button');
         b.type = 'button';
-        b.style.cssText = 'width:100%;display:flex;align-items:center;gap:6px;min-height:33px;padding:0 3px;border:0;border-bottom:1px solid rgba(255,255,255,.075);background:transparent;color:#fff;font:600 10px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;';
+        b.style.cssText = 'width:100%;display:flex;align-items:center;gap:6px;min-height:35px;padding:0 4px;border:0;border-bottom:1px solid rgba(255,255,255,.075);background:transparent;color:#fff;font:600 10px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;';
         b.innerHTML = iconSvg(icon, 14) + '<span>' + text + '</span>';
         b.onclick = fn;
         return b;
@@ -707,43 +748,28 @@
     function openPanel() {
         var existing = document.getElementById('ri-panel');
         var tool = document.getElementById('ri-tool');
-        var panel, header, title, version, close, content, metrics, actions, update;
+        var panel, header, title, version, close, content, actions, update;
         if (existing) return;
         if (tool) tool.remove();
         panel = document.createElement('aside');
         panel.id = 'ri-panel';
-        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:min(31vw,150px);z-index:2147483647;background:rgba(14,14,14,.99);color:#fff;border-left:1px solid rgba(255,255,255,.09);box-shadow:-5px 0 18px rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-y:auto;overscroll-behavior:contain;transform:translateX(100%);transition:transform .16s ease-out;padding-bottom:max(10px,env(safe-area-inset-bottom));';
-        header = panelEl('div', 'position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:2px;height:40px;padding:0 5px 0 7px;background:rgba(14,14,14,.99);border-bottom:1px solid rgba(255,255,255,.08);');
-        title = panelEl('div', 'min-width:0;flex:1;font-size:10.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', '리서치');
-        version = panelEl('div', 'font-size:7px;color:rgba(255,255,255,.32);', 'v' + VERSION);
-        close = panelEl('button', 'width:22px;height:22px;padding:0;border:0;background:transparent;color:#fff;font-size:18px;line-height:22px;', '×');
+        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:min(26vw,126px);z-index:2147483647;background:rgba(14,14,14,.992);color:#fff;border-left:1px solid rgba(255,255,255,.09);box-shadow:-4px 0 16px rgba(0,0,0,.11);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-y:auto;overscroll-behavior:contain;transform:translateX(100%);transition:transform .16s ease-out;padding-bottom:max(10px,env(safe-area-inset-bottom));';
+        header = panelEl('div', 'position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:2px;height:39px;padding:0 4px 0 7px;background:rgba(14,14,14,.992);border-bottom:1px solid rgba(255,255,255,.08);');
+        title = panelEl('div', 'min-width:0;flex:1;font-size:10.5px;font-weight:700;white-space:nowrap;', '도구');
+        version = panelEl('div', 'font-size:6.8px;color:rgba(255,255,255,.30);', 'v' + VERSION);
+        close = panelEl('button', 'width:21px;height:21px;padding:0;border:0;background:transparent;color:#fff;font-size:17px;line-height:21px;', '×');
         close.type = 'button'; close.onclick = closePanel;
         header.appendChild(title); header.appendChild(version); header.appendChild(close); panel.appendChild(header);
-        content = panelEl('div', 'padding:2px 7px 8px;');
-        metrics = panelEl('div', 'padding:0 0 5px;');
-        wingMetric(metrics, 'ri-v-views', '조회수', 'ri-row-views');
-        wingMetric(metrics, 'ri-v-likes', '좋아요', 'ri-row-likes');
-        wingMetric(metrics, 'ri-v-comments', '댓글', 'ri-row-comments');
-        wingMetric(metrics, 'ri-v-reposts', '리포스트', 'ri-row-reposts');
-        wingMetric(metrics, 'ri-v-er', 'ER', 'ri-row-er');
-        wingMetric(metrics, 'ri-v-growth', '24시간', 'ri-row-growth');
-        wingMetric(metrics, 'ri-v-multiple', '계정 대비', 'ri-row-multiple');
-        wingMetric(metrics, 'ri-v-date', '게시일', 'ri-row-date');
-        wingMetric(metrics, 'ri-v-media', '영상', 'ri-row-media');
-        content.appendChild(metrics);
-        actions = panelEl('div', 'margin-top:2px;border-top:1px solid rgba(255,255,255,.075);');
+        content = panelEl('div', 'padding:3px 6px 8px;');
+        actions = panelEl('div', 'border-top:0;');
         actions.appendChild(wingAction('순수 영상', 'video', function () { currentData().then(function (d) { openUrl(d.videoUrl); }); }));
         actions.appendChild(wingAction('썸네일', 'image', function () { currentData().then(function (d) { openUrl(d.thumbUrl); }); }));
         actions.appendChild(wingAction('링크 복사', 'link', function () { copyText(location.href.split('?')[0]); }));
         content.appendChild(actions);
-        update = panelEl('button', 'width:100%;margin-top:8px;height:27px;border:1px solid rgba(255,255,255,.10);border-radius:6px;background:transparent;color:rgba(255,255,255,.42);font:600 8px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;', '새 버전 설치');
+        update = panelEl('button', 'width:100%;margin-top:8px;min-height:29px;padding:3px;border:1px solid rgba(255,255,255,.10);border-radius:6px;background:transparent;color:rgba(255,255,255,.44);font:600 8px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;', '새 버전 설치');
         update.type = 'button'; update.onclick = openUpdate; content.appendChild(update);
         panel.appendChild(content); document.documentElement.appendChild(panel);
         requestAnimationFrame(function () { panel.style.transform = 'translateX(0)'; });
-        currentData().then(updatePanel);
-        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 700);
-        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 1600);
-        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 3200);
     }
 
     function syncTool() {
@@ -752,7 +778,7 @@
         if (!detailPage()) { if (b) b.remove(); return; }
         if (!b) {
             b = document.createElement('button');
-            b.id = 'ri-tool'; b.type = 'button'; b.setAttribute('aria-label', '콘텐츠 리서치'); b.title = '콘텐츠 리서치';
+            b.id = 'ri-tool'; b.type = 'button'; b.setAttribute('aria-label', '콘텐츠 리서치 도구'); b.title = '콘텐츠 리서치 도구';
             b.style.cssText = 'position:fixed;z-index:2147483600;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.08);color:#fff;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55));touch-action:manipulation;';
             b.innerHTML = iconSvg('research', 21); b.onclick = openPanel; document.documentElement.appendChild(b);
         }
@@ -872,7 +898,7 @@
         var all = document.querySelectorAll('a[data-ri-code="' + code + '"]');
         var i;
         for (i = 0; i < all.length; i++) paintCard(all[i]);
-        if (code === codeFromUrl(location.href) && document.getElementById('ri-panel')) currentData().then(updatePanel);
+        if (code === codeFromUrl(location.href) && document.getElementById('ri-detail-metrics')) updateDetailMetrics(cache[code] || {});
     }
 
     function renderCard(a) {
@@ -889,11 +915,11 @@
         stack.style.cssText = 'position:absolute;left:3px;right:3px;bottom:4px;z-index:43;display:flex;flex-direction:column;gap:4px;pointer-events:none;';
         primary = document.createElement('div');
         primary.className = 'ri-primary';
-        primary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:0;color:#fff;font:750 9.8px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.55px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.82);';
+        primary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:0;color:#fff;font:750 10.5px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.62px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.84);';
         primary.innerHTML = '<span class="ri-p-view"></span><span class="ri-p-like"></span><span class="ri-p-comment"></span><span class="ri-p-repost"></span>';
         secondary = document.createElement('div');
         secondary.className = 'ri-secondary';
-        secondary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:1px;color:#111;font:800 9.5px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.55px;white-space:nowrap;-webkit-text-stroke:.65px rgba(255,255,255,.98);paint-order:stroke fill;text-shadow:0 0 1px rgba(255,255,255,1),0 0 2px rgba(255,255,255,.95);';
+        secondary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:1px;color:#111;font:800 10.3px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.60px;white-space:nowrap;-webkit-text-stroke:.68px rgba(255,255,255,.99);paint-order:stroke fill;text-shadow:0 0 1px rgba(255,255,255,1),0 0 2px rgba(255,255,255,.96);';
         secondary.innerHTML = '<span class="ri-s-er"></span><span class="ri-s-growth"></span><span class="ri-s-multiple"></span><span class="ri-s-date"></span>';
         stack.appendChild(primary); stack.appendChild(secondary);
         actions = document.createElement('div');
@@ -916,7 +942,10 @@
 
     function scan() {
         var all, candidates = [], i;
-        cleanup(); syncTool(); if (detailPage()) return;
+        cleanup();
+        syncTool();
+        syncDetailMetrics();
+        if (detailPage()) return;
         all = document.querySelectorAll('a[href*="/reel/"],a[href*="/reels/"],a[href*="/p/"]');
         for (i = 0; i < all.length; i++) if (validGridAnchor(all[i])) candidates.push(all[i]);
         if (candidates.length < 3) return;
@@ -940,8 +969,17 @@
         addEventListener('resize', function () { positionTool(); schedule(); }, true);
         cleanup(); status(); scan();
         setInterval(function () {
-            if (location.href !== lastUrl) { lastUrl = location.href; closePanel(); schedule(); }
-            else { cleanup(); syncTool(); schedule(); }
+            if (location.href !== lastUrl) {
+                lastUrl = location.href;
+                closePanel();
+                removeDetailMetrics();
+                schedule();
+            } else {
+                cleanup();
+                syncTool();
+                syncDetailMetrics();
+                schedule();
+            }
         }, 800);
     }
 
