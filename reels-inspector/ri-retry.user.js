@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      1.7.3
+// @version      1.7.4
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.7.3';
+    var VERSION = '1.7.4';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var lastUrl = location.href;
     var scanTimer = null;
@@ -202,12 +202,10 @@
         actions.appendChild(img);
         actions.appendChild(vid);
         panel.appendChild(actions);
-
         update.textContent = '업데이트 확인';
         update.style.cssText = 'width:100%;margin-top:8px;border:0;border-radius:11px;background:#eee;color:#111;padding:11px;font-weight:800;';
         update.onclick = openUpdate;
         panel.appendChild(update);
-
         bg.appendChild(panel);
         document.documentElement.appendChild(bg);
         bg.onclick = function (e) { if (e.target === bg) closePanel(); };
@@ -226,27 +224,28 @@
         document.documentElement.appendChild(b);
     }
 
-    function syncUpdateButton() {
-        var b = document.getElementById('ri-update');
-        if (document.getElementById('ri-panel')) { if (b) b.remove(); return; }
-        if (b) return;
-        b = document.createElement('button');
-        b.id = 'ri-update';
-        b.textContent = '업데이트';
-        b.style.cssText = 'position:fixed;left:14px;bottom:90px;z-index:2147483500;border:0;border-radius:999px;background:#fff;color:#111;padding:10px 12px;font:800 12px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.28);';
-        b.onclick = openUpdate;
-        document.documentElement.appendChild(b);
-    }
-
     function exactPostPath(a) {
         var path = a.pathname || '';
         return /^\/(reel|reels|p)\/[A-Za-z0-9_-]+\/?$/.test(path);
     }
 
+    function fixedAncestor(a) {
+        var el = a, i, p;
+        for (i = 0; i < 8 && el; i++) {
+            p = window.getComputedStyle(el).position;
+            if (p === 'fixed' || p === 'sticky') return true;
+            if (el.tagName && el.tagName.toLowerCase() === 'main') break;
+            el = el.parentElement;
+        }
+        return false;
+    }
+
     function validGridAnchor(a) {
         var img, ar, ir;
         if (!a || !a.isConnected || !exactPostPath(a)) return false;
+        if (!a.closest('main')) return false;
         if (a.closest('nav,header,[role="navigation"],[role="dialog"],#ri-panel')) return false;
+        if (fixedAncestor(a)) return false;
         img = a.querySelector('img');
         if (!img) return false;
         ar = a.getBoundingClientRect();
@@ -254,7 +253,7 @@
         if (ar.width < 80 || ar.height < 80) return false;
         if (ir.width < 80 || ir.height < 80) return false;
         if (ir.width < ar.width * 0.55) return false;
-        if (ar.width > window.innerWidth * 0.9 && ar.height < 180) return false;
+        if (ar.bottom < 80 || ar.top > window.innerHeight - 145) return false;
         return true;
     }
 
@@ -274,7 +273,7 @@
         var b = document.createElement('button');
         b.textContent = text;
         b.title = title;
-        b.style.cssText = 'min-width:38px;height:32px;padding:0 7px;border:0;border-radius:9px;background:rgba(0,0,0,.74);color:#fff;font:800 10px system-ui;letter-spacing:.2px;';
+        b.style.cssText = 'min-width:34px;height:30px;padding:0 6px;border:0;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:800 9px system-ui;';
         b.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
         b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); fn(); }, true);
         return b;
@@ -291,7 +290,6 @@
         views = labelled(text, ['조회수', 'views', 'plays', '재생']);
         likes = labelled(text, ['좋아요', 'likes', 'like']);
         comments = labelled(text, ['댓글', 'comments', 'comment']);
-
         box = document.createElement('div');
         box.className = 'ri-metrics';
         box.style.cssText = 'position:absolute;left:4px;bottom:4px;z-index:40;background:rgba(0,0,0,.68);color:#fff;border-radius:7px;padding:4px 6px;font:700 11px/1.3 system-ui;white-space:pre-line;pointer-events:none;';
@@ -303,21 +301,19 @@
         if (second.length) lines.push(second.join(' · '));
         box.textContent = lines.join('\n');
         if (!lines.length) box.style.display = 'none';
-
         actions = document.createElement('div');
         actions.className = 'ri-actions';
-        actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;flex-direction:column;gap:4px;';
+        actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;flex-direction:column;gap:3px;';
         actions.appendChild(gridButton('IMG', '이미지 열기', function () { openUrl(img.currentSrc || img.src || ''); }));
         if (/\/(reel|reels)\//.test(a.pathname || '')) {
-            actions.appendChild(gridButton('VID', '릴스 열기', function () { openUrl(a.href); }));
+            actions.appendChild(gridButton('OPEN', '릴스 열기', function () { openUrl(a.href); }));
         }
-
         a.appendChild(box);
         a.appendChild(actions);
     }
 
     function removeLegacy() {
-        var ids = ['ri-github-retry', 'ri-install-ok', 'ri-file-ok', 'ri-test-box'];
+        var ids = ['ri-github-retry', 'ri-install-ok', 'ri-file-ok', 'ri-test-box', 'ri-update'];
         var i, x, all;
         for (i = 0; i < ids.length; i++) {
             x = document.getElementById(ids[i]);
@@ -327,25 +323,24 @@
         for (i = 0; i < all.length; i++) all[i].remove();
     }
 
-    function clearInvalid() {
-        var all = document.querySelectorAll('[data-ri="1"]');
-        var i, x;
+    function cleanupStrays() {
+        var all = document.querySelectorAll('.ri-actions,.ri-metrics');
+        var i, host;
         for (i = 0; i < all.length; i++) {
-            if (validGridAnchor(all[i]) && !detailPage()) continue;
-            x = all[i].querySelector('.ri-metrics'); if (x) x.remove();
-            x = all[i].querySelector('.ri-actions'); if (x) x.remove();
-            x = all[i].querySelector('.ri-m'); if (x) x.remove();
-            x = all[i].querySelector('.ri-a'); if (x) x.remove();
-            all[i].removeAttribute('data-ri');
+            host = all[i].parentElement;
+            if (!host || !validGridAnchor(host) || detailPage()) all[i].remove();
+        }
+        all = document.querySelectorAll('[data-ri="1"]');
+        for (i = 0; i < all.length; i++) {
+            if (!validGridAnchor(all[i]) || detailPage()) all[i].removeAttribute('data-ri');
         }
     }
 
     function scan() {
         var all, candidates = [], i;
         removeLegacy();
-        clearInvalid();
+        cleanupStrays();
         syncTool();
-        syncUpdateButton();
         if (detailPage()) return;
         all = document.querySelectorAll('a[href*="/reel/"],a[href*="/reels/"],a[href*="/p/"]');
         for (i = 0; i < all.length; i++) if (validGridAnchor(all[i])) candidates.push(all[i]);
@@ -355,7 +350,7 @@
 
     function schedule() {
         clearTimeout(scanTimer);
-        scanTimer = setTimeout(scan, 250);
+        scanTimer = setTimeout(scan, 180);
     }
 
     function status() {
@@ -363,12 +358,13 @@
         d.textContent = 'RI ' + VERSION;
         d.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483646;background:#111;color:#fff;padding:6px 9px;border-radius:8px;font:700 12px system-ui;pointer-events:none;';
         (document.body || document.documentElement).appendChild(d);
-        setTimeout(function () { if (d.parentNode) d.remove(); }, 1400);
+        setTimeout(function () { if (d.parentNode) d.remove(); }, 1200);
     }
 
     function start() {
         var observer = new MutationObserver(schedule);
         observer.observe(document.documentElement, { childList:true, subtree:true });
+        window.addEventListener('scroll', schedule, true);
         removeLegacy();
         status();
         scan();
@@ -379,8 +375,8 @@
                 schedule();
             } else {
                 removeLegacy();
+                cleanupStrays();
                 syncTool();
-                syncUpdateButton();
             }
         }, 900);
     }
