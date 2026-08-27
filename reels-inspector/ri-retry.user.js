@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      1.7.2
+// @version      1.7.3
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,8 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.7.2';
+    var VERSION = '1.7.3';
+    var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var lastUrl = location.href;
     var scanTimer = null;
 
@@ -149,6 +150,10 @@
         a.remove();
     }
 
+    function openUpdate() {
+        openUrl(UPDATE_URL + '?t=' + Date.now());
+    }
+
     function closePanel() {
         var bg = document.getElementById('ri-panel');
         if (bg) bg.remove();
@@ -166,6 +171,7 @@
         var actions = document.createElement('div');
         var img = document.createElement('button');
         var vid = document.createElement('button');
+        var update = document.createElement('button');
 
         if (tool) tool.remove();
         bg.id = 'ri-panel';
@@ -196,6 +202,12 @@
         actions.appendChild(img);
         actions.appendChild(vid);
         panel.appendChild(actions);
+
+        update.textContent = '업데이트 확인';
+        update.style.cssText = 'width:100%;margin-top:8px;border:0;border-radius:11px;background:#eee;color:#111;padding:11px;font-weight:800;';
+        update.onclick = openUpdate;
+        panel.appendChild(update);
+
         bg.appendChild(panel);
         document.documentElement.appendChild(bg);
         bg.onclick = function (e) { if (e.target === bg) closePanel(); };
@@ -211,6 +223,18 @@
         b.textContent = '도구';
         b.style.cssText = 'position:fixed;right:14px;bottom:90px;z-index:2147483600;border:0;border-radius:999px;background:#111;color:#fff;padding:11px 14px;font:800 13px system-ui;';
         b.onclick = openPanel;
+        document.documentElement.appendChild(b);
+    }
+
+    function syncUpdateButton() {
+        var b = document.getElementById('ri-update');
+        if (document.getElementById('ri-panel')) { if (b) b.remove(); return; }
+        if (b) return;
+        b = document.createElement('button');
+        b.id = 'ri-update';
+        b.textContent = '업데이트';
+        b.style.cssText = 'position:fixed;left:14px;bottom:90px;z-index:2147483500;border:0;border-radius:999px;background:#fff;color:#111;padding:10px 12px;font:800 12px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.28);';
+        b.onclick = openUpdate;
         document.documentElement.appendChild(b);
     }
 
@@ -292,6 +316,17 @@
         a.appendChild(actions);
     }
 
+    function removeLegacy() {
+        var ids = ['ri-github-retry', 'ri-install-ok', 'ri-file-ok', 'ri-test-box'];
+        var i, x, all;
+        for (i = 0; i < ids.length; i++) {
+            x = document.getElementById(ids[i]);
+            if (x) x.remove();
+        }
+        all = document.querySelectorAll('.ri-m,.ri-a');
+        for (i = 0; i < all.length; i++) all[i].remove();
+    }
+
     function clearInvalid() {
         var all = document.querySelectorAll('[data-ri="1"]');
         var i, x;
@@ -299,14 +334,18 @@
             if (validGridAnchor(all[i]) && !detailPage()) continue;
             x = all[i].querySelector('.ri-metrics'); if (x) x.remove();
             x = all[i].querySelector('.ri-actions'); if (x) x.remove();
+            x = all[i].querySelector('.ri-m'); if (x) x.remove();
+            x = all[i].querySelector('.ri-a'); if (x) x.remove();
             all[i].removeAttribute('data-ri');
         }
     }
 
     function scan() {
         var all, candidates = [], i;
+        removeLegacy();
         clearInvalid();
         syncTool();
+        syncUpdateButton();
         if (detailPage()) return;
         all = document.querySelectorAll('a[href*="/reel/"],a[href*="/reels/"],a[href*="/p/"]');
         for (i = 0; i < all.length; i++) if (validGridAnchor(all[i])) candidates.push(all[i]);
@@ -330,6 +369,7 @@
     function start() {
         var observer = new MutationObserver(schedule);
         observer.observe(document.documentElement, { childList:true, subtree:true });
+        removeLegacy();
         status();
         scan();
         setInterval(function () {
@@ -338,7 +378,9 @@
                 closePanel();
                 schedule();
             } else {
+                removeLegacy();
                 syncTool();
+                syncUpdateButton();
             }
         }, 900);
     }
