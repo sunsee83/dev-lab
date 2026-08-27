@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      1.8.1
+// @version      1.8.2
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.8.1';
+    var VERSION = '1.8.2';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var lastUrl = location.href;
     var scanTimer = null;
@@ -30,6 +30,12 @@
         if (!el) return false;
         var r = el.getBoundingClientRect();
         return r.bottom > -300 && r.top < window.innerHeight + 700;
+    }
+
+    function safeOverlayArea(el) {
+        if (!el) return false;
+        var r = el.getBoundingClientRect();
+        return r.top >= 145 && r.bottom <= window.innerHeight - 130;
     }
 
     function detailPage() {
@@ -64,6 +70,15 @@
         return String(n);
     }
 
+    function containsLabel(text, labels) {
+        var s = String(text || '').toLowerCase();
+        var i;
+        for (i = 0; i < labels.length; i++) {
+            if (s.indexOf(String(labels[i]).toLowerCase()) !== -1) return true;
+        }
+        return false;
+    }
+
     function labelled(text, labels) {
         var s = String(text || '');
         var i, re, m;
@@ -74,6 +89,26 @@
             re = new RegExp('([0-9][0-9.,]*\\s*(?:만|천|억|K|M|B|k|m|b)?)\\s*' + labels[i], 'i');
             m = s.match(re);
             if (m) return parseCount(m[1].replace(/\s+/g, ''));
+        }
+        return null;
+    }
+
+    function singleCount(text) {
+        var s = String(text || '').replace(/,/g, ' ');
+        var list = s.match(/[0-9]+(?:\.[0-9]+)?\s*(?:만|천|억|K|M|B|k|m|b)?/g);
+        if (!list || list.length !== 1) return null;
+        return parseCount(list[0].replace(/\s+/g, ''));
+    }
+
+    function siblingCount(el) {
+        var list = [el.previousElementSibling, el.nextElementSibling];
+        var i, n, t;
+        for (i = 0; i < list.length; i++) {
+            if (!list[i]) continue;
+            t = (list[i].textContent || '').trim();
+            if (t.length > 24) continue;
+            n = singleCount(t);
+            if (n !== null) return n;
         }
         return null;
     }
@@ -153,6 +188,7 @@
         if (n !== null && !out.date) {
             try { out.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e2) {}
         }
+
         out.videoUrl = stringFromHtml(html, ['video_url'], code);
         if (!out.videoUrl) {
             p = code ? html.indexOf(code) : -1;
@@ -165,12 +201,20 @@
 
     function merge(a, b) {
         var out = {}, k;
-        a = a || {}; b = b || {};
+        a = a || {};
+        b = b || {};
         for (k in a) out[k] = a[k];
         for (k in b) {
             if (b[k] !== null && b[k] !== undefined && b[k] !== '') out[k] = b[k];
         }
         return out;
+    }
+
+    function queued(fn) {
+        return new Promise(function (resolve) {
+            queue.push({ fn: fn, resolve: resolve });
+            pump();
+        });
     }
 
     function pump() {
@@ -186,13 +230,6 @@
                 });
             })(item);
         }
-    }
-
-    function queued(fn) {
-        return new Promise(function (resolve) {
-            queue.push({ fn: fn, resolve: resolve });
-            pump();
-        });
     }
 
     function loadPost(url) {
@@ -216,8 +253,14 @@
                 refreshCard(code);
                 done(cache[code]);
             };
-            try { xhr.send(); } catch (e) { cache[code].promise = null; done(cache[code]); }
+            try {
+                xhr.send();
+            } catch (e) {
+                cache[code].promise = null;
+                done(cache[code]);
+            }
         });
+
         return cache[code].promise;
     }
 
@@ -228,7 +271,10 @@
             if (!visible(list[i])) continue;
             r = list[i].getBoundingClientRect();
             area = r.width * r.height;
-            if (area > bestArea) { bestArea = area; best = list[i]; }
+            if (area > bestArea) {
+                bestArea = area;
+                best = list[i];
+            }
         }
         return best;
     }
@@ -243,15 +289,48 @@
         return document.querySelector('main') || document.body;
     }
 
-    function metric(root, labels) {
-        var all = root.querySelectorAll('button,a,span,div');
-        var i, n, p;
+    function strictMetric(root, labels) {
+        var all = root.querySelectorAll('button,a,[aria-label],[title],span');
+        var i, el, aria, title, text, n, control;
         for (i = 0; i < all.length; i++) {
-            n = labelled(all[i].getAttribute('aria-label') || '', labels); if (n !== null) return n;
-            n = labelled(all[i].getAttribute('title') || '', labels); if (n !== null) return n;
-            n = labelled(all[i].textContent || '', labels); if (n !== null) return n;
-            p = all[i].parentElement;
-            if (p) { n = labelled(p.textContent || '', labels); if (n !== null) return n; }
+            el = all[i];
+            aria = (el.getAttribute('aria-label') || '').trim();
+            title = (el.getAttribute('title') || '').trim();
+            text = (el.textContent || '').trim();
+
+            if (containsLabel(aria, labels)) {
+                n = labelled(aria, labels);
+                if (n !== null) return n;
+                if (aria.length < 60) {
+                    n = singleCount(aria);
+                    if (n !== null) return n;
+                }
+            }
+
+            if (containsLabel(title, labels)) {
+                n = labelled(title, labels);
+                if (n !== null) return n;
+                if (title.length < 60) {
+                    n = singleCount(title);
+                    if (n !== null) return n;
+                }
+            }
+
+            if (text.length <= 60 && containsLabel(text, labels)) {
+                n = labelled(text, labels);
+                if (n !== null) return n;
+
+                control = el.closest('button,a');
+                if (control) {
+                    n = singleCount((control.textContent || '').trim());
+                    if (n !== null) return n;
+                    n = siblingCount(control);
+                    if (n !== null) return n;
+                }
+
+                n = siblingCount(el);
+                if (n !== null) return n;
+            }
         }
         return null;
     }
@@ -261,14 +340,19 @@
         var root = rootFor(v);
         var times = document.querySelectorAll('time[datetime]');
         var date = null, i;
+
         for (i = 0; i < times.length; i++) {
-            if (visible(times[i])) { date = times[i].getAttribute('datetime'); break; }
+            if (visible(times[i])) {
+                date = times[i].getAttribute('datetime');
+                break;
+            }
         }
+
         return {
-            views: metric(root, ['조회수','views','plays','재생']),
-            likes: metric(root, ['좋아요','likes','like']),
-            comments: metric(root, ['댓글','comments','comment']),
-            reposts: metric(root, ['리포스트','reposts','repost']),
+            views: strictMetric(root, ['조회수','views','plays','재생']),
+            likes: strictMetric(root, ['좋아요','likes','like']),
+            comments: strictMetric(root, ['댓글','comments','comment']),
+            reposts: strictMetric(root, ['리포스트','reposts','repost']),
             date: date ? date.slice(0, 10) : null,
             videoUrl: v ? (v.currentSrc || v.src || '') : '',
             thumbUrl: v ? (v.poster || '') : '',
@@ -281,10 +365,21 @@
     function currentData() {
         var code = codeFromUrl(location.href);
         var dom = currentDomData();
+
         if (!code) return Promise.resolve(dom);
+
         cache[code] = merge(cache[code], dom);
+
         return loadPost(location.href).then(function (remote) {
-            cache[code] = merge(remote, currentDomData());
+            var out = merge(dom, remote);
+
+            if (dom.videoUrl) out.videoUrl = dom.videoUrl;
+            if (dom.thumbUrl) out.thumbUrl = dom.thumbUrl;
+            if (dom.duration !== null) out.duration = dom.duration;
+            if (dom.width) out.width = dom.width;
+            if (dom.height) out.height = dom.height;
+
+            cache[code] = merge(cache[code], out);
             return cache[code];
         });
     }
@@ -293,10 +388,12 @@
         var r = document.createElement('div');
         var l = document.createElement('span');
         var b = document.createElement('b');
+
         r.style.cssText = 'display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eee;';
         l.textContent = label;
         b.textContent = value;
         if (id) b.id = id;
+
         r.appendChild(l);
         r.appendChild(b);
         panel.appendChild(r);
@@ -327,15 +424,20 @@
 
     function updatePanel(data) {
         var x, info = '확인 불가';
+
         x = document.getElementById('ri-v-views'); if (x) x.textContent = fmt(data.views);
         x = document.getElementById('ri-v-likes'); if (x) x.textContent = fmt(data.likes);
         x = document.getElementById('ri-v-comments'); if (x) x.textContent = fmt(data.comments);
         x = document.getElementById('ri-v-reposts'); if (x) x.textContent = fmt(data.reposts);
         x = document.getElementById('ri-v-date'); if (x) x.textContent = data.date || '확인 불가';
+
         if (data.width && data.height) {
             info = data.width + '×' + data.height;
-            if (data.duration !== null && data.duration !== undefined) info += ' · ' + Number(data.duration).toFixed(1) + '초';
+            if (data.duration !== null && data.duration !== undefined) {
+                info += ' · ' + Number(data.duration).toFixed(1) + '초';
+            }
         }
+
         x = document.getElementById('ri-v-video'); if (x) x.textContent = info;
     }
 
@@ -349,31 +451,42 @@
         var img = document.createElement('button');
         var vid = document.createElement('button');
         var update = document.createElement('button');
-        var lastData = currentDomData();
+        var initial = currentDomData();
 
         if (tool) tool.remove();
+
         bg.id = 'ri-panel';
         bg.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.4);';
         panel.style.cssText = 'position:absolute;left:0;right:0;bottom:0;background:#fff;color:#111;border-radius:18px 18px 0 0;padding:14px 14px 24px;font:14px system-ui;';
+
         close.textContent = '×';
         close.style.cssText = 'float:right;border:0;background:#eee;border-radius:999px;width:34px;height:34px;font-size:20px;';
         close.onclick = closePanel;
+
         title.textContent = 'Reels Inspector ' + VERSION;
+
         panel.appendChild(close);
         panel.appendChild(title);
-        row(panel, '조회수', fmt(lastData.views), 'ri-v-views');
-        row(panel, '좋아요', fmt(lastData.likes), 'ri-v-likes');
-        row(panel, '댓글', fmt(lastData.comments), 'ri-v-comments');
-        row(panel, '리포스트', fmt(lastData.reposts), 'ri-v-reposts');
-        row(panel, '날짜', lastData.date || '확인 불가', 'ri-v-date');
+        row(panel, '조회수', fmt(initial.views), 'ri-v-views');
+        row(panel, '좋아요', fmt(initial.likes), 'ri-v-likes');
+        row(panel, '댓글', fmt(initial.comments), 'ri-v-comments');
+        row(panel, '리포스트', fmt(initial.reposts), 'ri-v-reposts');
+        row(panel, '날짜', initial.date || '확인 불가', 'ri-v-date');
         row(panel, '영상', '읽는 중…', 'ri-v-video');
 
         actions.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;';
         img.textContent = '썸네일 열기';
         vid.textContent = '영상 열기';
         img.style.cssText = vid.style.cssText = 'border:0;border-radius:11px;background:#111;color:#fff;padding:11px;font-weight:800;';
-        img.onclick = function () { currentData().then(function (d) { openUrl(d.thumbUrl); }); };
-        vid.onclick = function () { currentData().then(function (d) { openUrl(d.videoUrl); }); };
+
+        img.onclick = function () {
+            currentData().then(function (d) { openUrl(d.thumbUrl); });
+        };
+
+        vid.onclick = function () {
+            currentData().then(function (d) { openUrl(d.videoUrl); });
+        };
+
         actions.appendChild(img);
         actions.appendChild(vid);
         panel.appendChild(actions);
@@ -385,18 +498,32 @@
 
         bg.appendChild(panel);
         document.documentElement.appendChild(bg);
-        bg.onclick = function (e) { if (e.target === bg) closePanel(); };
+
+        bg.onclick = function (e) {
+            if (e.target === bg) closePanel();
+        };
 
         currentData().then(updatePanel);
-        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 900);
-        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 2200);
+        setTimeout(function () {
+            if (document.getElementById('ri-panel')) currentData().then(updatePanel);
+        }, 1000);
     }
 
     function syncTool() {
         var b = document.getElementById('ri-tool');
-        if (document.getElementById('ri-panel')) { if (b) b.remove(); return; }
-        if (!detailPage()) { if (b) b.remove(); return; }
+
+        if (document.getElementById('ri-panel')) {
+            if (b) b.remove();
+            return;
+        }
+
+        if (!detailPage()) {
+            if (b) b.remove();
+            return;
+        }
+
         if (b) return;
+
         b = document.createElement('button');
         b.id = 'ri-tool';
         b.textContent = '도구';
@@ -426,10 +553,13 @@
         if (!a.closest('main')) return false;
         if (a.closest('nav,header,[role="navigation"],[role="dialog"],#ri-panel')) return false;
         if (fixedAncestor(a)) return false;
+
         img = a.querySelector('img');
         if (!img) return false;
+
         ar = a.getBoundingClientRect();
         ir = img.getBoundingClientRect();
+
         if (ar.width < 80 || ar.height < 80 || ir.width < 80 || ir.height < 80) return false;
         if (ir.width < ar.width * 0.55) return false;
         return true;
@@ -439,25 +569,29 @@
         var out = [a.textContent || '', a.getAttribute('aria-label') || '', a.getAttribute('title') || ''];
         var all = a.querySelectorAll('[aria-label],[title],img[alt]');
         var i, v;
+
         for (i = 0; i < all.length; i++) {
             v = all[i].getAttribute('aria-label'); if (v) out.push(v);
             v = all[i].getAttribute('title'); if (v) out.push(v);
             v = all[i].getAttribute('alt'); if (v) out.push(v);
         }
+
         return out.join(' ');
     }
 
     function cardData(a) {
         var code = codeFromUrl(a.href);
         var text = cardText(a);
+        var img = a.querySelector('img');
         var nativeData = {
             code: code,
             pageUrl: a.href,
             views: labelled(text, ['조회수','views','plays','재생']),
             likes: labelled(text, ['좋아요','likes','like']),
             comments: labelled(text, ['댓글','comments','comment']),
-            thumbUrl: a.querySelector('img') ? (a.querySelector('img').currentSrc || a.querySelector('img').src || '') : ''
+            thumbUrl: img ? (img.currentSrc || img.src || '') : ''
         };
+
         cache[code] = merge(cache[code], nativeData);
         return cache[code];
     }
@@ -467,39 +601,76 @@
         b.textContent = text;
         b.title = title;
         b.style.cssText = 'min-width:34px;height:29px;padding:0 6px;border:0;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:800 9px system-ui;';
-        b.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
-        b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); fn(); }, true);
+
+        b.addEventListener('pointerdown', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }, true);
+
+        b.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            fn();
+        }, true);
+
         return b;
+    }
+
+    function ensureVideoButton(a, data) {
+        var actions = a.querySelector('.ri-actions');
+        var existing = a.querySelector('.ri-vid');
+        if (!actions || !data || !data.videoUrl || existing) return;
+
+        existing = gridButton('VID', '영상 열기', function () {
+            loadPost(a.href).then(function (d) {
+                openUrl(d.videoUrl || a.href);
+            });
+        });
+        existing.className = 'ri-vid';
+        actions.appendChild(existing);
     }
 
     function paintCard(a) {
         var data = cardData(a);
         var box = a.querySelector('.ri-metrics');
+        var actions = a.querySelector('.ri-actions');
         var lines = [], second = [];
+        var safe = safeOverlayArea(a);
+
         if (!box) return;
+
         if (data.views !== null && data.views !== undefined) lines.push('▶ ' + fmt(data.views));
         if (data.likes !== null && data.likes !== undefined) second.push('♥ ' + fmt(data.likes));
         if (data.comments !== null && data.comments !== undefined) second.push('💬 ' + fmt(data.comments));
         if (second.length) lines.push(second.join(' · '));
         if (data.date) lines.push(String(data.date).slice(5));
+
         box.textContent = lines.join('\n');
-        box.style.display = lines.length ? 'block' : 'none';
+        box.style.display = safe && lines.length ? 'block' : 'none';
+        if (actions) actions.style.display = safe ? 'flex' : 'none';
+
+        ensureVideoButton(a, data);
     }
 
     function refreshCard(code) {
-        var a = document.querySelector('a[data-ri-code="' + code + '"]');
-        if (a) paintCard(a);
+        var all = document.querySelectorAll('a[data-ri-code="' + code + '"]');
+        var i;
+        for (i = 0; i < all.length; i++) paintCard(all[i]);
     }
 
     function renderCard(a) {
-        var code, img, box, actions;
+        var code, img, box, actions, knownVideo;
         if (!validGridAnchor(a)) return;
+
         code = codeFromUrl(a.href);
         if (!code) return;
+
         if (a.getAttribute('data-ri') === '1' && a.querySelector('.ri-actions')) {
             paintCard(a);
+            if (nearViewport(a)) loadPost(a.href);
             return;
         }
+
         a.setAttribute('data-ri', '1');
         a.setAttribute('data-ri-code', code);
         a.style.position = 'relative';
@@ -512,11 +683,19 @@
         actions = document.createElement('div');
         actions.className = 'ri-actions';
         actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;gap:3px;';
-        actions.appendChild(gridButton('IMG', '이미지 열기', function () { openUrl(img.currentSrc || img.src || ''); }));
+
+        actions.appendChild(gridButton('IMG', '이미지 열기', function () {
+            openUrl(img.currentSrc || img.src || '');
+        }));
+
         if (/\/(reel|reels)\//.test(a.pathname || '')) {
-            actions.appendChild(gridButton('VID', '영상 열기', function () {
-                loadPost(a.href).then(function (d) { openUrl(d.videoUrl || a.href); });
-            }));
+            knownVideo = gridButton('VID', '영상 열기', function () {
+                loadPost(a.href).then(function (d) {
+                    openUrl(d.videoUrl || a.href);
+                });
+            });
+            knownVideo.className = 'ri-vid';
+            actions.appendChild(knownVideo);
         }
 
         a.appendChild(box);
@@ -528,10 +707,12 @@
     function cleanup() {
         var all = document.querySelectorAll('.ri-actions,.ri-metrics');
         var i, host;
+
         for (i = 0; i < all.length; i++) {
             host = all[i].parentElement;
             if (!host || !validGridAnchor(host) || detailPage()) all[i].remove();
         }
+
         all = document.querySelectorAll('[data-ri="1"]');
         for (i = 0; i < all.length; i++) {
             if (!validGridAnchor(all[i]) || detailPage()) {
@@ -539,6 +720,7 @@
                 all[i].removeAttribute('data-ri-code');
             }
         }
+
         all = ['ri-github-retry','ri-install-ok','ri-file-ok','ri-test-box','ri-update'];
         for (i = 0; i < all.length; i++) {
             host = document.getElementById(all[i]);
@@ -551,15 +733,19 @@
         cleanup();
         syncTool();
         if (detailPage()) return;
+
         all = document.querySelectorAll('a[href*="/reel/"],a[href*="/reels/"],a[href*="/p/"]');
-        for (i = 0; i < all.length; i++) if (validGridAnchor(all[i])) candidates.push(all[i]);
+        for (i = 0; i < all.length; i++) {
+            if (validGridAnchor(all[i])) candidates.push(all[i]);
+        }
+
         if (candidates.length < 3) return;
         for (i = 0; i < candidates.length; i++) renderCard(candidates[i]);
     }
 
     function schedule() {
         clearTimeout(scanTimer);
-        scanTimer = setTimeout(scan, 180);
+        scanTimer = setTimeout(scan, 120);
     }
 
     function status() {
@@ -567,16 +753,20 @@
         d.textContent = 'RI ' + VERSION;
         d.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483646;background:#111;color:#fff;padding:6px 9px;border-radius:8px;font:700 12px system-ui;pointer-events:none;';
         (document.body || document.documentElement).appendChild(d);
-        setTimeout(function () { if (d.parentNode) d.remove(); }, 1200);
+        setTimeout(function () {
+            if (d.parentNode) d.remove();
+        }, 1200);
     }
 
     function start() {
         var observer = new MutationObserver(schedule);
         observer.observe(document.documentElement, { childList:true, subtree:true });
         window.addEventListener('scroll', schedule, true);
+
         cleanup();
         status();
         scan();
+
         setInterval(function () {
             if (location.href !== lastUrl) {
                 lastUrl = location.href;
@@ -585,10 +775,14 @@
             } else {
                 cleanup();
                 syncTool();
+                schedule();
             }
         }, 900);
     }
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
-    else start();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+    } else {
+        start();
+    }
 })();
