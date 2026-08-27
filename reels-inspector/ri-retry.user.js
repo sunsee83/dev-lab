@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      2.1.0
+// @version      2.1.1
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,10 +12,11 @@
 (function () {
     'use strict';
 
-    var VERSION = '2.1.0';
+    var VERSION = '2.1.1';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var SNAP_KEY = 'ri:snapshots:v1';
     var POST_KEY = 'ri:posts:v1';
+    var VIEW_KEYS = ['play_count','ig_play_count','video_play_count','video_view_count','view_count','view_count_fb','play_count_fb','view_count_ig','clips_play_count','video_views','media_view_count','reel_view_count','view_count_v2','plays','views'];
     var cache = {};
     var queue = [];
     var active = 0;
@@ -116,7 +117,7 @@
 
     function singleCount(text) {
         var s = String(text || '').trim();
-        if (!s || s.length > 24) return null;
+        if (!s || s.length > 28) return null;
         return parseCount(s.replace(/\s+/g, ''));
     }
 
@@ -153,9 +154,7 @@
         try {
             var raw = localStorage.getItem(key);
             return raw ? JSON.parse(raw) : fallback;
-        } catch (e) {
-            return fallback;
-        }
+        } catch (e) { return fallback; }
     }
 
     function writeStore(key, value) {
@@ -171,9 +170,7 @@
         store = readStore(SNAP_KEY, {});
         arr = Array.isArray(store[code]) ? store[code] : [];
         last = arr.length ? arr[arr.length - 1] : null;
-        if (!last || now - Number(last.t || 0) >= 30 * 60 * 1000 || Number(last.v) !== views) {
-            arr.push({t: now, v: views});
-        }
+        if (!last || now - Number(last.t || 0) >= 30 * 60 * 1000 || Number(last.v) !== views) arr.push({t: now, v: views});
         arr = arr.filter(function (x) { return now - Number(x.t || 0) <= 14 * 24 * 60 * 60 * 1000; });
         if (arr.length > 80) arr = arr.slice(arr.length - 80);
         store[code] = arr;
@@ -192,10 +189,7 @@
             age = now - Number(arr[i].t || 0);
             if (age < 18 * 60 * 60 * 1000 || age > 32 * 60 * 60 * 1000) continue;
             delta = Math.abs(age - target);
-            if (delta < bestDelta) {
-                bestDelta = delta;
-                best = arr[i];
-            }
+            if (delta < bestDelta) { bestDelta = delta; best = arr[i]; }
         }
         if (!best) return null;
         old = Number(best.v);
@@ -242,8 +236,7 @@
             list.push(item);
         }
         list.sort(function (a, b) {
-            var ad = a.date || '';
-            var bd = b.date || '';
+            var ad = a.date || '', bd = b.date || '';
             if (ad !== bd) return bd.localeCompare(ad);
             return Number(b.t || 0) - Number(a.t || 0);
         });
@@ -272,8 +265,9 @@
 
     function areaNumber(area, keys) {
         var i, re, m;
+        area = String(area || '');
         for (i = 0; i < keys.length; i++) {
-            re = new RegExp('(?:["\\\\])?' + keys[i] + '(?:["\\\\])?\\s*:\\s*(\\d+)', 'i');
+            re = new RegExp('(?:["\\\\])?' + keys[i] + '(?:["\\\\])?\\s*:\\s*["\\\\]?([0-9]+)["\\\\]?', 'i');
             m = area.match(re);
             if (m) return Number(m[1]);
         }
@@ -284,7 +278,7 @@
         var i, re, m;
         for (i = 0; i < keys.length; i++) {
             re = new RegExp('(?:["\\\\])?' + keys[i] + '(?:["\\\\])?\\s*:\\s*["\\\\]?(https?:[^"\\\\\\s]+)', 'i');
-            m = area.match(re);
+            m = String(area || '').match(re);
             if (m) return cleanUrl(m[1]);
         }
         return '';
@@ -299,8 +293,8 @@
     }
 
     function htmlArea(html, code) {
-        var p = code ? html.indexOf(code) : -1;
-        return p >= 0 ? html.slice(Math.max(0, p - 120000), Math.min(html.length, p + 220000)) : html;
+        var p = code ? String(html || '').indexOf(code) : -1;
+        return p >= 0 ? String(html).slice(Math.max(0, p - 120000), Math.min(String(html).length, p + 220000)) : String(html || '');
     }
 
     function parseHtml(html, url) {
@@ -312,40 +306,26 @@
             meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
             desc = meta ? (meta.getAttribute('content') || '') : '';
             if (desc) {
-                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+likes?/i);
-                if (m) out.likes = parseCount(m[1].replace(/\s+/g, ''));
-                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+comments?/i);
-                if (m) out.comments = parseCount(m[1].replace(/\s+/g, ''));
+                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+likes?/i); if (m) out.likes = parseCount(m[1].replace(/\s+/g, ''));
+                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+comments?/i); if (m) out.comments = parseCount(m[1].replace(/\s+/g, ''));
+                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+(?:views?|plays?)/i); if (m) out.views = parseCount(m[1].replace(/\s+/g, ''));
                 out.date = literalDate(desc);
             }
             meta = doc.querySelector('meta[property="og:title"],meta[name="twitter:title"]');
             titleText = meta ? (meta.getAttribute('content') || '') : (doc.title || '');
-            m = titleText.match(/^@?([A-Za-z0-9._]+)\s+(?:on Instagram|• Instagram)/i);
-            if (m) out.owner = m[1];
-            meta = doc.querySelector('meta[property="og:image"]');
-            if (meta) out.thumbUrl = cleanUrl(meta.getAttribute('content') || '');
-            meta = doc.querySelector('meta[property="og:video"],meta[property="og:video:secure_url"]');
-            if (meta) out.videoUrl = cleanUrl(meta.getAttribute('content') || '');
+            m = titleText.match(/^@?([A-Za-z0-9._]+)\s+(?:on Instagram|• Instagram)/i); if (m) out.owner = m[1];
+            meta = doc.querySelector('meta[property="og:image"]'); if (meta) out.thumbUrl = cleanUrl(meta.getAttribute('content') || '');
+            meta = doc.querySelector('meta[property="og:video"],meta[property="og:video:secure_url"]'); if (meta) out.videoUrl = cleanUrl(meta.getAttribute('content') || '');
         } catch (e) {}
         area = htmlArea(html, code);
         if (!out.owner) out.owner = areaOwner(area);
-        if (out.likes === undefined) {
-            n = areaNumber(area, ['like_count','likes_count']);
-            if (n !== null) out.likes = n;
-        }
-        if (out.comments === undefined) {
-            n = areaNumber(area, ['comment_count','comments_count']);
-            if (n !== null) out.comments = n;
-        }
-        n = areaNumber(area, ['play_count','ig_play_count','video_play_count','video_view_count','view_count','view_count_fb','plays','views']);
-        if (n !== null) out.views = n;
-        n = areaNumber(area, ['reshare_count','repost_count','reposts_count']);
-        if (n !== null) out.reposts = n;
+        if (out.likes === undefined) { n = areaNumber(area, ['like_count','likes_count']); if (n !== null) out.likes = n; }
+        if (out.comments === undefined) { n = areaNumber(area, ['comment_count','comments_count']); if (n !== null) out.comments = n; }
+        if (out.views === undefined) { n = areaNumber(area, VIEW_KEYS); if (n !== null) out.views = n; }
+        n = areaNumber(area, ['reshare_count','repost_count','reposts_count']); if (n !== null) out.reposts = n;
         if (!out.date) {
             n = areaNumber(area, ['taken_at','taken_at_timestamp']);
-            if (n !== null) {
-                try { out.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e2) {}
-            }
+            if (n !== null) try { out.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e2) {}
         }
         if (!out.videoUrl) out.videoUrl = areaString(area, ['video_url']);
         return out;
@@ -354,23 +334,13 @@
     function pump() {
         var job;
         while (active < 2 && queue.length) {
-            job = queue.shift();
-            active++;
-            (function (j) {
-                j.fn(function (value) {
-                    active--;
-                    j.resolve(value);
-                    pump();
-                });
-            })(job);
+            job = queue.shift(); active++;
+            (function (j) { j.fn(function (value) { active--; j.resolve(value); pump(); }); })(job);
         }
     }
 
     function queued(fn) {
-        return new Promise(function (resolve) {
-            queue.push({fn: fn, resolve: resolve});
-            pump();
-        });
+        return new Promise(function (resolve) { queue.push({fn: fn, resolve: resolve}); pump(); });
     }
 
     function loadPost(url) {
@@ -384,14 +354,14 @@
             xhr.open('GET', String(url).split('?')[0], true);
             xhr.withCredentials = true;
             xhr.onreadystatechange = function () {
-                var keepPromise, parsed;
+                var keep, parsed;
                 if (xhr.readyState !== 4) return;
-                keepPromise = cache[code] && cache[code].promise;
+                keep = cache[code] && cache[code].promise;
                 if (xhr.status >= 200 && xhr.status < 400) {
                     parsed = parseHtml(xhr.responseText || '', url);
                     cache[code] = merge(cache[code], parsed);
                     cache[code].loaded = true;
-                    cache[code].promise = keepPromise;
+                    cache[code].promise = keep;
                     recordData(cache[code]);
                 }
                 cache[code].promise = null;
@@ -399,11 +369,7 @@
                 schedule();
                 done(cache[code]);
             };
-            try { xhr.send(); }
-            catch (e) {
-                cache[code].promise = null;
-                done(cache[code]);
-            }
+            try { xhr.send(); } catch (e) { cache[code].promise = null; done(cache[code]); }
         });
         return cache[code].promise;
     }
@@ -411,12 +377,16 @@
     function updateFromObject(obj) {
         var code = obj && (obj.code || obj.shortcode || obj.short_code);
         var user = obj && (obj.user || obj.owner);
-        var data;
+        var data, views;
         if (!code || typeof code !== 'string') return;
+        views = null;
+        for (var i = 0; i < VIEW_KEYS.length; i++) {
+            if (obj[VIEW_KEYS[i]] !== undefined && obj[VIEW_KEYS[i]] !== null && isFinite(Number(obj[VIEW_KEYS[i]]))) { views = Number(obj[VIEW_KEYS[i]]); break; }
+        }
         data = {
             code: code,
             owner: user && user.username || '',
-            views: obj.play_count || obj.ig_play_count || obj.video_play_count || obj.video_view_count || obj.view_count || obj.view_count_fb || null,
+            views: views,
             likes: obj.like_count || null,
             comments: obj.comment_count || null,
             reposts: obj.reshare_count || obj.repost_count || null,
@@ -431,12 +401,12 @@
 
     function scanJsonObject(obj, depth, seen) {
         var keys, i, v;
-        if (!obj || typeof obj !== 'object' || depth > 6) return;
+        if (!obj || typeof obj !== 'object' || depth > 7) return;
         if (seen.indexOf(obj) !== -1) return;
         seen.push(obj);
         updateFromObject(obj);
         keys = Object.keys(obj);
-        for (i = 0; i < keys.length && i < 100; i++) {
+        for (i = 0; i < keys.length && i < 120; i++) {
             v = obj[keys[i]];
             if (v && typeof v === 'object') scanJsonObject(v, depth + 1, seen);
         }
@@ -447,28 +417,19 @@
         var found = {};
         var reCode = /"(?:code|shortcode|short_code)"\s*:\s*"([A-Za-z0-9_-]{5,32})"/g;
         var m, i, code, p, area, data, n;
-        if (!text || text.length > 6500000) return;
-        while ((m = reCode.exec(text)) && Object.keys(found).length < 80) found[m[1]] = true;
+        if (!text || text.length > 8000000) return;
+        while ((m = reCode.exec(text)) && Object.keys(found).length < 100) found[m[1]] = true;
         for (i = 0; i < codes.length; i++) found[codes[i]] = true;
         codes = Object.keys(found);
         for (i = 0; i < codes.length; i++) {
-            code = codes[i];
-            p = text.indexOf(code);
-            if (p < 0) continue;
-            area = text.slice(Math.max(0, p - 10000), Math.min(text.length, p + 22000));
+            code = codes[i]; p = text.indexOf(code); if (p < 0) continue;
+            area = text.slice(Math.max(0, p - 14000), Math.min(text.length, p + 30000));
             data = {code: code, owner: areaOwner(area)};
-            n = areaNumber(area, ['play_count','ig_play_count','video_play_count','video_view_count','view_count','view_count_fb','plays','views']);
-            if (n !== null) data.views = n;
-            n = areaNumber(area, ['like_count','likes_count']);
-            if (n !== null) data.likes = n;
-            n = areaNumber(area, ['comment_count','comments_count']);
-            if (n !== null) data.comments = n;
-            n = areaNumber(area, ['reshare_count','repost_count','reposts_count']);
-            if (n !== null) data.reposts = n;
-            n = areaNumber(area, ['taken_at','taken_at_timestamp']);
-            if (n !== null) {
-                try { data.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e) {}
-            }
+            n = areaNumber(area, VIEW_KEYS); if (n !== null) data.views = n;
+            n = areaNumber(area, ['like_count','likes_count']); if (n !== null) data.likes = n;
+            n = areaNumber(area, ['comment_count','comments_count']); if (n !== null) data.comments = n;
+            n = areaNumber(area, ['reshare_count','repost_count','reposts_count']); if (n !== null) data.reposts = n;
+            n = areaNumber(area, ['taken_at','taken_at_timestamp']); if (n !== null) try { data.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e) {}
             data.videoUrl = areaString(area, ['video_url']);
             cache[code] = merge(cache[code], data);
             recordData(cache[code]);
@@ -486,9 +447,7 @@
                     try {
                         var ct = res.headers && res.headers.get ? (res.headers.get('content-type') || '') : '';
                         var u = res.url || '';
-                        if (ct.indexOf('json') !== -1 || /graphql|api|ajax/i.test(u)) {
-                            res.clone().text().then(scanJsonText).catch(function () {});
-                        }
+                        if (ct.indexOf('json') !== -1 || /graphql|api|ajax|clips|reels/i.test(u)) res.clone().text().then(scanJsonText).catch(function () {});
                     } catch (e) {}
                     return res;
                 });
@@ -498,23 +457,44 @@
         if (OriginalXHR && !OriginalXHR.prototype.__riWrapped) {
             var oldOpen = OriginalXHR.prototype.open;
             var oldSend = OriginalXHR.prototype.send;
-            OriginalXHR.prototype.open = function () {
-                this.__riUrl = arguments[1] || '';
-                return oldOpen.apply(this, arguments);
-            };
+            OriginalXHR.prototype.open = function () { this.__riUrl = arguments[1] || ''; return oldOpen.apply(this, arguments); };
             OriginalXHR.prototype.send = function () {
                 this.addEventListener('load', function () {
                     try {
                         var ct = this.getResponseHeader('content-type') || '';
-                        if ((ct.indexOf('json') !== -1 || /graphql|api|ajax/i.test(this.__riUrl || '')) && typeof this.responseText === 'string') {
-                            scanJsonText(this.responseText);
-                        }
+                        if ((ct.indexOf('json') !== -1 || /graphql|api|ajax|clips|reels/i.test(this.__riUrl || '')) && typeof this.responseText === 'string') scanJsonText(this.responseText);
                     } catch (e) {}
                 });
                 return oldSend.apply(this, arguments);
             };
             OriginalXHR.prototype.__riWrapped = true;
         }
+    }
+
+    function embeddedPageData(code) {
+        var out = {code: code};
+        var scripts = document.scripts || [];
+        var i, text, p, area, n, owner;
+        if (!code) return out;
+        for (i = 0; i < scripts.length && i < 250; i++) {
+            text = scripts[i].textContent || '';
+            if (!text || text.length > 7000000) continue;
+            p = text.indexOf(code);
+            if (p < 0) continue;
+            area = text.slice(Math.max(0, p - 50000), Math.min(text.length, p + 90000));
+            if (out.views === undefined) { n = areaNumber(area, VIEW_KEYS); if (n !== null) out.views = n; }
+            if (out.likes === undefined) { n = areaNumber(area, ['like_count','likes_count']); if (n !== null) out.likes = n; }
+            if (out.comments === undefined) { n = areaNumber(area, ['comment_count','comments_count']); if (n !== null) out.comments = n; }
+            if (out.reposts === undefined) { n = areaNumber(area, ['reshare_count','repost_count','reposts_count']); if (n !== null) out.reposts = n; }
+            if (!out.date) {
+                n = areaNumber(area, ['taken_at','taken_at_timestamp']);
+                if (n !== null) try { out.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e) {}
+            }
+            if (!out.owner) { owner = areaOwner(area); if (owner) out.owner = owner; }
+            if (!out.videoUrl) out.videoUrl = areaString(area, ['video_url']);
+            if (out.views !== undefined && out.likes !== undefined && out.comments !== undefined && out.owner) break;
+        }
+        return out;
     }
 
     function mainVideo() {
@@ -550,10 +530,7 @@
             if (p.previousElementSibling) list.push(p.previousElementSibling.textContent || '');
             if (p.nextElementSibling) list.push(p.nextElementSibling.textContent || '');
         }
-        for (i = 0; i < list.length; i++) {
-            n = singleCount(list[i]);
-            if (n !== null) return n;
-        }
+        for (i = 0; i < list.length; i++) { n = singleCount(list[i]); if (n !== null) return n; }
         return null;
     }
 
@@ -579,9 +556,7 @@
         var root = rootFor(v);
         var times = document.querySelectorAll('time[datetime]');
         var date = null, i;
-        for (i = 0; i < times.length; i++) {
-            if (visible(times[i])) { date = times[i].getAttribute('datetime'); break; }
-        }
+        for (i = 0; i < times.length; i++) if (visible(times[i])) { date = times[i].getAttribute('datetime'); break; }
         return {
             views: controlMetric(root, ['조회수','views','plays','재생']),
             likes: controlMetric(root, ['좋아요','likes','like']),
@@ -599,16 +574,14 @@
     function currentData() {
         var code = codeFromUrl(location.href);
         var dom = currentDomData();
+        var embedded;
         if (!code) return Promise.resolve(dom);
+        embedded = embeddedPageData(code);
         cache[code] = merge(cache[code], dom);
+        cache[code] = merge(cache[code], embedded);
+        recordData(cache[code]);
         return loadPost(location.href).then(function (remote) {
-            var out = merge(dom, remote);
-            if (remote.likes !== null && remote.likes !== undefined) out.likes = remote.likes;
-            if (remote.comments !== null && remote.comments !== undefined) out.comments = remote.comments;
-            if (remote.views !== null && remote.views !== undefined) out.views = remote.views;
-            if (remote.reposts !== null && remote.reposts !== undefined) out.reposts = remote.reposts;
-            if (remote.owner) out.owner = remote.owner;
-            if (remote.date) out.date = remote.date;
+            var out = merge(cache[code], remote);
             if (dom.videoUrl) out.videoUrl = dom.videoUrl;
             if (dom.thumbUrl) out.thumbUrl = dom.thumbUrl;
             if (dom.duration !== null) out.duration = dom.duration;
@@ -623,32 +596,20 @@
     function openUrl(url) {
         var a;
         if (!url) return;
-        a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.style.display = 'none';
+        document.body.appendChild(a); a.click(); a.remove();
     }
 
-    function openUpdate() {
-        window.open(UPDATE_URL + '?ri=' + Date.now(), '_blank');
-    }
-
-    function copyText(text) {
-        if (!text) return;
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(function () {});
-    }
+    function openUpdate() { window.open(UPDATE_URL + '?ri=' + Date.now(), '_blank'); }
+    function copyText(text) { if (text && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(function () {}); }
 
     function iconSvg(type, size) {
         var s = size || 20;
-        var common = 'width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
-        if (type === 'image') return '<svg ' + common + '><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="8.5" cy="9" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>';
-        if (type === 'video') return '<svg ' + common + '><rect x="3" y="5" width="14" height="14" rx="2"></rect><path d="M17 9l4-2v10l-4-2z"></path><path d="M8.5 9.2l4 2.8-4 2.8z" fill="currentColor" stroke="none"></path></svg>';
-        if (type === 'research') return '<svg ' + common + '><path d="M4 19V13"></path><path d="M9 19V9"></path><path d="M14 19V5"></path><circle cx="17.5" cy="14.5" r="3.5"></circle><path d="M20 17l2 2"></path></svg>';
-        if (type === 'link') return '<svg ' + common + '><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"></path><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"></path></svg>';
+        var c = 'width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+        if (type === 'image') return '<svg ' + c + '><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="8.5" cy="9" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>';
+        if (type === 'video') return '<svg ' + c + '><rect x="3" y="5" width="14" height="14" rx="2"></rect><path d="M17 9l4-2v10l-4-2z"></path><path d="M8.5 9.2l4 2.8-4 2.8z" fill="currentColor" stroke="none"></path></svg>';
+        if (type === 'research') return '<svg ' + c + '><path d="M4 19V13"></path><path d="M9 19V9"></path><path d="M14 19V5"></path><circle cx="17.5" cy="14.5" r="3.5"></circle><path d="M20 17l2 2"></path></svg>';
+        if (type === 'link') return '<svg ' + c + '><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"></path><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"></path></svg>';
         return '';
     }
 
@@ -657,11 +618,9 @@
         var best = null, bestScore = -1;
         var i, el, r, label, svg, score;
         for (i = 0; i < all.length; i++) {
-            el = all[i];
-            if (!visible(el)) continue;
+            el = all[i]; if (!visible(el)) continue;
             r = el.getBoundingClientRect();
-            if (r.width < 20 || r.height < 20 || r.width > 90 || r.height > 90) continue;
-            if (r.right < innerWidth * 0.60) continue;
+            if (r.width < 20 || r.height < 20 || r.width > 90 || r.height > 90 || r.right < innerWidth * 0.60) continue;
             svg = el.querySelector('svg[aria-label],svg[title]');
             label = [el.getAttribute('aria-label') || '', el.getAttribute('title') || '', svg && svg.getAttribute('aria-label') || '', svg && svg.getAttribute('title') || ''].join(' ').toLowerCase();
             if (!/(더\s*보기|옵션|more|options)/i.test(label)) continue;
@@ -683,15 +642,9 @@
             r = more.getBoundingClientRect();
             x = Math.max(4, Math.min(innerWidth - 42, r.left + r.width / 2 - 18));
             y = Math.max(6, Math.min(innerHeight - 42, r.bottom + 4));
-            b.style.left = x + 'px';
-            b.style.top = y + 'px';
-            b.style.right = 'auto';
-            b.style.bottom = 'auto';
+            b.style.left = x + 'px'; b.style.top = y + 'px'; b.style.right = 'auto'; b.style.bottom = 'auto';
         } else {
-            b.style.left = 'auto';
-            b.style.top = 'auto';
-            b.style.right = '12px';
-            b.style.bottom = '68px';
+            b.style.left = 'auto'; b.style.top = 'auto'; b.style.right = '12px'; b.style.bottom = '68px';
         }
     }
 
@@ -703,30 +656,24 @@
     }
 
     function wingMetric(parent, id, label, hostId) {
-        var row = panelEl('div', 'display:block;min-height:43px;padding:7px 0 6px;border-bottom:1px solid rgba(255,255,255,.075);');
-        var lab = panelEl('div', 'font-size:9.5px;line-height:1.1;color:rgba(255,255,255,.52);white-space:nowrap;', label);
-        var val = panelEl('div', 'margin-top:3px;font-size:13px;line-height:1.15;font-weight:700;color:#fff;white-space:normal;word-break:break-word;', '—');
+        var row = panelEl('div', 'display:block;min-height:39px;padding:6px 0 5px;border-bottom:1px solid rgba(255,255,255,.075);');
+        var lab = panelEl('div', 'font-size:9px;line-height:1.05;color:rgba(255,255,255,.52);white-space:nowrap;', label);
+        var val = panelEl('div', 'margin-top:3px;font-size:12.5px;line-height:1.12;font-weight:700;color:#fff;white-space:normal;word-break:break-word;', '—');
         if (hostId) row.id = hostId;
         val.id = id;
-        row.appendChild(lab);
-        row.appendChild(val);
-        parent.appendChild(row);
+        row.appendChild(lab); row.appendChild(val); parent.appendChild(row);
         return row;
     }
 
     function setTextOrHide(valueId, hostId, value) {
-        var el = document.getElementById(valueId);
-        var host = document.getElementById(hostId);
+        var el = document.getElementById(valueId), host = document.getElementById(hostId);
         if (!el || !host) return;
         if (value === null || value === undefined || value === '') host.style.display = 'none';
         else { host.style.display = 'block'; el.textContent = value; }
     }
 
     function updatePanel(data) {
-        var er = engagementRate(data);
-        var growth = growth24h(data);
-        var multiple = accountMultiple(data);
-        var media = '';
+        var er = engagementRate(data), growth = growth24h(data), multiple = accountMultiple(data), media = '';
         setTextOrHide('ri-v-views', 'ri-row-views', fmt(data.views));
         setTextOrHide('ri-v-likes', 'ri-row-likes', fmt(data.likes));
         setTextOrHide('ri-v-comments', 'ri-row-comments', fmt(data.comments));
@@ -743,8 +690,8 @@
     function wingAction(text, icon, fn) {
         var b = document.createElement('button');
         b.type = 'button';
-        b.style.cssText = 'width:100%;display:flex;align-items:center;gap:7px;min-height:35px;padding:0 5px;border:0;border-bottom:1px solid rgba(255,255,255,.075);background:transparent;color:#fff;font:600 10.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;';
-        b.innerHTML = iconSvg(icon, 15) + '<span>' + text + '</span>';
+        b.style.cssText = 'width:100%;display:flex;align-items:center;gap:6px;min-height:33px;padding:0 3px;border:0;border-bottom:1px solid rgba(255,255,255,.075);background:transparent;color:#fff;font:600 10px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;';
+        b.innerHTML = iconSvg(icon, 14) + '<span>' + text + '</span>';
         b.onclick = fn;
         return b;
     }
@@ -765,16 +712,15 @@
         if (tool) tool.remove();
         panel = document.createElement('aside');
         panel.id = 'ri-panel';
-        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:min(40vw,180px);z-index:2147483647;background:rgba(14,14,14,.99);color:#fff;border-left:1px solid rgba(255,255,255,.09);box-shadow:-6px 0 20px rgba(0,0,0,.13);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-y:auto;overscroll-behavior:contain;transform:translateX(100%);transition:transform .16s ease-out;padding-bottom:max(12px,env(safe-area-inset-bottom));';
-        header = panelEl('div', 'position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:3px;height:42px;padding:0 6px 0 8px;background:rgba(14,14,14,.99);border-bottom:1px solid rgba(255,255,255,.08);');
-        title = panelEl('div', 'min-width:0;flex:1;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', '리서치');
-        version = panelEl('div', 'font-size:7.5px;color:rgba(255,255,255,.32);', 'v' + VERSION);
-        close = panelEl('button', 'width:24px;height:24px;padding:0;border:0;background:transparent;color:#fff;font-size:19px;line-height:24px;', '×');
-        close.type = 'button';
-        close.onclick = closePanel;
+        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:min(31vw,150px);z-index:2147483647;background:rgba(14,14,14,.99);color:#fff;border-left:1px solid rgba(255,255,255,.09);box-shadow:-5px 0 18px rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-y:auto;overscroll-behavior:contain;transform:translateX(100%);transition:transform .16s ease-out;padding-bottom:max(10px,env(safe-area-inset-bottom));';
+        header = panelEl('div', 'position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:2px;height:40px;padding:0 5px 0 7px;background:rgba(14,14,14,.99);border-bottom:1px solid rgba(255,255,255,.08);');
+        title = panelEl('div', 'min-width:0;flex:1;font-size:10.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', '리서치');
+        version = panelEl('div', 'font-size:7px;color:rgba(255,255,255,.32);', 'v' + VERSION);
+        close = panelEl('button', 'width:22px;height:22px;padding:0;border:0;background:transparent;color:#fff;font-size:18px;line-height:22px;', '×');
+        close.type = 'button'; close.onclick = closePanel;
         header.appendChild(title); header.appendChild(version); header.appendChild(close); panel.appendChild(header);
-        content = panelEl('div', 'padding:2px 8px 9px;');
-        metrics = panelEl('div', 'padding:0 0 6px;');
+        content = panelEl('div', 'padding:2px 7px 8px;');
+        metrics = panelEl('div', 'padding:0 0 5px;');
         wingMetric(metrics, 'ri-v-views', '조회수', 'ri-row-views');
         wingMetric(metrics, 'ri-v-likes', '좋아요', 'ri-row-likes');
         wingMetric(metrics, 'ri-v-comments', '댓글', 'ri-row-comments');
@@ -790,13 +736,14 @@
         actions.appendChild(wingAction('썸네일', 'image', function () { currentData().then(function (d) { openUrl(d.thumbUrl); }); }));
         actions.appendChild(wingAction('링크 복사', 'link', function () { copyText(location.href.split('?')[0]); }));
         content.appendChild(actions);
-        update = panelEl('button', 'width:100%;margin-top:10px;height:29px;border:1px solid rgba(255,255,255,.10);border-radius:7px;background:transparent;color:rgba(255,255,255,.42);font:600 8.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;', '새 버전 설치');
+        update = panelEl('button', 'width:100%;margin-top:8px;height:27px;border:1px solid rgba(255,255,255,.10);border-radius:6px;background:transparent;color:rgba(255,255,255,.42);font:600 8px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;', '새 버전 설치');
         update.type = 'button'; update.onclick = openUpdate; content.appendChild(update);
         panel.appendChild(content); document.documentElement.appendChild(panel);
         requestAnimationFrame(function () { panel.style.transform = 'translateX(0)'; });
         currentData().then(updatePanel);
-        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 900);
-        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 2100);
+        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 700);
+        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 1600);
+        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 3200);
     }
 
     function syncTool() {
@@ -854,7 +801,13 @@
         var code = codeFromUrl(a.href);
         var img = a.querySelector('img');
         var text = cardText(a);
-        var nativeData = {code: code, pageUrl: a.href, views: labelled(text, ['조회수','views','plays','재생']), likes: labelled(text, ['좋아요','likes','like']), comments: labelled(text, ['댓글','comments','comment']), thumbUrl: img ? (img.currentSrc || img.src || '') : ''};
+        var nativeData = {
+            code: code, pageUrl: a.href,
+            views: labelled(text, ['조회수','views','plays','재생']),
+            likes: labelled(text, ['좋아요','likes','like']),
+            comments: labelled(text, ['댓글','comments','comment']),
+            thumbUrl: img ? (img.currentSrc || img.src || '') : ''
+        };
         cache[code] = merge(cache[code], nativeData);
         return cache[code];
     }
@@ -896,9 +849,7 @@
         var grad = a.querySelector('.ri-gradient');
         var actions = a.querySelector('.ri-actions');
         var safe = safeOverlayArea(a);
-        var er = engagementRate(data);
-        var growth = growth24h(data);
-        var multiple = accountMultiple(data);
+        var er = engagementRate(data), growth = growth24h(data), multiple = accountMultiple(data);
         var hasPrimary, hasSecondary;
         if (!primary || !secondary || !grad) return;
         setGridSpan(primary.querySelector('.ri-p-view'), data.views !== null && data.views !== undefined ? '▶' + fmt(data.views) : '');
@@ -909,8 +860,7 @@
         setGridSpan(secondary.querySelector('.ri-s-growth'), growth !== null ? fmtGrowth(growth) : '');
         setGridSpan(secondary.querySelector('.ri-s-multiple'), multiple !== null ? fmtMultiple(multiple) : '');
         setGridSpan(secondary.querySelector('.ri-s-date'), data.date ? String(data.date).slice(5).replace('-', '/') : '');
-        hasPrimary = !!primary.textContent.trim();
-        hasSecondary = !!secondary.textContent.trim();
+        hasPrimary = !!primary.textContent.trim(); hasSecondary = !!secondary.textContent.trim();
         primary.style.display = safe && hasPrimary ? 'flex' : 'none';
         secondary.style.display = safe && hasSecondary ? 'flex' : 'none';
         grad.style.display = safe && hasPrimary ? 'block' : 'none';
@@ -931,14 +881,27 @@
         code = codeFromUrl(a.href); if (!code) return;
         if (a.getAttribute('data-ri') === '1' && a.querySelector('.ri-actions')) { paintCard(a); if (nearViewport(a)) loadPost(a.href); return; }
         a.setAttribute('data-ri', '1'); a.setAttribute('data-ri-code', code); a.style.position = 'relative'; img = a.querySelector('img');
-        grad = document.createElement('div'); grad.className = 'ri-gradient'; grad.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:31%;z-index:35;background:linear-gradient(to top,rgba(0,0,0,.36) 0%,rgba(0,0,0,.10) 52%,rgba(0,0,0,0) 100%);pointer-events:none;display:none;';
-        stack = document.createElement('div'); stack.className = 'ri-bottom-stack'; stack.style.cssText = 'position:absolute;left:4px;right:4px;bottom:4px;z-index:43;display:flex;flex-direction:column;gap:3px;pointer-events:none;';
-        primary = document.createElement('div'); primary.className = 'ri-primary'; primary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:1px;color:#fff;font:750 8.9px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.38px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.78);'; primary.innerHTML = '<span class="ri-p-view"></span><span class="ri-p-like"></span><span class="ri-p-comment"></span><span class="ri-p-repost"></span>';
-        secondary = document.createElement('div'); secondary.className = 'ri-secondary'; secondary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:2px;color:#111;font:800 8.7px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.38px;white-space:nowrap;-webkit-text-stroke:.55px rgba(255,255,255,.96);paint-order:stroke fill;text-shadow:0 0 1px rgba(255,255,255,.98),0 0 2px rgba(255,255,255,.9);'; secondary.innerHTML = '<span class="ri-s-er"></span><span class="ri-s-growth"></span><span class="ri-s-multiple"></span><span class="ri-s-date"></span>';
+        grad = document.createElement('div');
+        grad.className = 'ri-gradient';
+        grad.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:32%;z-index:35;background:linear-gradient(to top,rgba(0,0,0,.36) 0%,rgba(0,0,0,.10) 52%,rgba(0,0,0,0) 100%);pointer-events:none;display:none;';
+        stack = document.createElement('div');
+        stack.className = 'ri-bottom-stack';
+        stack.style.cssText = 'position:absolute;left:3px;right:3px;bottom:4px;z-index:43;display:flex;flex-direction:column;gap:4px;pointer-events:none;';
+        primary = document.createElement('div');
+        primary.className = 'ri-primary';
+        primary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:0;color:#fff;font:750 9.8px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.55px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.82);';
+        primary.innerHTML = '<span class="ri-p-view"></span><span class="ri-p-like"></span><span class="ri-p-comment"></span><span class="ri-p-repost"></span>';
+        secondary = document.createElement('div');
+        secondary.className = 'ri-secondary';
+        secondary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:1px;color:#111;font:800 9.5px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.55px;white-space:nowrap;-webkit-text-stroke:.65px rgba(255,255,255,.98);paint-order:stroke fill;text-shadow:0 0 1px rgba(255,255,255,1),0 0 2px rgba(255,255,255,.95);';
+        secondary.innerHTML = '<span class="ri-s-er"></span><span class="ri-s-growth"></span><span class="ri-s-multiple"></span><span class="ri-s-date"></span>';
         stack.appendChild(primary); stack.appendChild(secondary);
-        actions = document.createElement('div'); actions.className = 'ri-actions'; actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;flex-direction:column;gap:3px;';
+        actions = document.createElement('div');
+        actions.className = 'ri-actions';
+        actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;flex-direction:column;gap:3px;';
         actions.appendChild(gridButton('image', '이미지 또는 썸네일 보기', function () { openUrl(img.currentSrc || img.src || ''); }, 'ri-img'));
-        a.appendChild(grad); a.appendChild(stack); a.appendChild(actions); paintCard(a); if (nearViewport(a)) loadPost(a.href);
+        a.appendChild(grad); a.appendChild(stack); a.appendChild(actions);
+        paintCard(a); if (nearViewport(a)) loadPost(a.href);
     }
 
     function cleanup() {
@@ -946,9 +909,7 @@
         var i, host;
         for (i = 0; i < all.length; i++) { host = all[i].parentElement; if (!host || !validGridAnchor(host) || detailPage()) all[i].remove(); }
         all = document.querySelectorAll('[data-ri="1"]');
-        for (i = 0; i < all.length; i++) {
-            if (!validGridAnchor(all[i]) || detailPage()) { all[i].removeAttribute('data-ri'); all[i].removeAttribute('data-ri-code'); }
-        }
+        for (i = 0; i < all.length; i++) if (!validGridAnchor(all[i]) || detailPage()) { all[i].removeAttribute('data-ri'); all[i].removeAttribute('data-ri-code'); }
         all = ['ri-github-retry','ri-install-ok','ri-file-ok','ri-test-box','ri-update'];
         for (i = 0; i < all.length; i++) { host = document.getElementById(all[i]); if (host) host.remove(); }
     }
