@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      1.7.1
+// @version      1.7.2
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,9 +12,9 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.7.1';
+    var VERSION = '1.7.2';
     var lastUrl = location.href;
-    var timer = null;
+    var scanTimer = null;
 
     function visible(el) {
         if (!el) return false;
@@ -23,7 +23,7 @@
     }
 
     function detailPage() {
-        return /\/(reel|reels|p)\/[A-Za-z0-9_-]+/.test(location.pathname);
+        return /^\/(reel|reels|p)\/[A-Za-z0-9_-]+\/?/.test(location.pathname);
     }
 
     function parseCount(text) {
@@ -65,12 +65,15 @@
 
     function mainVideo() {
         var list = document.getElementsByTagName('video');
-        var best = null, area = 0, i, r, a;
+        var best = null, bestArea = 0, i, r, area;
         for (i = 0; i < list.length; i++) {
             if (!visible(list[i])) continue;
             r = list[i].getBoundingClientRect();
-            a = r.width * r.height;
-            if (a > area) { area = a; best = list[i]; }
+            area = r.width * r.height;
+            if (area > bestArea) {
+                bestArea = area;
+                best = list[i];
+            }
         }
         return best;
     }
@@ -87,15 +90,12 @@
 
     function metric(root, labels) {
         var all = root.querySelectorAll('button,a,span,div');
-        var i, el, aria, title, text, n, p;
+        var i, el, n, p;
         for (i = 0; i < all.length; i++) {
             el = all[i];
-            aria = el.getAttribute('aria-label') || '';
-            title = el.getAttribute('title') || '';
-            text = el.textContent || '';
-            n = labelled(aria, labels); if (n !== null) return n;
-            n = labelled(title, labels); if (n !== null) return n;
-            n = labelled(text, labels); if (n !== null) return n;
+            n = labelled(el.getAttribute('aria-label') || '', labels); if (n !== null) return n;
+            n = labelled(el.getAttribute('title') || '', labels); if (n !== null) return n;
+            n = labelled(el.textContent || '', labels); if (n !== null) return n;
             p = el.parentElement;
             if (p) { n = labelled(p.textContent || '', labels); if (n !== null) return n; }
         }
@@ -129,16 +129,24 @@
         var l = document.createElement('span');
         var b = document.createElement('b');
         r.style.cssText = 'display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eee;';
-        l.textContent = label; b.textContent = value;
-        r.appendChild(l); r.appendChild(b); panel.appendChild(r);
+        l.textContent = label;
+        b.textContent = value;
+        r.appendChild(l);
+        r.appendChild(b);
+        panel.appendChild(r);
     }
 
     function openUrl(url) {
         var a;
         if (!url) return;
         a = document.createElement('a');
-        a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.style.display = 'none';
-        document.body.appendChild(a); a.click(); a.remove();
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
     }
 
     function closePanel() {
@@ -167,7 +175,8 @@
         close.style.cssText = 'float:right;border:0;background:#eee;border-radius:999px;width:34px;height:34px;font-size:20px;';
         close.onclick = closePanel;
         title.textContent = 'Reels Inspector ' + VERSION;
-        panel.appendChild(close); panel.appendChild(title);
+        panel.appendChild(close);
+        panel.appendChild(title);
         row(panel, '조회수', fmt(data.views));
         row(panel, '좋아요', fmt(data.likes));
         row(panel, '댓글', fmt(data.comments));
@@ -179,11 +188,15 @@
         }
         row(panel, '영상', info);
         actions.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;';
-        img.textContent = '썸네일 열기'; vid.textContent = '영상 열기';
+        img.textContent = '썸네일 열기';
+        vid.textContent = '영상 열기';
         img.style.cssText = vid.style.cssText = 'border:0;border-radius:11px;background:#111;color:#fff;padding:11px;font-weight:800;';
         img.onclick = function () { openUrl(data.thumbUrl); };
         vid.onclick = function () { openUrl(data.videoUrl); };
-        actions.appendChild(img); actions.appendChild(vid); panel.appendChild(actions); bg.appendChild(panel);
+        actions.appendChild(img);
+        actions.appendChild(vid);
+        panel.appendChild(actions);
+        bg.appendChild(panel);
         document.documentElement.appendChild(bg);
         bg.onclick = function (e) { if (e.target === bg) closePanel(); };
     }
@@ -194,9 +207,31 @@
         if (!detailPage()) { if (b) b.remove(); return; }
         if (b) return;
         b = document.createElement('button');
-        b.id = 'ri-tool'; b.textContent = '도구';
+        b.id = 'ri-tool';
+        b.textContent = '도구';
         b.style.cssText = 'position:fixed;right:14px;bottom:90px;z-index:2147483600;border:0;border-radius:999px;background:#111;color:#fff;padding:11px 14px;font:800 13px system-ui;';
-        b.onclick = openPanel; document.documentElement.appendChild(b);
+        b.onclick = openPanel;
+        document.documentElement.appendChild(b);
+    }
+
+    function exactPostPath(a) {
+        var path = a.pathname || '';
+        return /^\/(reel|reels|p)\/[A-Za-z0-9_-]+\/?$/.test(path);
+    }
+
+    function validGridAnchor(a) {
+        var img, ar, ir;
+        if (!a || !a.isConnected || !exactPostPath(a)) return false;
+        if (a.closest('nav,header,[role="navigation"],[role="dialog"],#ri-panel')) return false;
+        img = a.querySelector('img');
+        if (!img) return false;
+        ar = a.getBoundingClientRect();
+        ir = img.getBoundingClientRect();
+        if (ar.width < 80 || ar.height < 80) return false;
+        if (ir.width < 80 || ir.height < 80) return false;
+        if (ir.width < ar.width * 0.55) return false;
+        if (ar.width > window.innerWidth * 0.9 && ar.height < 180) return false;
+        return true;
     }
 
     function cardText(a) {
@@ -211,78 +246,100 @@
         return out.join(' ');
     }
 
-    function button(text, fn) {
+    function gridButton(text, title, fn) {
         var b = document.createElement('button');
         b.textContent = text;
-        b.style.cssText = 'width:34px;height:34px;border:0;border-radius:10px;background:rgba(0,0,0,.72);color:#fff;font:800 15px system-ui;';
+        b.title = title;
+        b.style.cssText = 'min-width:38px;height:32px;padding:0 7px;border:0;border-radius:9px;background:rgba(0,0,0,.74);color:#fff;font:800 10px system-ui;letter-spacing:.2px;';
         b.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
         b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); fn(); }, true);
         return b;
     }
 
     function renderCard(a) {
-        var img, text, views, likes, comments, box, actions, lines, row2;
-        if (!a || !a.isConnected || a.getAttribute('data-ri') === '1') return;
-        img = a.querySelector('img'); if (!img) return;
-        a.setAttribute('data-ri', '1'); a.style.position = 'relative';
+        var img, text, views, likes, comments, box, actions, lines, second;
+        if (!validGridAnchor(a)) return;
+        if (a.getAttribute('data-ri') === '1' && a.querySelector('.ri-actions')) return;
+        a.setAttribute('data-ri', '1');
+        a.style.position = 'relative';
+        img = a.querySelector('img');
         text = cardText(a);
         views = labelled(text, ['조회수', 'views', 'plays', '재생']);
         likes = labelled(text, ['좋아요', 'likes', 'like']);
         comments = labelled(text, ['댓글', 'comments', 'comment']);
+
         box = document.createElement('div');
-        box.className = 'ri-m';
+        box.className = 'ri-metrics';
         box.style.cssText = 'position:absolute;left:4px;bottom:4px;z-index:40;background:rgba(0,0,0,.68);color:#fff;border-radius:7px;padding:4px 6px;font:700 11px/1.3 system-ui;white-space:pre-line;pointer-events:none;';
-        lines = []; row2 = [];
+        lines = [];
+        second = [];
         if (views !== null) lines.push('▶ ' + fmt(views));
-        if (likes !== null) row2.push('♥ ' + fmt(likes));
-        if (comments !== null) row2.push('💬 ' + fmt(comments));
-        if (row2.length) lines.push(row2.join(' · '));
-        box.textContent = lines.join('\n'); if (!lines.length) box.style.display = 'none';
+        if (likes !== null) second.push('♥ ' + fmt(likes));
+        if (comments !== null) second.push('💬 ' + fmt(comments));
+        if (second.length) lines.push(second.join(' · '));
+        box.textContent = lines.join('\n');
+        if (!lines.length) box.style.display = 'none';
+
         actions = document.createElement('div');
-        actions.className = 'ri-a';
+        actions.className = 'ri-actions';
         actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;flex-direction:column;gap:4px;';
-        actions.appendChild(button('▧', function () { openUrl(img.currentSrc || img.src || ''); }));
-        if (/\/(reel|reels)\//.test(a.pathname || a.href)) actions.appendChild(button('▶', function () { openUrl(a.href); }));
-        a.appendChild(box); a.appendChild(actions);
+        actions.appendChild(gridButton('IMG', '이미지 열기', function () { openUrl(img.currentSrc || img.src || ''); }));
+        if (/\/(reel|reels)\//.test(a.pathname || '')) {
+            actions.appendChild(gridButton('VID', '릴스 열기', function () { openUrl(a.href); }));
+        }
+
+        a.appendChild(box);
+        a.appendChild(actions);
     }
 
-    function clearGrid() {
+    function clearInvalid() {
         var all = document.querySelectorAll('[data-ri="1"]');
         var i, x;
         for (i = 0; i < all.length; i++) {
-            x = all[i].querySelector('.ri-m'); if (x) x.remove();
-            x = all[i].querySelector('.ri-a'); if (x) x.remove();
+            if (validGridAnchor(all[i]) && !detailPage()) continue;
+            x = all[i].querySelector('.ri-metrics'); if (x) x.remove();
+            x = all[i].querySelector('.ri-actions'); if (x) x.remove();
             all[i].removeAttribute('data-ri');
         }
     }
 
     function scan() {
-        var all, i, r;
-        if (detailPage()) { clearGrid(); syncTool(); return; }
+        var all, candidates = [], i;
+        clearInvalid();
         syncTool();
+        if (detailPage()) return;
         all = document.querySelectorAll('a[href*="/reel/"],a[href*="/reels/"],a[href*="/p/"]');
-        for (i = 0; i < all.length; i++) {
-            if (!all[i].querySelector('img')) continue;
-            r = all[i].getBoundingClientRect();
-            if (r.width < 70 || r.height < 70) continue;
-            renderCard(all[i]);
-        }
+        for (i = 0; i < all.length; i++) if (validGridAnchor(all[i])) candidates.push(all[i]);
+        if (candidates.length < 3) return;
+        for (i = 0; i < candidates.length; i++) renderCard(candidates[i]);
     }
 
     function schedule() {
-        clearTimeout(timer);
-        timer = setTimeout(scan, 250);
+        clearTimeout(scanTimer);
+        scanTimer = setTimeout(scan, 250);
+    }
+
+    function status() {
+        var d = document.createElement('div');
+        d.textContent = 'RI ' + VERSION;
+        d.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483646;background:#111;color:#fff;padding:6px 9px;border-radius:8px;font:700 12px system-ui;pointer-events:none;';
+        (document.body || document.documentElement).appendChild(d);
+        setTimeout(function () { if (d.parentNode) d.remove(); }, 1400);
     }
 
     function start() {
         var observer = new MutationObserver(schedule);
-        observer.observe(document.documentElement, { childList: true, subtree: true });
+        observer.observe(document.documentElement, { childList:true, subtree:true });
+        status();
         scan();
         setInterval(function () {
             if (location.href !== lastUrl) {
                 lastUrl = location.href;
-                clearGrid(); closePanel(); schedule();
-            } else syncTool();
+                closePanel();
+                schedule();
+            } else {
+                syncTool();
+            }
         }, 900);
     }
 
