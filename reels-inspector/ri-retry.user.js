@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      1.9.0
+// @version      2.0.0
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.9.0';
+    var VERSION = '2.0.0';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var cache = {};
     var queue = [];
@@ -63,11 +63,20 @@
     }
 
     function fmt(n) {
-        if (n === null || n === undefined) return '확인 불가';
+        if (n === null || n === undefined || !isFinite(Number(n))) return '';
+        n = Number(n);
         if (n >= 100000000) return (n / 100000000).toFixed(1).replace(/\.0$/, '') + '억';
         if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, '') + '만';
         if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-        return String(n);
+        return String(Math.round(n));
+    }
+
+    function fmtPercent(n) {
+        if (n === null || n === undefined || !isFinite(Number(n))) return '';
+        n = Number(n);
+        if (n >= 100) return n.toFixed(0) + '%';
+        if (n >= 10) return n.toFixed(1).replace(/\.0$/, '') + '%';
+        return n.toFixed(2).replace(/0$/, '').replace(/\.$/, '') + '%';
     }
 
     function labelled(text, labels) {
@@ -489,6 +498,16 @@
         });
     }
 
+    function engagementRate(data) {
+        var views = Number(data && data.views);
+        var likes = Number(data && data.likes || 0);
+        var comments = Number(data && data.comments || 0);
+        var reposts = Number(data && data.reposts || 0);
+        if (!views || views <= 0) return null;
+        if (!likes && !comments && !reposts) return null;
+        return ((likes + comments * 4 + reposts * 4) / views) * 100;
+    }
+
     function openUrl(url) {
         var a;
         if (!url) return;
@@ -506,117 +525,240 @@
         window.open(UPDATE_URL + '?ri=' + Date.now(), '_blank');
     }
 
-    function addRow(panel, label, value, id) {
-        var row = document.createElement('div');
-        var left = document.createElement('span');
-        var right = document.createElement('b');
+    function iconSvg(type, size) {
+        var s = size || 20;
+        var common = 'width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+        if (type === 'image') {
+            return '<svg ' + common + '><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="8.5" cy="9" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>';
+        }
+        if (type === 'video') {
+            return '<svg ' + common + '><rect x="3" y="5" width="14" height="14" rx="2"></rect><path d="M17 9l4-2v10l-4-2z"></path><path d="M8.5 9.2l4 2.8-4 2.8z" fill="currentColor" stroke="none"></path></svg>';
+        }
+        if (type === 'research') {
+            return '<svg ' + common + '><path d="M4 19V13"></path><path d="M9 19V9"></path><path d="M14 19V5"></path><circle cx="17.5" cy="14.5" r="3.5"></circle><path d="M20 17l2 2"></path></svg>';
+        }
+        if (type === 'link') {
+            return '<svg ' + common + '><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"></path><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"></path></svg>';
+        }
+        return '';
+    }
 
-        row.style.cssText = 'display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eee;';
-        left.textContent = label;
-        right.textContent = value;
-        if (id) right.id = id;
+    function findMoreControl() {
+        var all = document.querySelectorAll('button,[role="button"],a');
+        var best = null;
+        var bestScore = -1;
+        var i, el, r, label, svg, score;
 
-        row.appendChild(left);
-        row.appendChild(right);
-        panel.appendChild(row);
+        for (i = 0; i < all.length; i++) {
+            el = all[i];
+            if (!visible(el)) continue;
+            r = el.getBoundingClientRect();
+            if (r.width < 20 || r.height < 20 || r.width > 90 || r.height > 90) continue;
+            if (r.right < innerWidth * 0.60) continue;
+
+            svg = el.querySelector('svg[aria-label],svg[title]');
+            label = [
+                el.getAttribute('aria-label') || '',
+                el.getAttribute('title') || '',
+                svg && svg.getAttribute('aria-label') || '',
+                svg && svg.getAttribute('title') || ''
+            ].join(' ').toLowerCase();
+
+            if (!/(더\s*보기|옵션|more|options)/i.test(label)) continue;
+
+            score = 0;
+            if (r.right > innerWidth * 0.85) score += 3;
+            if (r.top > innerHeight * 0.25) score += 2;
+            if (r.bottom < innerHeight * 0.92) score += 1;
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = el;
+            }
+        }
+        return best;
+    }
+
+    function positionTool() {
+        var b = document.getElementById('ri-tool');
+        var more, r, x, y;
+        if (!b) return;
+
+        more = findMoreControl();
+        if (more) {
+            r = more.getBoundingClientRect();
+            x = Math.max(4, Math.min(innerWidth - 46, r.left + r.width / 2 - 21));
+            y = Math.max(6, Math.min(innerHeight - 48, r.bottom + 5));
+            b.style.left = x + 'px';
+            b.style.top = y + 'px';
+            b.style.right = 'auto';
+            b.style.bottom = 'auto';
+        } else {
+            b.style.left = 'auto';
+            b.style.top = 'auto';
+            b.style.right = '10px';
+            b.style.bottom = '70px';
+        }
+    }
+
+    function panelEl(tag, css, text) {
+        var el = document.createElement(tag);
+        if (css) el.style.cssText = css;
+        if (text !== undefined && text !== null) el.textContent = text;
+        return el;
+    }
+
+    function metricBlock(parent, id, label, hostId) {
+        var box = panelEl('div', 'flex:1;min-width:0;padding:10px 0;');
+        var value = panelEl('div', 'font-size:16px;line-height:1.15;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', '—');
+        var lab = panelEl('div', 'margin-top:4px;font-size:10.5px;line-height:1.2;color:rgba(255,255,255,.54);', label);
+        if (hostId) box.id = hostId;
+        value.id = id;
+        box.appendChild(value);
+        box.appendChild(lab);
+        parent.appendChild(box);
+        return box;
+    }
+
+    function infoRow(parent, id, label, rowId) {
+        var row = panelEl('div', 'display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.08);');
+        var lab = panelEl('div', 'font-size:11px;color:rgba(255,255,255,.50);', label);
+        var val = panelEl('div', 'max-width:68%;font-size:12px;line-height:1.35;color:#fff;text-align:right;word-break:break-word;', '—');
+        if (rowId) row.id = rowId;
+        val.id = id;
+        row.appendChild(lab);
+        row.appendChild(val);
+        parent.appendChild(row);
+        return row;
+    }
+
+    function setTextOrHide(valueId, hostId, value) {
+        var el = document.getElementById(valueId);
+        var host = document.getElementById(hostId);
+        if (!el || !host) return;
+        if (value === null || value === undefined || value === '') {
+            host.style.display = 'none';
+        } else {
+            host.style.display = '';
+            el.textContent = value;
+        }
     }
 
     function updatePanel(data) {
-        var x, info = '확인 불가';
-        x = document.getElementById('ri-v-views'); if (x) x.textContent = fmt(data.views);
-        x = document.getElementById('ri-v-likes'); if (x) x.textContent = fmt(data.likes);
-        x = document.getElementById('ri-v-comments'); if (x) x.textContent = fmt(data.comments);
-        x = document.getElementById('ri-v-reposts'); if (x) x.textContent = fmt(data.reposts);
-        x = document.getElementById('ri-v-date'); if (x) x.textContent = data.date || '확인 불가';
+        var er = engagementRate(data);
+        var media = '';
 
-        if (data.width && data.height) {
-            info = data.width + '×' + data.height;
-            if (data.duration !== null && data.duration !== undefined) {
-                info += ' · ' + Number(data.duration).toFixed(1) + '초';
-            }
-        }
+        setTextOrHide('ri-v-views', 'ri-metric-views', fmt(data.views));
+        setTextOrHide('ri-v-likes', 'ri-metric-likes', fmt(data.likes));
+        setTextOrHide('ri-v-comments', 'ri-metric-comments', fmt(data.comments));
+        setTextOrHide('ri-v-reposts', 'ri-metric-reposts', fmt(data.reposts));
+        setTextOrHide('ri-v-er', 'ri-metric-er', er !== null ? fmtPercent(er) : '');
+        setTextOrHide('ri-v-date', 'ri-row-date', data.date || '');
 
-        x = document.getElementById('ri-v-video'); if (x) x.textContent = info;
+        if (data.duration !== null && data.duration !== undefined) media += Number(data.duration).toFixed(1) + '초';
+        if (data.width && data.height) media += (media ? ' · ' : '') + data.width + '×' + data.height;
+        setTextOrHide('ri-v-media', 'ri-row-media', media);
+    }
+
+    function wingAction(text, icon, fn) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:0 10px;border:1px solid rgba(255,255,255,.15);border-radius:9px;background:rgba(255,255,255,.055);color:#fff;font:600 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;';
+        b.innerHTML = iconSvg(icon, 17) + '<span>' + text + '</span>';
+        b.onclick = fn;
+        return b;
     }
 
     function closePanel() {
-        var bg = document.getElementById('ri-panel');
-        if (bg) bg.remove();
-        syncTool();
+        var panel = document.getElementById('ri-panel');
+        if (panel) {
+            panel.style.transform = 'translateX(100%)';
+            setTimeout(function () {
+                if (panel.parentNode) panel.remove();
+                syncTool();
+            }, 190);
+        } else {
+            syncTool();
+        }
     }
 
     function openPanel() {
+        var existing = document.getElementById('ri-panel');
         var tool = document.getElementById('ri-tool');
-        var bg = document.createElement('div');
-        var panel = document.createElement('div');
-        var close = document.createElement('button');
-        var title = document.createElement('b');
-        var actions = document.createElement('div');
-        var img = document.createElement('button');
-        var vid = document.createElement('button');
-        var update = document.createElement('button');
-        var initial = currentDomData();
+        var panel, header, title, version, close, content, primary, secondary, meta, actions, footer, update;
 
+        if (existing) return;
         if (tool) tool.remove();
 
-        bg.id = 'ri-panel';
-        bg.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.4);';
+        panel = document.createElement('aside');
+        panel.id = 'ri-panel';
+        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:min(72vw,360px);z-index:2147483647;background:rgba(14,14,14,.975);color:#fff;border-left:1px solid rgba(255,255,255,.10);box-shadow:-14px 0 34px rgba(0,0,0,.20);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-y:auto;overscroll-behavior:contain;transform:translateX(100%);transition:transform .18s ease-out;padding-bottom:max(16px,env(safe-area-inset-bottom));';
 
-        panel.style.cssText = 'position:absolute;left:0;right:0;bottom:0;background:#fff;color:#111;border-radius:18px 18px 0 0;padding:14px 14px 24px;font:14px system-ui;';
-
-        close.textContent = '×';
-        close.style.cssText = 'float:right;border:0;background:#eee;border-radius:999px;width:34px;height:34px;font-size:20px;';
+        header = panelEl('div', 'position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:9px;padding:12px 12px 10px;background:rgba(14,14,14,.96);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,.08);');
+        title = panelEl('div', 'min-width:0;flex:1;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', '콘텐츠 리서치');
+        version = panelEl('div', 'font-size:9.5px;color:rgba(255,255,255,.40);', 'v' + VERSION);
+        close = panelEl('button', 'width:32px;height:32px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;font-size:25px;line-height:32px;', '×');
+        close.type = 'button';
         close.onclick = closePanel;
+        header.appendChild(title);
+        header.appendChild(version);
+        header.appendChild(close);
+        panel.appendChild(header);
 
-        title.textContent = 'Reels Inspector ' + VERSION;
+        content = panelEl('div', 'padding:4px 12px 10px;');
 
-        panel.appendChild(close);
-        panel.appendChild(title);
+        primary = panelEl('div', 'display:flex;gap:12px;border-bottom:1px solid rgba(255,255,255,.08);');
+        metricBlock(primary, 'ri-v-views', '조회수', 'ri-metric-views');
+        metricBlock(primary, 'ri-v-er', 'ER', 'ri-metric-er');
+        content.appendChild(primary);
 
-        addRow(panel, '조회수', fmt(initial.views), 'ri-v-views');
-        addRow(panel, '좋아요', fmt(initial.likes), 'ri-v-likes');
-        addRow(panel, '댓글', fmt(initial.comments), 'ri-v-comments');
-        addRow(panel, '리포스트', fmt(initial.reposts), 'ri-v-reposts');
-        addRow(panel, '날짜', initial.date || '확인 불가', 'ri-v-date');
-        addRow(panel, '영상', '읽는 중…', 'ri-v-video');
+        secondary = panelEl('div', 'display:flex;gap:8px;border-bottom:1px solid rgba(255,255,255,.08);');
+        metricBlock(secondary, 'ri-v-likes', '좋아요', 'ri-metric-likes');
+        metricBlock(secondary, 'ri-v-comments', '댓글', 'ri-metric-comments');
+        metricBlock(secondary, 'ri-v-reposts', '리포스트', 'ri-metric-reposts');
+        content.appendChild(secondary);
 
-        actions.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;';
+        meta = panelEl('div', 'padding-top:2px;');
+        infoRow(meta, 'ri-v-date', '게시일', 'ri-row-date');
+        infoRow(meta, 'ri-v-media', '영상', 'ri-row-media');
+        content.appendChild(meta);
 
-        img.textContent = '썸네일 열기';
-        vid.textContent = '영상 열기';
-        img.style.cssText = vid.style.cssText = 'border:0;border-radius:11px;background:#111;color:#fff;padding:11px;font-weight:800;';
-
-        img.onclick = function () {
-            currentData().then(function (d) { openUrl(d.thumbUrl); });
-        };
-
-        vid.onclick = function () {
+        actions = panelEl('div', 'display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:12px 0 10px;border-bottom:1px solid rgba(255,255,255,.08);');
+        actions.appendChild(wingAction('순수 영상', 'video', function () {
             currentData().then(function (d) { openUrl(d.videoUrl); });
-        };
+        }));
+        actions.appendChild(wingAction('썸네일', 'image', function () {
+            currentData().then(function (d) { openUrl(d.thumbUrl); });
+        }));
+        actions.appendChild(wingAction('링크 복사', 'link', function () {
+            var url = location.href.split('?')[0];
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).catch(function () {});
+            }
+        }));
+        content.appendChild(actions);
 
-        actions.appendChild(img);
-        actions.appendChild(vid);
-        panel.appendChild(actions);
-
-        update.textContent = '새 버전 설치';
-        update.style.cssText = 'width:100%;margin-top:8px;border:0;border-radius:11px;background:#eee;color:#111;padding:11px;font-weight:800;';
+        footer = panelEl('div', 'padding-top:12px;');
+        update = panelEl('button', 'width:100%;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:transparent;color:rgba(255,255,255,.58);font:600 10.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;', '새 버전 설치');
+        update.type = 'button';
         update.onclick = openUpdate;
-        panel.appendChild(update);
+        footer.appendChild(update);
+        content.appendChild(footer);
 
-        bg.appendChild(panel);
-        document.documentElement.appendChild(bg);
+        panel.appendChild(content);
+        document.documentElement.appendChild(panel);
 
-        bg.onclick = function (e) {
-            if (e.target === bg) closePanel();
-        };
+        requestAnimationFrame(function () {
+            panel.style.transform = 'translateX(0)';
+        });
 
         currentData().then(updatePanel);
         setTimeout(function () {
             if (document.getElementById('ri-panel')) currentData().then(updatePanel);
-        }, 1000);
+        }, 900);
         setTimeout(function () {
             if (document.getElementById('ri-panel')) currentData().then(updatePanel);
-        }, 2200);
+        }, 2100);
     }
 
     function syncTool() {
@@ -632,14 +774,19 @@
             return;
         }
 
-        if (b) return;
+        if (!b) {
+            b = document.createElement('button');
+            b.id = 'ri-tool';
+            b.type = 'button';
+            b.setAttribute('aria-label', '콘텐츠 리서치');
+            b.title = '콘텐츠 리서치';
+            b.style.cssText = 'position:fixed;z-index:2147483600;width:42px;height:42px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.08);color:#fff;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55));touch-action:manipulation;';
+            b.innerHTML = iconSvg('research', 24);
+            b.onclick = openPanel;
+            document.documentElement.appendChild(b);
+        }
 
-        b = document.createElement('button');
-        b.id = 'ri-tool';
-        b.textContent = '도구';
-        b.style.cssText = 'position:fixed;right:14px;bottom:90px;z-index:2147483600;border:0;border-radius:999px;background:#111;color:#fff;padding:11px 14px;font:800 13px system-ui;';
-        b.onclick = openPanel;
-        document.documentElement.appendChild(b);
+        positionTool();
     }
 
     function exactPostPath(a) {
@@ -712,12 +859,14 @@
         return /reel|video|동영상|릴스/.test(text);
     }
 
-    function gridButton(text, title, fn, cls) {
+    function gridButton(type, title, fn, cls) {
         var b = document.createElement('button');
-        b.textContent = text;
+        b.type = 'button';
         b.title = title;
+        b.setAttribute('aria-label', title);
         if (cls) b.className = cls;
-        b.style.cssText = 'width:28px;height:28px;padding:0;border:0;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:800 10px system-ui;';
+        b.style.cssText = 'width:25px;height:25px;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:50%;background:rgba(0,0,0,.30);color:#fff;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);';
+        b.innerHTML = iconSvg(type, 15);
 
         b.addEventListener('pointerdown', function (e) {
             e.preventDefault();
@@ -737,41 +886,47 @@
         var actions = a.querySelector('.ri-actions');
         if (!actions || a.querySelector('.ri-vid') || !isVideoCard(a, data)) return;
 
-        actions.appendChild(gridButton('V', '영상 열기', function () {
+        actions.appendChild(gridButton('video', '순수 영상 보기', function () {
             loadPost(a.href).then(function (d) {
                 openUrl(d.videoUrl || a.href);
             });
         }, 'ri-vid'));
     }
 
+    function topText(data) {
+        var parts = [];
+        var er = engagementRate(data);
+        if (data.reposts !== null && data.reposts !== undefined) parts.push('↻' + fmt(data.reposts));
+        if (er !== null) parts.push('ER ' + fmtPercent(er));
+        if (data.date) parts.push(String(data.date).slice(5));
+        return parts.join(' · ');
+    }
+
+    function bottomText(data) {
+        var parts = [];
+        if (data.views !== null && data.views !== undefined) parts.push('▶' + fmt(data.views));
+        if (data.likes !== null && data.likes !== undefined) parts.push('♥' + fmt(data.likes));
+        if (data.comments !== null && data.comments !== undefined) parts.push('●' + fmt(data.comments));
+        return parts.join('  ');
+    }
+
     function paintCard(a) {
         var data = cardData(a);
-        var box = a.querySelector('.ri-metrics');
+        var bottom = a.querySelector('.ri-metrics');
+        var top = a.querySelector('.ri-badges');
+        var grad = a.querySelector('.ri-gradient');
         var actions = a.querySelector('.ri-actions');
-        var lines = [];
-        var second = [];
         var safe = safeOverlayArea(a);
-        var hasMetric = false;
+        var btm = bottomText(data);
+        var badge = topText(data);
 
-        if (!box) return;
+        if (!bottom || !top || !grad) return;
 
-        if (data.views !== null && data.views !== undefined) {
-            lines.push('▶ ' + fmt(data.views));
-            hasMetric = true;
-        }
-        if (data.likes !== null && data.likes !== undefined) {
-            second.push('♥ ' + fmt(data.likes));
-            hasMetric = true;
-        }
-        if (data.comments !== null && data.comments !== undefined) {
-            second.push('💬 ' + fmt(data.comments));
-            hasMetric = true;
-        }
-        if (second.length) lines.push(second.join(' · '));
-        if (hasMetric && data.date) lines.push(String(data.date).slice(5));
-
-        box.textContent = lines.join('\n');
-        box.style.display = safe && hasMetric ? 'block' : 'none';
+        bottom.textContent = btm;
+        top.textContent = badge;
+        bottom.style.display = safe && btm ? 'block' : 'none';
+        top.style.display = safe && badge ? 'block' : 'none';
+        grad.style.display = safe && (btm || badge) ? 'block' : 'none';
         if (actions) actions.style.display = safe ? 'flex' : 'none';
 
         ensureVideoButton(a, data);
@@ -788,7 +943,7 @@
     }
 
     function renderCard(a) {
-        var code, img, box, actions;
+        var code, img, grad, bottom, top, actions;
         if (!validGridAnchor(a)) return;
 
         code = codeFromUrl(a.href);
@@ -803,22 +958,31 @@
         a.setAttribute('data-ri', '1');
         a.setAttribute('data-ri-code', code);
         a.style.position = 'relative';
-
         img = a.querySelector('img');
 
-        box = document.createElement('div');
-        box.className = 'ri-metrics';
-        box.style.cssText = 'position:absolute;left:4px;bottom:4px;z-index:40;background:rgba(0,0,0,.68);color:#fff;border-radius:7px;padding:4px 6px;font:700 11px/1.3 system-ui;white-space:pre-line;pointer-events:none;display:none;';
+        grad = document.createElement('div');
+        grad.className = 'ri-gradient';
+        grad.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:40%;z-index:35;background:linear-gradient(to top,rgba(0,0,0,.40) 0%,rgba(0,0,0,.15) 42%,rgba(0,0,0,0) 100%);pointer-events:none;display:none;';
+
+        bottom = document.createElement('div');
+        bottom.className = 'ri-metrics';
+        bottom.style.cssText = 'position:absolute;left:4px;right:4px;bottom:5px;z-index:42;color:#fff;font:700 9.5px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.25px;white-space:nowrap;overflow:hidden;text-overflow:clip;text-shadow:0 1px 2px rgba(0,0,0,.75);pointer-events:none;display:none;';
+
+        top = document.createElement('div');
+        top.className = 'ri-badges';
+        top.style.cssText = 'position:absolute;left:4px;top:5px;z-index:43;max-width:calc(100% - 38px);padding:2px 4px;border-radius:5px;background:rgba(0,0,0,.24);backdrop-filter:blur(2px);color:#fff;font:650 8.5px/1.15 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,.7);pointer-events:none;display:none;';
 
         actions = document.createElement('div');
         actions.className = 'ri-actions';
         actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;flex-direction:column;gap:3px;';
 
-        actions.appendChild(gridButton('I', '이미지 열기', function () {
+        actions.appendChild(gridButton('image', '이미지 또는 썸네일 보기', function () {
             openUrl(img.currentSrc || img.src || '');
         }, 'ri-img'));
 
-        a.appendChild(box);
+        a.appendChild(grad);
+        a.appendChild(bottom);
+        a.appendChild(top);
         a.appendChild(actions);
 
         paintCard(a);
@@ -826,7 +990,7 @@
     }
 
     function cleanup() {
-        var all = document.querySelectorAll('.ri-actions,.ri-metrics');
+        var all = document.querySelectorAll('.ri-actions,.ri-metrics,.ri-badges,.ri-gradient');
         var i, host;
 
         for (i = 0; i < all.length; i++) {
@@ -871,18 +1035,22 @@
 
     function status() {
         var d = document.createElement('div');
-        d.textContent = 'RI ' + VERSION;
-        d.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483646;background:#111;color:#fff;padding:6px 9px;border-radius:8px;font:700 12px system-ui;pointer-events:none;';
+        d.textContent = 'Reels Inspector ' + VERSION;
+        d.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483646;background:rgba(0,0,0,.70);color:#fff;padding:6px 9px;border-radius:8px;font:600 11px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;pointer-events:none;';
         (document.body || document.documentElement).appendChild(d);
         setTimeout(function () {
             if (d.parentNode) d.remove();
-        }, 1100);
+        }, 1050);
     }
 
     function start() {
         var observer = new MutationObserver(schedule);
         observer.observe(document.documentElement, {childList: true, subtree: true});
         addEventListener('scroll', schedule, true);
+        addEventListener('resize', function () {
+            positionTool();
+            schedule();
+        }, true);
 
         cleanup();
         status();
@@ -898,7 +1066,7 @@
                 syncTool();
                 schedule();
             }
-        }, 900);
+        }, 800);
     }
 
     installNetworkObserver();
