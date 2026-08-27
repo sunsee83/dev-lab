@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      1.8.0
+// @version      1.8.1
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.8.0';
+    var VERSION = '1.8.1';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var lastUrl = location.href;
     var scanTimer = null;
@@ -316,7 +316,7 @@
     }
 
     function openUpdate() {
-        openUrl(UPDATE_URL + '?t=' + Date.now());
+        window.location.href = UPDATE_URL;
     }
 
     function closePanel() {
@@ -378,7 +378,7 @@
         actions.appendChild(vid);
         panel.appendChild(actions);
 
-        update.textContent = '업데이트 확인';
+        update.textContent = '업데이트 설치';
         update.style.cssText = 'width:100%;margin-top:8px;border:0;border-radius:11px;background:#eee;color:#111;padding:11px;font-weight:800;';
         update.onclick = openUpdate;
         panel.appendChild(update);
