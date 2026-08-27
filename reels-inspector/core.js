@@ -2,6 +2,8 @@
   'use strict';
   const RI = globalThis.__RI = globalThis.__RI || {};
   RI.version = typeof __RI_VERSION === 'string' ? __RI_VERSION : 'dev';
+  const showDiag=()=>{if(document.getElementById('ri-diag'))return;const el=document.createElement('div');el.id='ri-diag';el.textContent=`RI ${RI.version}`;Object.assign(el.style,{position:'fixed',left:'8px',top:'8px',zIndex:2147483647,background:'#111',color:'#fff',padding:'5px 8px',borderRadius:'8px',font:'700 11px system-ui',pointerEvents:'none'});(document.documentElement||document.body)?.appendChild(el);};
+  if(document.documentElement)showDiag();else document.addEventListener('DOMContentLoaded',showDiag,{once:true});
   RI.state = RI.state || {
     posts: new Map(), fetches: new Map(), gridItems: new Map(), netCount: 0,
     url: location.href, settings: {}, started: false
