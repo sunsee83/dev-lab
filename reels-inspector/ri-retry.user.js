@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      2.0.1
+// @version      2.1.0
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,8 +12,10 @@
 (function () {
     'use strict';
 
-    var VERSION = '2.0.1';
+    var VERSION = '2.1.0';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
+    var SNAP_KEY = 'ri:snapshots:v1';
+    var POST_KEY = 'ri:posts:v1';
     var cache = {};
     var queue = [];
     var active = 0;
@@ -74,9 +76,19 @@
     function fmtPercent(n) {
         if (n === null || n === undefined || !isFinite(Number(n))) return '';
         n = Number(n);
-        if (n >= 100) return n.toFixed(0) + '%';
-        if (n >= 10) return n.toFixed(1).replace(/\.0$/, '') + '%';
+        if (Math.abs(n) >= 100) return n.toFixed(0) + '%';
+        if (Math.abs(n) >= 10) return n.toFixed(1).replace(/\.0$/, '') + '%';
         return n.toFixed(2).replace(/0$/, '').replace(/\.$/, '') + '%';
+    }
+
+    function fmtGrowth(n) {
+        if (n === null || n === undefined || !isFinite(Number(n))) return '';
+        return (Number(n) >= 0 ? '+' : '') + fmtPercent(n);
+    }
+
+    function fmtMultiple(n) {
+        if (n === null || n === undefined || !isFinite(Number(n)) || Number(n) <= 0) return '';
+        return '×' + Number(n).toFixed(1).replace(/\.0$/, '');
     }
 
     function labelled(text, labels) {
@@ -137,6 +149,127 @@
         return out;
     }
 
+    function readStore(key, fallback) {
+        try {
+            var raw = localStorage.getItem(key);
+            return raw ? JSON.parse(raw) : fallback;
+        } catch (e) {
+            return fallback;
+        }
+    }
+
+    function writeStore(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    }
+
+    function recordSnapshot(data) {
+        var code = data && data.code;
+        var views = Number(data && data.views);
+        var now = Date.now();
+        var store, arr, last;
+        if (!code || !views || views <= 0) return;
+        store = readStore(SNAP_KEY, {});
+        arr = Array.isArray(store[code]) ? store[code] : [];
+        last = arr.length ? arr[arr.length - 1] : null;
+        if (!last || now - Number(last.t || 0) >= 30 * 60 * 1000 || Number(last.v) !== views) {
+            arr.push({t: now, v: views});
+        }
+        arr = arr.filter(function (x) { return now - Number(x.t || 0) <= 14 * 24 * 60 * 60 * 1000; });
+        if (arr.length > 80) arr = arr.slice(arr.length - 80);
+        store[code] = arr;
+        writeStore(SNAP_KEY, store);
+    }
+
+    function growth24h(data) {
+        var code = data && data.code;
+        var current = Number(data && data.views);
+        var arr, now, target, best = null, bestDelta = Infinity, i, age, delta, old;
+        if (!code || !current || current <= 0) return null;
+        arr = readStore(SNAP_KEY, {})[code] || [];
+        now = Date.now();
+        target = 24 * 60 * 60 * 1000;
+        for (i = 0; i < arr.length; i++) {
+            age = now - Number(arr[i].t || 0);
+            if (age < 18 * 60 * 60 * 1000 || age > 32 * 60 * 60 * 1000) continue;
+            delta = Math.abs(age - target);
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                best = arr[i];
+            }
+        }
+        if (!best) return null;
+        old = Number(best.v);
+        if (!old || old <= 0 || current < old) return null;
+        return ((current - old) / old) * 100;
+    }
+
+    function recordPost(data) {
+        var code = data && data.code;
+        var owner = String(data && data.owner || '').toLowerCase();
+        var views = Number(data && data.views);
+        var store, keys, i;
+        if (!code || !owner || !views || views <= 0) return;
+        store = readStore(POST_KEY, {});
+        store[code] = {code: code, owner: owner, views: views, date: data.date || '', t: Date.now()};
+        keys = Object.keys(store);
+        if (keys.length > 500) {
+            keys.sort(function (a, b) { return Number(store[b].t || 0) - Number(store[a].t || 0); });
+            for (i = 500; i < keys.length; i++) delete store[keys[i]];
+        }
+        writeStore(POST_KEY, store);
+    }
+
+    function median(values) {
+        var a = values.slice().sort(function (x, y) { return x - y; });
+        var m;
+        if (!a.length) return null;
+        m = Math.floor(a.length / 2);
+        return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+    }
+
+    function accountMultiple(data) {
+        var owner = String(data && data.owner || '').toLowerCase();
+        var current = Number(data && data.views);
+        var code = data && data.code;
+        var store, list, keys, i, item, base;
+        if (!owner || !current || current <= 0) return null;
+        store = readStore(POST_KEY, {});
+        list = [];
+        keys = Object.keys(store);
+        for (i = 0; i < keys.length; i++) {
+            item = store[keys[i]];
+            if (!item || item.code === code || item.owner !== owner || !Number(item.views)) continue;
+            list.push(item);
+        }
+        list.sort(function (a, b) {
+            var ad = a.date || '';
+            var bd = b.date || '';
+            if (ad !== bd) return bd.localeCompare(ad);
+            return Number(b.t || 0) - Number(a.t || 0);
+        });
+        list = list.slice(0, 20);
+        if (list.length < 5) return null;
+        base = median(list.map(function (x) { return Number(x.views); }));
+        if (!base || base <= 0) return null;
+        return current / base;
+    }
+
+    function engagementRate(data) {
+        var views = Number(data && data.views);
+        var likes = Number(data && data.likes || 0);
+        var comments = Number(data && data.comments || 0);
+        var reposts = Number(data && data.reposts || 0);
+        if (!views || views <= 0) return null;
+        if (!likes && !comments && !reposts) return null;
+        return ((likes + comments + reposts) / views) * 100;
+    }
+
+    function recordData(data) {
+        if (!data || !data.code) return;
+        recordSnapshot(data);
+        recordPost(data);
+    }
+
     function areaNumber(area, keys) {
         var i, re, m;
         for (i = 0; i < keys.length; i++) {
@@ -157,6 +290,14 @@
         return '';
     }
 
+    function areaOwner(area) {
+        var s = String(area || '').replace(/\\"/g, '"');
+        var m = s.match(/"owner"\s*:\s*\{[\s\S]{0,5000}?"username"\s*:\s*"([A-Za-z0-9._]+)"/i);
+        if (m) return m[1];
+        m = s.match(/"user"\s*:\s*\{[\s\S]{0,4000}?"username"\s*:\s*"([A-Za-z0-9._]+)"/i);
+        return m ? m[1] : '';
+    }
+
     function htmlArea(html, code) {
         var p = code ? html.indexOf(code) : -1;
         return p >= 0 ? html.slice(Math.max(0, p - 120000), Math.min(html.length, p + 220000)) : html;
@@ -165,8 +306,7 @@
     function parseHtml(html, url) {
         var code = codeFromUrl(url);
         var out = {code: code, pageUrl: url};
-        var doc, meta, desc, m, n, area;
-
+        var doc, meta, desc, titleText, m, n, area;
         try {
             doc = new DOMParser().parseFromString(html, 'text/html');
             meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
@@ -178,13 +318,17 @@
                 if (m) out.comments = parseCount(m[1].replace(/\s+/g, ''));
                 out.date = literalDate(desc);
             }
+            meta = doc.querySelector('meta[property="og:title"],meta[name="twitter:title"]');
+            titleText = meta ? (meta.getAttribute('content') || '') : (doc.title || '');
+            m = titleText.match(/^@?([A-Za-z0-9._]+)\s+(?:on Instagram|• Instagram)/i);
+            if (m) out.owner = m[1];
             meta = doc.querySelector('meta[property="og:image"]');
             if (meta) out.thumbUrl = cleanUrl(meta.getAttribute('content') || '');
             meta = doc.querySelector('meta[property="og:video"],meta[property="og:video:secure_url"]');
             if (meta) out.videoUrl = cleanUrl(meta.getAttribute('content') || '');
         } catch (e) {}
-
         area = htmlArea(html, code);
+        if (!out.owner) out.owner = areaOwner(area);
         if (out.likes === undefined) {
             n = areaNumber(area, ['like_count','likes_count']);
             if (n !== null) out.likes = n;
@@ -235,19 +379,24 @@
         if (cache[code] && cache[code].loaded) return Promise.resolve(cache[code]);
         if (cache[code] && cache[code].promise) return cache[code].promise;
         if (!cache[code]) cache[code] = {code: code, pageUrl: url};
-
         cache[code].promise = queued(function (done) {
             var xhr = new XMLHttpRequest();
             xhr.open('GET', String(url).split('?')[0], true);
             xhr.withCredentials = true;
             xhr.onreadystatechange = function () {
+                var keepPromise, parsed;
                 if (xhr.readyState !== 4) return;
+                keepPromise = cache[code] && cache[code].promise;
                 if (xhr.status >= 200 && xhr.status < 400) {
-                    cache[code] = merge(cache[code], parseHtml(xhr.responseText || '', url));
+                    parsed = parseHtml(xhr.responseText || '', url);
+                    cache[code] = merge(cache[code], parsed);
                     cache[code].loaded = true;
+                    cache[code].promise = keepPromise;
+                    recordData(cache[code]);
                 }
                 cache[code].promise = null;
                 refreshCode(code);
+                schedule();
                 done(cache[code]);
             };
             try { xhr.send(); }
@@ -261,10 +410,12 @@
 
     function updateFromObject(obj) {
         var code = obj && (obj.code || obj.shortcode || obj.short_code);
+        var user = obj && (obj.user || obj.owner);
         var data;
         if (!code || typeof code !== 'string') return;
         data = {
             code: code,
+            owner: user && user.username || '',
             views: obj.play_count || obj.ig_play_count || obj.video_play_count || obj.video_view_count || obj.view_count || obj.view_count_fb || null,
             likes: obj.like_count || null,
             comments: obj.comment_count || null,
@@ -274,6 +425,7 @@
             thumbUrl: obj.display_url || obj.thumbnail_src || ''
         };
         cache[code] = merge(cache[code], data);
+        recordData(cache[code]);
         refreshCode(code);
     }
 
@@ -295,20 +447,16 @@
         var found = {};
         var reCode = /"(?:code|shortcode|short_code)"\s*:\s*"([A-Za-z0-9_-]{5,32})"/g;
         var m, i, code, p, area, data, n;
-
         if (!text || text.length > 6500000) return;
-
         while ((m = reCode.exec(text)) && Object.keys(found).length < 80) found[m[1]] = true;
         for (i = 0; i < codes.length; i++) found[codes[i]] = true;
         codes = Object.keys(found);
-
         for (i = 0; i < codes.length; i++) {
             code = codes[i];
             p = text.indexOf(code);
             if (p < 0) continue;
             area = text.slice(Math.max(0, p - 10000), Math.min(text.length, p + 22000));
-            data = {code: code};
-
+            data = {code: code, owner: areaOwner(area)};
             n = areaNumber(area, ['play_count','ig_play_count','video_play_count','video_view_count','view_count','view_count_fb','plays','views']);
             if (n !== null) data.views = n;
             n = areaNumber(area, ['like_count','likes_count']);
@@ -323,16 +471,15 @@
             }
             data.videoUrl = areaString(area, ['video_url']);
             cache[code] = merge(cache[code], data);
+            recordData(cache[code]);
             refreshCode(code);
         }
-
         try { scanJsonObject(JSON.parse(text), 0, []); } catch (e2) {}
     }
 
     function installNetworkObserver() {
         var originalFetch = window.fetch;
         var OriginalXHR = window.XMLHttpRequest;
-
         if (originalFetch && !originalFetch.__riWrapped) {
             window.fetch = function () {
                 return originalFetch.apply(this, arguments).then(function (res) {
@@ -348,22 +495,18 @@
             };
             window.fetch.__riWrapped = true;
         }
-
         if (OriginalXHR && !OriginalXHR.prototype.__riWrapped) {
             var oldOpen = OriginalXHR.prototype.open;
             var oldSend = OriginalXHR.prototype.send;
-
             OriginalXHR.prototype.open = function () {
                 this.__riUrl = arguments[1] || '';
                 return oldOpen.apply(this, arguments);
             };
-
             OriginalXHR.prototype.send = function () {
                 this.addEventListener('load', function () {
                     try {
                         var ct = this.getResponseHeader('content-type') || '';
-                        if ((ct.indexOf('json') !== -1 || /graphql|api|ajax/i.test(this.__riUrl || '')) &&
-                            typeof this.responseText === 'string') {
+                        if ((ct.indexOf('json') !== -1 || /graphql|api|ajax/i.test(this.__riUrl || '')) && typeof this.responseText === 'string') {
                             scanJsonText(this.responseText);
                         }
                     } catch (e) {}
@@ -381,10 +524,7 @@
             if (!visible(list[i])) continue;
             r = list[i].getBoundingClientRect();
             area = r.width * r.height;
-            if (area > bestArea) {
-                bestArea = area;
-                best = list[i];
-            }
+            if (area > bestArea) { bestArea = area; best = list[i]; }
         }
         return best;
     }
@@ -440,10 +580,7 @@
         var times = document.querySelectorAll('time[datetime]');
         var date = null, i;
         for (i = 0; i < times.length; i++) {
-            if (visible(times[i])) {
-                date = times[i].getAttribute('datetime');
-                break;
-            }
+            if (visible(times[i])) { date = times[i].getAttribute('datetime'); break; }
         }
         return {
             views: controlMetric(root, ['조회수','views','plays','재생']),
@@ -463,7 +600,6 @@
         var code = codeFromUrl(location.href);
         var dom = currentDomData();
         if (!code) return Promise.resolve(dom);
-
         cache[code] = merge(cache[code], dom);
         return loadPost(location.href).then(function (remote) {
             var out = merge(dom, remote);
@@ -471,6 +607,7 @@
             if (remote.comments !== null && remote.comments !== undefined) out.comments = remote.comments;
             if (remote.views !== null && remote.views !== undefined) out.views = remote.views;
             if (remote.reposts !== null && remote.reposts !== undefined) out.reposts = remote.reposts;
+            if (remote.owner) out.owner = remote.owner;
             if (remote.date) out.date = remote.date;
             if (dom.videoUrl) out.videoUrl = dom.videoUrl;
             if (dom.thumbUrl) out.thumbUrl = dom.thumbUrl;
@@ -478,18 +615,9 @@
             if (dom.width) out.width = dom.width;
             if (dom.height) out.height = dom.height;
             cache[code] = merge(cache[code], out);
+            recordData(cache[code]);
             return cache[code];
         });
-    }
-
-    function engagementRate(data) {
-        var views = Number(data && data.views);
-        var likes = Number(data && data.likes || 0);
-        var comments = Number(data && data.comments || 0);
-        var reposts = Number(data && data.reposts || 0);
-        if (!views || views <= 0) return null;
-        if (!likes && !comments && !reposts) return null;
-        return ((likes + comments * 4 + reposts * 4) / views) * 100;
     }
 
     function openUrl(url) {
@@ -511,9 +639,7 @@
 
     function copyText(text) {
         if (!text) return;
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).catch(function () {});
-        }
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(function () {});
     }
 
     function iconSvg(type, size) {
@@ -536,25 +662,14 @@
             r = el.getBoundingClientRect();
             if (r.width < 20 || r.height < 20 || r.width > 90 || r.height > 90) continue;
             if (r.right < innerWidth * 0.60) continue;
-
             svg = el.querySelector('svg[aria-label],svg[title]');
-            label = [
-                el.getAttribute('aria-label') || '',
-                el.getAttribute('title') || '',
-                svg && svg.getAttribute('aria-label') || '',
-                svg && svg.getAttribute('title') || ''
-            ].join(' ').toLowerCase();
-
+            label = [el.getAttribute('aria-label') || '', el.getAttribute('title') || '', svg && svg.getAttribute('aria-label') || '', svg && svg.getAttribute('title') || ''].join(' ').toLowerCase();
             if (!/(더\s*보기|옵션|more|options)/i.test(label)) continue;
-
             score = 0;
             if (r.right > innerWidth * 0.85) score += 3;
             if (r.top > innerHeight * 0.25) score += 2;
             if (r.bottom < innerHeight * 0.92) score += 1;
-            if (score > bestScore) {
-                bestScore = score;
-                best = el;
-            }
+            if (score > bestScore) { bestScore = score; best = el; }
         }
         return best;
     }
@@ -587,10 +702,10 @@
         return el;
     }
 
-    function wingRow(parent, id, label, hostId) {
-        var row = panelEl('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:34px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.075);');
-        var lab = panelEl('div', 'min-width:0;font-size:10.5px;line-height:1.2;color:rgba(255,255,255,.56);white-space:nowrap;', label);
-        var val = panelEl('div', 'min-width:0;max-width:58%;font-size:12.5px;line-height:1.2;font-weight:650;color:#fff;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', '—');
+    function wingMetric(parent, id, label, hostId) {
+        var row = panelEl('div', 'display:block;min-height:43px;padding:7px 0 6px;border-bottom:1px solid rgba(255,255,255,.075);');
+        var lab = panelEl('div', 'font-size:9.5px;line-height:1.1;color:rgba(255,255,255,.52);white-space:nowrap;', label);
+        var val = panelEl('div', 'margin-top:3px;font-size:13px;line-height:1.15;font-weight:700;color:#fff;white-space:normal;word-break:break-word;', '—');
         if (hostId) row.id = hostId;
         val.id = id;
         row.appendChild(lab);
@@ -603,24 +718,23 @@
         var el = document.getElementById(valueId);
         var host = document.getElementById(hostId);
         if (!el || !host) return;
-        if (value === null || value === undefined || value === '') {
-            host.style.display = 'none';
-        } else {
-            host.style.display = 'flex';
-            el.textContent = value;
-        }
+        if (value === null || value === undefined || value === '') host.style.display = 'none';
+        else { host.style.display = 'block'; el.textContent = value; }
     }
 
     function updatePanel(data) {
         var er = engagementRate(data);
+        var growth = growth24h(data);
+        var multiple = accountMultiple(data);
         var media = '';
         setTextOrHide('ri-v-views', 'ri-row-views', fmt(data.views));
         setTextOrHide('ri-v-likes', 'ri-row-likes', fmt(data.likes));
         setTextOrHide('ri-v-comments', 'ri-row-comments', fmt(data.comments));
         setTextOrHide('ri-v-reposts', 'ri-row-reposts', fmt(data.reposts));
         setTextOrHide('ri-v-er', 'ri-row-er', er !== null ? fmtPercent(er) : '');
+        setTextOrHide('ri-v-growth', 'ri-row-growth', growth !== null ? fmtGrowth(growth) : '');
+        setTextOrHide('ri-v-multiple', 'ri-row-multiple', multiple !== null ? fmtMultiple(multiple) : '');
         setTextOrHide('ri-v-date', 'ri-row-date', data.date || '');
-
         if (data.duration !== null && data.duration !== undefined) media += Number(data.duration).toFixed(1) + '초';
         if (data.width && data.height) media += (media ? ' · ' : '') + data.width + '×' + data.height;
         setTextOrHide('ri-v-media', 'ri-row-media', media);
@@ -629,8 +743,8 @@
     function wingAction(text, icon, fn) {
         var b = document.createElement('button');
         b.type = 'button';
-        b.style.cssText = 'width:100%;display:flex;align-items:center;gap:8px;height:36px;padding:0 9px;border:0;border-bottom:1px solid rgba(255,255,255,.075);background:transparent;color:#fff;font:600 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;';
-        b.innerHTML = iconSvg(icon, 16) + '<span>' + text + '</span>';
+        b.style.cssText = 'width:100%;display:flex;align-items:center;gap:7px;min-height:35px;padding:0 5px;border:0;border-bottom:1px solid rgba(255,255,255,.075);background:transparent;color:#fff;font:600 10.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;';
+        b.innerHTML = iconSvg(icon, 15) + '<span>' + text + '</span>';
         b.onclick = fn;
         return b;
     }
@@ -639,106 +753,66 @@
         var panel = document.getElementById('ri-panel');
         if (panel) {
             panel.style.transform = 'translateX(100%)';
-            setTimeout(function () {
-                if (panel.parentNode) panel.remove();
-                syncTool();
-            }, 170);
-        } else {
-            syncTool();
-        }
+            setTimeout(function () { if (panel.parentNode) panel.remove(); syncTool(); }, 160);
+        } else syncTool();
     }
 
     function openPanel() {
         var existing = document.getElementById('ri-panel');
         var tool = document.getElementById('ri-tool');
         var panel, header, title, version, close, content, metrics, actions, update;
-
         if (existing) return;
         if (tool) tool.remove();
-
         panel = document.createElement('aside');
         panel.id = 'ri-panel';
-        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:min(48vw,230px);z-index:2147483647;background:rgba(14,14,14,.985);color:#fff;border-left:1px solid rgba(255,255,255,.09);box-shadow:-8px 0 24px rgba(0,0,0,.16);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-y:auto;overscroll-behavior:contain;transform:translateX(100%);transition:transform .17s ease-out;padding-bottom:max(14px,env(safe-area-inset-bottom));';
-
-        header = panelEl('div', 'position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:5px;height:46px;padding:0 8px 0 10px;background:rgba(14,14,14,.985);border-bottom:1px solid rgba(255,255,255,.08);');
-        title = panelEl('div', 'min-width:0;flex:1;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', '콘텐츠 리서치');
-        version = panelEl('div', 'font-size:8.5px;color:rgba(255,255,255,.35);', 'v' + VERSION);
-        close = panelEl('button', 'width:27px;height:27px;padding:0;border:0;background:transparent;color:#fff;font-size:21px;line-height:27px;', '×');
+        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:min(40vw,180px);z-index:2147483647;background:rgba(14,14,14,.99);color:#fff;border-left:1px solid rgba(255,255,255,.09);box-shadow:-6px 0 20px rgba(0,0,0,.13);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-y:auto;overscroll-behavior:contain;transform:translateX(100%);transition:transform .16s ease-out;padding-bottom:max(12px,env(safe-area-inset-bottom));';
+        header = panelEl('div', 'position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:3px;height:42px;padding:0 6px 0 8px;background:rgba(14,14,14,.99);border-bottom:1px solid rgba(255,255,255,.08);');
+        title = panelEl('div', 'min-width:0;flex:1;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', '리서치');
+        version = panelEl('div', 'font-size:7.5px;color:rgba(255,255,255,.32);', 'v' + VERSION);
+        close = panelEl('button', 'width:24px;height:24px;padding:0;border:0;background:transparent;color:#fff;font-size:19px;line-height:24px;', '×');
         close.type = 'button';
         close.onclick = closePanel;
-        header.appendChild(title);
-        header.appendChild(version);
-        header.appendChild(close);
-        panel.appendChild(header);
-
-        content = panelEl('div', 'padding:3px 10px 10px;');
-        metrics = panelEl('div', 'padding:1px 0 8px;');
-        wingRow(metrics, 'ri-v-views', '조회수', 'ri-row-views');
-        wingRow(metrics, 'ri-v-likes', '좋아요', 'ri-row-likes');
-        wingRow(metrics, 'ri-v-comments', '댓글', 'ri-row-comments');
-        wingRow(metrics, 'ri-v-reposts', '리포스트', 'ri-row-reposts');
-        wingRow(metrics, 'ri-v-er', 'ER', 'ri-row-er');
-        wingRow(metrics, 'ri-v-date', '게시일', 'ri-row-date');
-        wingRow(metrics, 'ri-v-media', '영상', 'ri-row-media');
+        header.appendChild(title); header.appendChild(version); header.appendChild(close); panel.appendChild(header);
+        content = panelEl('div', 'padding:2px 8px 9px;');
+        metrics = panelEl('div', 'padding:0 0 6px;');
+        wingMetric(metrics, 'ri-v-views', '조회수', 'ri-row-views');
+        wingMetric(metrics, 'ri-v-likes', '좋아요', 'ri-row-likes');
+        wingMetric(metrics, 'ri-v-comments', '댓글', 'ri-row-comments');
+        wingMetric(metrics, 'ri-v-reposts', '리포스트', 'ri-row-reposts');
+        wingMetric(metrics, 'ri-v-er', 'ER', 'ri-row-er');
+        wingMetric(metrics, 'ri-v-growth', '24시간', 'ri-row-growth');
+        wingMetric(metrics, 'ri-v-multiple', '계정 대비', 'ri-row-multiple');
+        wingMetric(metrics, 'ri-v-date', '게시일', 'ri-row-date');
+        wingMetric(metrics, 'ri-v-media', '영상', 'ri-row-media');
         content.appendChild(metrics);
-
-        actions = panelEl('div', 'margin-top:3px;border-top:1px solid rgba(255,255,255,.075);');
-        actions.appendChild(wingAction('순수 영상', 'video', function () {
-            currentData().then(function (d) { openUrl(d.videoUrl); });
-        }));
-        actions.appendChild(wingAction('썸네일', 'image', function () {
-            currentData().then(function (d) { openUrl(d.thumbUrl); });
-        }));
-        actions.appendChild(wingAction('링크 복사', 'link', function () {
-            copyText(location.href.split('?')[0]);
-        }));
+        actions = panelEl('div', 'margin-top:2px;border-top:1px solid rgba(255,255,255,.075);');
+        actions.appendChild(wingAction('순수 영상', 'video', function () { currentData().then(function (d) { openUrl(d.videoUrl); }); }));
+        actions.appendChild(wingAction('썸네일', 'image', function () { currentData().then(function (d) { openUrl(d.thumbUrl); }); }));
+        actions.appendChild(wingAction('링크 복사', 'link', function () { copyText(location.href.split('?')[0]); }));
         content.appendChild(actions);
-
-        update = panelEl('button', 'width:100%;margin-top:12px;height:31px;border:1px solid rgba(255,255,255,.10);border-radius:7px;background:transparent;color:rgba(255,255,255,.45);font:600 9.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;', '새 버전 설치');
-        update.type = 'button';
-        update.onclick = openUpdate;
-        content.appendChild(update);
-
-        panel.appendChild(content);
-        document.documentElement.appendChild(panel);
+        update = panelEl('button', 'width:100%;margin-top:10px;height:29px;border:1px solid rgba(255,255,255,.10);border-radius:7px;background:transparent;color:rgba(255,255,255,.42);font:600 8.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;', '새 버전 설치');
+        update.type = 'button'; update.onclick = openUpdate; content.appendChild(update);
+        panel.appendChild(content); document.documentElement.appendChild(panel);
         requestAnimationFrame(function () { panel.style.transform = 'translateX(0)'; });
-
         currentData().then(updatePanel);
-        setTimeout(function () {
-            if (document.getElementById('ri-panel')) currentData().then(updatePanel);
-        }, 900);
-        setTimeout(function () {
-            if (document.getElementById('ri-panel')) currentData().then(updatePanel);
-        }, 2100);
+        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 900);
+        setTimeout(function () { if (document.getElementById('ri-panel')) currentData().then(updatePanel); }, 2100);
     }
 
     function syncTool() {
         var b = document.getElementById('ri-tool');
-        if (document.getElementById('ri-panel')) {
-            if (b) b.remove();
-            return;
-        }
-        if (!detailPage()) {
-            if (b) b.remove();
-            return;
-        }
+        if (document.getElementById('ri-panel')) { if (b) b.remove(); return; }
+        if (!detailPage()) { if (b) b.remove(); return; }
         if (!b) {
             b = document.createElement('button');
-            b.id = 'ri-tool';
-            b.type = 'button';
-            b.setAttribute('aria-label', '콘텐츠 리서치');
-            b.title = '콘텐츠 리서치';
+            b.id = 'ri-tool'; b.type = 'button'; b.setAttribute('aria-label', '콘텐츠 리서치'); b.title = '콘텐츠 리서치';
             b.style.cssText = 'position:fixed;z-index:2147483600;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.08);color:#fff;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55));touch-action:manipulation;';
-            b.innerHTML = iconSvg('research', 21);
-            b.onclick = openPanel;
-            document.documentElement.appendChild(b);
+            b.innerHTML = iconSvg('research', 21); b.onclick = openPanel; document.documentElement.appendChild(b);
         }
         positionTool();
     }
 
-    function exactPostPath(a) {
-        return /^\/(?:reel|reels|p)\/[A-Za-z0-9_-]+\/?$/.test(a.pathname || '');
-    }
+    function exactPostPath(a) { return /^\/(?:reel|reels|p)\/[A-Za-z0-9_-]+\/?$/.test(a.pathname || ''); }
 
     function fixedAncestor(a) {
         var el = a, i, p;
@@ -757,10 +831,8 @@
         if (!a.closest('main')) return false;
         if (a.closest('nav,header,[role="navigation"],[role="dialog"],#ri-panel')) return false;
         if (fixedAncestor(a)) return false;
-        img = a.querySelector('img');
-        if (!img) return false;
-        ar = a.getBoundingClientRect();
-        ir = img.getBoundingClientRect();
+        img = a.querySelector('img'); if (!img) return false;
+        ar = a.getBoundingClientRect(); ir = img.getBoundingClientRect();
         if (ar.width < 80 || ar.height < 80 || ir.width < 80 || ir.height < 80) return false;
         if (ir.width < ar.width * 0.55) return false;
         return true;
@@ -782,14 +854,7 @@
         var code = codeFromUrl(a.href);
         var img = a.querySelector('img');
         var text = cardText(a);
-        var nativeData = {
-            code: code,
-            pageUrl: a.href,
-            views: labelled(text, ['조회수','views','plays','재생']),
-            likes: labelled(text, ['좋아요','likes','like']),
-            comments: labelled(text, ['댓글','comments','comment']),
-            thumbUrl: img ? (img.currentSrc || img.src || '') : ''
-        };
+        var nativeData = {code: code, pageUrl: a.href, views: labelled(text, ['조회수','views','plays','재생']), likes: labelled(text, ['좋아요','likes','like']), comments: labelled(text, ['댓글','comments','comment']), thumbUrl: img ? (img.currentSrc || img.src || '') : ''};
         cache[code] = merge(cache[code], nativeData);
         return cache[code];
     }
@@ -804,43 +869,24 @@
 
     function gridButton(type, title, fn, cls) {
         var b = document.createElement('button');
-        b.type = 'button';
-        b.title = title;
-        b.setAttribute('aria-label', title);
-        if (cls) b.className = cls;
+        b.type = 'button'; b.title = title; b.setAttribute('aria-label', title); if (cls) b.className = cls;
         b.style.cssText = 'width:25px;height:25px;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:50%;background:rgba(0,0,0,.30);color:#fff;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);';
         b.innerHTML = iconSvg(type, 15);
-        b.addEventListener('pointerdown', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }, true);
-        b.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            fn();
-        }, true);
+        b.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
+        b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); fn(); }, true);
         return b;
     }
 
     function ensureVideoButton(a, data) {
         var actions = a.querySelector('.ri-actions');
         if (!actions || a.querySelector('.ri-vid') || !isVideoCard(a, data)) return;
-        actions.appendChild(gridButton('video', '순수 영상 보기', function () {
-            loadPost(a.href).then(function (d) {
-                openUrl(d.videoUrl || a.href);
-            });
-        }, 'ri-vid'));
+        actions.appendChild(gridButton('video', '순수 영상 보기', function () { loadPost(a.href).then(function (d) { openUrl(d.videoUrl || a.href); }); }, 'ri-vid'));
     }
 
     function setGridSpan(span, value) {
         if (!span) return;
-        if (value) {
-            span.textContent = value;
-            span.style.display = '';
-        } else {
-            span.textContent = '';
-            span.style.display = 'none';
-        }
+        if (value) { span.textContent = value; span.style.display = ''; }
+        else { span.textContent = ''; span.style.display = 'none'; }
     }
 
     function paintCard(a) {
@@ -851,27 +897,24 @@
         var actions = a.querySelector('.ri-actions');
         var safe = safeOverlayArea(a);
         var er = engagementRate(data);
-        var hasPrimary = false;
-        var hasSecondary = false;
-
+        var growth = growth24h(data);
+        var multiple = accountMultiple(data);
+        var hasPrimary, hasSecondary;
         if (!primary || !secondary || !grad) return;
-
         setGridSpan(primary.querySelector('.ri-p-view'), data.views !== null && data.views !== undefined ? '▶' + fmt(data.views) : '');
         setGridSpan(primary.querySelector('.ri-p-like'), data.likes !== null && data.likes !== undefined ? '♥' + fmt(data.likes) : '');
         setGridSpan(primary.querySelector('.ri-p-comment'), data.comments !== null && data.comments !== undefined ? '●' + fmt(data.comments) : '');
-
-        setGridSpan(secondary.querySelector('.ri-s-repost'), data.reposts !== null && data.reposts !== undefined ? '↻' + fmt(data.reposts) : '');
-        setGridSpan(secondary.querySelector('.ri-s-er'), er !== null ? 'ER ' + fmtPercent(er) : '');
-        setGridSpan(secondary.querySelector('.ri-s-date'), data.date ? String(data.date).slice(5) : '');
-
+        setGridSpan(primary.querySelector('.ri-p-repost'), data.reposts !== null && data.reposts !== undefined ? '↻' + fmt(data.reposts) : '');
+        setGridSpan(secondary.querySelector('.ri-s-er'), er !== null ? fmtPercent(er) : '');
+        setGridSpan(secondary.querySelector('.ri-s-growth'), growth !== null ? fmtGrowth(growth) : '');
+        setGridSpan(secondary.querySelector('.ri-s-multiple'), multiple !== null ? fmtMultiple(multiple) : '');
+        setGridSpan(secondary.querySelector('.ri-s-date'), data.date ? String(data.date).slice(5).replace('-', '/') : '');
         hasPrimary = !!primary.textContent.trim();
         hasSecondary = !!secondary.textContent.trim();
-
         primary.style.display = safe && hasPrimary ? 'flex' : 'none';
         secondary.style.display = safe && hasSecondary ? 'flex' : 'none';
-        grad.style.display = safe && (hasPrimary || hasSecondary) ? 'block' : 'none';
+        grad.style.display = safe && hasPrimary ? 'block' : 'none';
         if (actions) actions.style.display = safe ? 'flex' : 'none';
-
         ensureVideoButton(a, data);
     }
 
@@ -879,147 +922,69 @@
         var all = document.querySelectorAll('a[data-ri-code="' + code + '"]');
         var i;
         for (i = 0; i < all.length; i++) paintCard(all[i]);
-        if (code === codeFromUrl(location.href) && document.getElementById('ri-panel')) {
-            currentData().then(updatePanel);
-        }
+        if (code === codeFromUrl(location.href) && document.getElementById('ri-panel')) currentData().then(updatePanel);
     }
 
     function renderCard(a) {
         var code, img, grad, stack, primary, secondary, actions;
         if (!validGridAnchor(a)) return;
-        code = codeFromUrl(a.href);
-        if (!code) return;
-
-        if (a.getAttribute('data-ri') === '1' && a.querySelector('.ri-actions')) {
-            paintCard(a);
-            if (nearViewport(a)) loadPost(a.href);
-            return;
-        }
-
-        a.setAttribute('data-ri', '1');
-        a.setAttribute('data-ri-code', code);
-        a.style.position = 'relative';
-        img = a.querySelector('img');
-
-        grad = document.createElement('div');
-        grad.className = 'ri-gradient';
-        grad.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:40%;z-index:35;background:linear-gradient(to top,rgba(0,0,0,.40) 0%,rgba(0,0,0,.15) 42%,rgba(0,0,0,0) 100%);pointer-events:none;display:none;';
-
-        stack = document.createElement('div');
-        stack.className = 'ri-bottom-stack';
-        stack.style.cssText = 'position:absolute;left:4px;right:4px;bottom:4px;z-index:43;display:flex;flex-direction:column;gap:3px;pointer-events:none;';
-
-        primary = document.createElement('div');
-        primary.className = 'ri-primary';
-        primary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:2px;color:#fff;font:700 9.5px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.3px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.78);';
-        primary.innerHTML = '<span class="ri-p-view"></span><span class="ri-p-like"></span><span class="ri-p-comment"></span>';
-
-        secondary = document.createElement('div');
-        secondary.className = 'ri-secondary';
-        secondary.style.cssText = 'min-width:0;height:14px;padding:0 3px;border-radius:4px;display:none;align-items:center;justify-content:space-between;gap:2px;background:rgba(255,255,255,.64);color:#111;font:700 7.6px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.35px;white-space:nowrap;text-shadow:none;';
-        secondary.innerHTML = '<span class="ri-s-repost"></span><span class="ri-s-er"></span><span class="ri-s-date"></span>';
-
-        stack.appendChild(primary);
-        stack.appendChild(secondary);
-
-        actions = document.createElement('div');
-        actions.className = 'ri-actions';
-        actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;flex-direction:column;gap:3px;';
-        actions.appendChild(gridButton('image', '이미지 또는 썸네일 보기', function () {
-            openUrl(img.currentSrc || img.src || '');
-        }, 'ri-img'));
-
-        a.appendChild(grad);
-        a.appendChild(stack);
-        a.appendChild(actions);
-
-        paintCard(a);
-        if (nearViewport(a)) loadPost(a.href);
+        code = codeFromUrl(a.href); if (!code) return;
+        if (a.getAttribute('data-ri') === '1' && a.querySelector('.ri-actions')) { paintCard(a); if (nearViewport(a)) loadPost(a.href); return; }
+        a.setAttribute('data-ri', '1'); a.setAttribute('data-ri-code', code); a.style.position = 'relative'; img = a.querySelector('img');
+        grad = document.createElement('div'); grad.className = 'ri-gradient'; grad.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:31%;z-index:35;background:linear-gradient(to top,rgba(0,0,0,.36) 0%,rgba(0,0,0,.10) 52%,rgba(0,0,0,0) 100%);pointer-events:none;display:none;';
+        stack = document.createElement('div'); stack.className = 'ri-bottom-stack'; stack.style.cssText = 'position:absolute;left:4px;right:4px;bottom:4px;z-index:43;display:flex;flex-direction:column;gap:3px;pointer-events:none;';
+        primary = document.createElement('div'); primary.className = 'ri-primary'; primary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:1px;color:#fff;font:750 8.9px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.38px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.78);'; primary.innerHTML = '<span class="ri-p-view"></span><span class="ri-p-like"></span><span class="ri-p-comment"></span><span class="ri-p-repost"></span>';
+        secondary = document.createElement('div'); secondary.className = 'ri-secondary'; secondary.style.cssText = 'min-width:0;display:none;align-items:center;justify-content:space-between;gap:2px;color:#111;font:800 8.7px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.38px;white-space:nowrap;-webkit-text-stroke:.55px rgba(255,255,255,.96);paint-order:stroke fill;text-shadow:0 0 1px rgba(255,255,255,.98),0 0 2px rgba(255,255,255,.9);'; secondary.innerHTML = '<span class="ri-s-er"></span><span class="ri-s-growth"></span><span class="ri-s-multiple"></span><span class="ri-s-date"></span>';
+        stack.appendChild(primary); stack.appendChild(secondary);
+        actions = document.createElement('div'); actions.className = 'ri-actions'; actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;flex-direction:column;gap:3px;';
+        actions.appendChild(gridButton('image', '이미지 또는 썸네일 보기', function () { openUrl(img.currentSrc || img.src || ''); }, 'ri-img'));
+        a.appendChild(grad); a.appendChild(stack); a.appendChild(actions); paintCard(a); if (nearViewport(a)) loadPost(a.href);
     }
 
     function cleanup() {
         var all = document.querySelectorAll('.ri-actions,.ri-bottom-stack,.ri-gradient,.ri-badges,.ri-metrics');
         var i, host;
-        for (i = 0; i < all.length; i++) {
-            host = all[i].parentElement;
-            if (!host || !validGridAnchor(host) || detailPage()) all[i].remove();
-        }
-
+        for (i = 0; i < all.length; i++) { host = all[i].parentElement; if (!host || !validGridAnchor(host) || detailPage()) all[i].remove(); }
         all = document.querySelectorAll('[data-ri="1"]');
         for (i = 0; i < all.length; i++) {
-            if (!validGridAnchor(all[i]) || detailPage()) {
-                all[i].removeAttribute('data-ri');
-                all[i].removeAttribute('data-ri-code');
-            }
+            if (!validGridAnchor(all[i]) || detailPage()) { all[i].removeAttribute('data-ri'); all[i].removeAttribute('data-ri-code'); }
         }
-
         all = ['ri-github-retry','ri-install-ok','ri-file-ok','ri-test-box','ri-update'];
-        for (i = 0; i < all.length; i++) {
-            host = document.getElementById(all[i]);
-            if (host) host.remove();
-        }
+        for (i = 0; i < all.length; i++) { host = document.getElementById(all[i]); if (host) host.remove(); }
     }
 
     function scan() {
         var all, candidates = [], i;
-        cleanup();
-        syncTool();
-        if (detailPage()) return;
-
+        cleanup(); syncTool(); if (detailPage()) return;
         all = document.querySelectorAll('a[href*="/reel/"],a[href*="/reels/"],a[href*="/p/"]');
-        for (i = 0; i < all.length; i++) {
-            if (validGridAnchor(all[i])) candidates.push(all[i]);
-        }
+        for (i = 0; i < all.length; i++) if (validGridAnchor(all[i])) candidates.push(all[i]);
         if (candidates.length < 3) return;
         for (i = 0; i < candidates.length; i++) renderCard(candidates[i]);
     }
 
-    function schedule() {
-        clearTimeout(scanTimer);
-        scanTimer = setTimeout(scan, 120);
-    }
+    function schedule() { clearTimeout(scanTimer); scanTimer = setTimeout(scan, 120); }
 
     function status() {
         var d = document.createElement('div');
         d.textContent = 'Reels Inspector ' + VERSION;
         d.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483646;background:rgba(0,0,0,.70);color:#fff;padding:6px 9px;border-radius:8px;font:600 11px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;pointer-events:none;';
         (document.body || document.documentElement).appendChild(d);
-        setTimeout(function () {
-            if (d.parentNode) d.remove();
-        }, 1050);
+        setTimeout(function () { if (d.parentNode) d.remove(); }, 1050);
     }
 
     function start() {
         var observer = new MutationObserver(schedule);
         observer.observe(document.documentElement, {childList: true, subtree: true});
         addEventListener('scroll', schedule, true);
-        addEventListener('resize', function () {
-            positionTool();
-            schedule();
-        }, true);
-
-        cleanup();
-        status();
-        scan();
-
+        addEventListener('resize', function () { positionTool(); schedule(); }, true);
+        cleanup(); status(); scan();
         setInterval(function () {
-            if (location.href !== lastUrl) {
-                lastUrl = location.href;
-                closePanel();
-                schedule();
-            } else {
-                cleanup();
-                syncTool();
-                schedule();
-            }
+            if (location.href !== lastUrl) { lastUrl = location.href; closePanel(); schedule(); }
+            else { cleanup(); syncTool(); schedule(); }
         }, 800);
     }
 
     installNetworkObserver();
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', start);
-    } else {
-        start();
-    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
 })();
