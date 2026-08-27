@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      1.8.3
+// @version      1.8.4
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.8.3';
+    var VERSION = '1.8.4';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var lastUrl = location.href;
     var scanTimer = null;
@@ -29,13 +29,13 @@
     function nearViewport(el) {
         if (!el) return false;
         var r = el.getBoundingClientRect();
-        return r.bottom > -300 && r.top < window.innerHeight + 700;
+        return r.bottom > -350 && r.top < window.innerHeight + 700;
     }
 
     function safeOverlayArea(el) {
         if (!el) return false;
         var r = el.getBoundingClientRect();
-        return r.top >= 145 && r.bottom <= window.innerHeight - 130;
+        return r.top >= 145 && r.bottom <= window.innerHeight - 135;
     }
 
     function detailPage() {
@@ -70,15 +70,6 @@
         return String(n);
     }
 
-    function containsLabel(text, labels) {
-        var s = String(text || '').toLowerCase();
-        var i;
-        for (i = 0; i < labels.length; i++) {
-            if (s.indexOf(String(labels[i]).toLowerCase()) !== -1) return true;
-        }
-        return false;
-    }
-
     function labelled(text, labels) {
         var s = String(text || '');
         var i, re, m;
@@ -89,26 +80,6 @@
             re = new RegExp('([0-9][0-9.,]*\\s*(?:만|천|억|K|M|B|k|m|b)?)\\s*' + labels[i], 'i');
             m = s.match(re);
             if (m) return parseCount(m[1].replace(/\s+/g, ''));
-        }
-        return null;
-    }
-
-    function singleCount(text) {
-        var s = String(text || '').replace(/,/g, ' ');
-        var list = s.match(/[0-9]+(?:\.[0-9]+)?\s*(?:만|천|억|K|M|B|k|m|b)?/g);
-        if (!list || list.length !== 1) return null;
-        return parseCount(list[0].replace(/\s+/g, ''));
-    }
-
-    function siblingCount(el) {
-        var list = [el.previousElementSibling, el.nextElementSibling];
-        var i, n, t;
-        for (i = 0; i < list.length; i++) {
-            if (!list[i]) continue;
-            t = (list[i].textContent || '').trim();
-            if (t.length > 24) continue;
-            n = singleCount(t);
-            if (n !== null) return n;
         }
         return null;
     }
@@ -124,79 +95,11 @@
     }
 
     function cleanUrl(s) {
-        return String(s || '').replace(/\\u0026/g, '&').replace(/\\u003d/g, '=').replace(/\\\//g, '/').replace(/&amp;/g, '&');
-    }
-
-    function numberFromHtml(html, keys, code) {
-        var area = html;
-        var i, p, re, m;
-        if (code) {
-            p = html.indexOf(code);
-            if (p >= 0) area = html.slice(Math.max(0, p - 180000), Math.min(html.length, p + 280000));
-        }
-        for (i = 0; i < keys.length; i++) {
-            re = new RegExp('["\\\']' + keys[i] + '["\\\']\\s*:\\s*(\\d+)', 'i');
-            m = area.match(re);
-            if (m) return Number(m[1]);
-            re = new RegExp('\\\\"' + keys[i] + '\\\\"\\s*:\\s*(\\d+)', 'i');
-            m = area.match(re);
-            if (m) return Number(m[1]);
-        }
-        return null;
-    }
-
-    function stringFromHtml(html, keys, code) {
-        var area = html;
-        var i, p, re, m;
-        if (code) {
-            p = html.indexOf(code);
-            if (p >= 0) area = html.slice(Math.max(0, p - 200000), Math.min(html.length, p + 320000));
-        }
-        for (i = 0; i < keys.length; i++) {
-            re = new RegExp('["\\\']' + keys[i] + '["\\\']\\s*:\\s*["\\\'](https?:[^"\\\']+)["\\\']', 'i');
-            m = area.match(re);
-            if (m) return cleanUrl(m[1]);
-        }
-        return '';
-    }
-
-    function parseHtml(html, url) {
-        var code = codeFromUrl(url);
-        var out = { code: code, pageUrl: url };
-        var doc, meta, desc, m, n, p, area;
-
-        try {
-            doc = new DOMParser().parseFromString(html, 'text/html');
-            meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
-            desc = meta ? (meta.getAttribute('content') || '') : '';
-            if (desc) {
-                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+likes?/i);
-                if (m) out.likes = parseCount(m[1].replace(/\s+/g, ''));
-                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+comments?/i);
-                if (m) out.comments = parseCount(m[1].replace(/\s+/g, ''));
-                out.date = literalDate(desc);
-            }
-            meta = doc.querySelector('meta[property="og:image"]');
-            if (meta) out.thumbUrl = cleanUrl(meta.getAttribute('content') || '');
-        } catch (e) {}
-
-        n = numberFromHtml(html, ['like_count','likes_count'], code); if (n !== null) out.likes = n;
-        n = numberFromHtml(html, ['comment_count','comments_count'], code); if (n !== null) out.comments = n;
-        n = numberFromHtml(html, ['play_count','ig_play_count','video_view_count','view_count'], code); if (n !== null) out.views = n;
-        n = numberFromHtml(html, ['reshare_count','repost_count','reposts_count'], code); if (n !== null) out.reposts = n;
-        n = numberFromHtml(html, ['taken_at','taken_at_timestamp'], code);
-        if (n !== null && !out.date) {
-            try { out.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e2) {}
-        }
-
-        out.videoUrl = stringFromHtml(html, ['video_url'], code);
-        if (!out.videoUrl) {
-            p = code ? html.indexOf(code) : -1;
-            area = p >= 0 ? html.slice(Math.max(0, p - 200000), Math.min(html.length, p + 350000)) : html;
-            m = area.match(/https?:\\?\/\\?\/[^"'<>\s]+?\.mp4[^"'<>\s]*/i);
-            if (m) out.videoUrl = cleanUrl(m[0]);
-        }
-        return out;
+        return String(s || '')
+            .replace(/\\u0026/g, '&')
+            .replace(/\\u003d/g, '=')
+            .replace(/\\\//g, '/')
+            .replace(/&amp;/g, '&');
     }
 
     function merge(a, b) {
@@ -210,11 +113,82 @@
         return out;
     }
 
-    function queued(fn) {
-        return new Promise(function (resolve) {
-            queue.push({ fn: fn, resolve: resolve });
-            pump();
-        });
+    function numberFromHtml(html, keys, code) {
+        var p = code ? html.indexOf(code) : -1;
+        var area = p >= 0 ? html.slice(Math.max(0, p - 90000), Math.min(html.length, p + 150000)) : html;
+        var i, re, m;
+        for (i = 0; i < keys.length; i++) {
+            re = new RegExp('["\\\']' + keys[i] + '["\\\']\\s*:\\s*(\\d+)', 'i');
+            m = area.match(re);
+            if (m) return Number(m[1]);
+            re = new RegExp('\\\\"' + keys[i] + '\\\\"\\s*:\\s*(\\d+)', 'i');
+            m = area.match(re);
+            if (m) return Number(m[1]);
+        }
+        return null;
+    }
+
+    function stringFromHtml(html, keys, code) {
+        var p = code ? html.indexOf(code) : -1;
+        var area = p >= 0 ? html.slice(Math.max(0, p - 120000), Math.min(html.length, p + 220000)) : html;
+        var i, re, m;
+        for (i = 0; i < keys.length; i++) {
+            re = new RegExp('["\\\']' + keys[i] + '["\\\']\\s*:\\s*["\\\'](https?:[^"\\\']+)["\\\']', 'i');
+            m = area.match(re);
+            if (m) return cleanUrl(m[1]);
+        }
+        return '';
+    }
+
+    function parseHtml(html, url) {
+        var code = codeFromUrl(url);
+        var out = { code: code, pageUrl: url };
+        var doc, meta, desc, m, n;
+
+        try {
+            doc = new DOMParser().parseFromString(html, 'text/html');
+            meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
+            desc = meta ? (meta.getAttribute('content') || '') : '';
+            if (desc) {
+                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+likes?/i);
+                if (m) out.likes = parseCount(m[1].replace(/\s+/g, ''));
+                m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+comments?/i);
+                if (m) out.comments = parseCount(m[1].replace(/\s+/g, ''));
+                out.date = literalDate(desc);
+            }
+
+            meta = doc.querySelector('meta[property="og:image"]');
+            if (meta) out.thumbUrl = cleanUrl(meta.getAttribute('content') || '');
+
+            meta = doc.querySelector('meta[property="og:video"],meta[property="og:video:secure_url"]');
+            if (meta) out.videoUrl = cleanUrl(meta.getAttribute('content') || '');
+        } catch (e) {}
+
+        if (out.likes === undefined) {
+            n = numberFromHtml(html, ['like_count','likes_count'], code);
+            if (n !== null) out.likes = n;
+        }
+
+        if (out.comments === undefined) {
+            n = numberFromHtml(html, ['comment_count','comments_count'], code);
+            if (n !== null) out.comments = n;
+        }
+
+        n = numberFromHtml(html, ['play_count','ig_play_count','video_play_count','video_view_count','view_count'], code);
+        if (n !== null) out.views = n;
+
+        n = numberFromHtml(html, ['reshare_count','repost_count','reposts_count'], code);
+        if (n !== null) out.reposts = n;
+
+        if (!out.date) {
+            n = numberFromHtml(html, ['taken_at','taken_at_timestamp'], code);
+            if (n !== null) {
+                try { out.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e2) {}
+            }
+        }
+
+        if (!out.videoUrl) out.videoUrl = stringFromHtml(html, ['video_url'], code);
+        return out;
     }
 
     function pump() {
@@ -230,6 +204,13 @@
                 });
             })(item);
         }
+    }
+
+    function queued(fn) {
+        return new Promise(function (resolve) {
+            queue.push({ fn: fn, resolve: resolve });
+            pump();
+        });
     }
 
     function loadPost(url) {
@@ -253,12 +234,8 @@
                 refreshCard(code);
                 done(cache[code]);
             };
-            try {
-                xhr.send();
-            } catch (e) {
-                cache[code].promise = null;
-                done(cache[code]);
-            }
+            try { xhr.send(); }
+            catch (e) { cache[code].promise = null; done(cache[code]); }
         });
 
         return cache[code].promise;
@@ -266,15 +243,12 @@
 
     function mainVideo() {
         var list = document.getElementsByTagName('video');
-        var best = null, bestArea = 0, i, r, area;
+        var best = null, area = 0, i, r, a;
         for (i = 0; i < list.length; i++) {
             if (!visible(list[i])) continue;
             r = list[i].getBoundingClientRect();
-            area = r.width * r.height;
-            if (area > bestArea) {
-                bestArea = area;
-                best = list[i];
-            }
+            a = r.width * r.height;
+            if (a > area) { area = a; best = list[i]; }
         }
         return best;
     }
@@ -291,44 +265,19 @@
 
     function strictMetric(root, labels) {
         var all = root.querySelectorAll('button,a,[aria-label],[title],span');
-        var i, el, aria, title, text, n, control;
+        var i, el, aria, title, text, n;
         for (i = 0; i < all.length; i++) {
             el = all[i];
             aria = (el.getAttribute('aria-label') || '').trim();
             title = (el.getAttribute('title') || '').trim();
             text = (el.textContent || '').trim();
 
-            if (containsLabel(aria, labels)) {
-                n = labelled(aria, labels);
-                if (n !== null) return n;
-                if (aria.length < 60) {
-                    n = singleCount(aria);
-                    if (n !== null) return n;
-                }
-            }
-
-            if (containsLabel(title, labels)) {
-                n = labelled(title, labels);
-                if (n !== null) return n;
-                if (title.length < 60) {
-                    n = singleCount(title);
-                    if (n !== null) return n;
-                }
-            }
-
-            if (text.length <= 60 && containsLabel(text, labels)) {
+            n = labelled(aria, labels);
+            if (n !== null) return n;
+            n = labelled(title, labels);
+            if (n !== null) return n;
+            if (text.length <= 50) {
                 n = labelled(text, labels);
-                if (n !== null) return n;
-
-                control = el.closest('button,a');
-                if (control) {
-                    n = singleCount((control.textContent || '').trim());
-                    if (n !== null) return n;
-                    n = siblingCount(control);
-                    if (n !== null) return n;
-                }
-
-                n = siblingCount(el);
                 if (n !== null) return n;
             }
         }
@@ -340,14 +289,9 @@
         var root = rootFor(v);
         var times = document.querySelectorAll('time[datetime]');
         var date = null, i;
-
         for (i = 0; i < times.length; i++) {
-            if (visible(times[i])) {
-                date = times[i].getAttribute('datetime');
-                break;
-            }
+            if (visible(times[i])) { date = times[i].getAttribute('datetime'); break; }
         }
-
         return {
             views: strictMetric(root, ['조회수','views','plays','재생']),
             likes: strictMetric(root, ['좋아요','likes','like']),
@@ -365,38 +309,18 @@
     function currentData() {
         var code = codeFromUrl(location.href);
         var dom = currentDomData();
-
         if (!code) return Promise.resolve(dom);
-
         cache[code] = merge(cache[code], dom);
-
         return loadPost(location.href).then(function (remote) {
             var out = merge(dom, remote);
-
             if (dom.videoUrl) out.videoUrl = dom.videoUrl;
             if (dom.thumbUrl) out.thumbUrl = dom.thumbUrl;
             if (dom.duration !== null) out.duration = dom.duration;
             if (dom.width) out.width = dom.width;
             if (dom.height) out.height = dom.height;
-
             cache[code] = merge(cache[code], out);
             return cache[code];
         });
-    }
-
-    function row(panel, label, value, id) {
-        var r = document.createElement('div');
-        var l = document.createElement('span');
-        var b = document.createElement('b');
-
-        r.style.cssText = 'display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eee;';
-        l.textContent = label;
-        b.textContent = value;
-        if (id) b.id = id;
-
-        r.appendChild(l);
-        r.appendChild(b);
-        panel.appendChild(r);
     }
 
     function openUrl(url) {
@@ -413,7 +337,21 @@
     }
 
     function openUpdate() {
-        openUrl(UPDATE_URL + '?t=' + Date.now());
+        var url = UPDATE_URL + '?ri=' + Date.now();
+        window.open(url, '_blank');
+    }
+
+    function addRow(panel, label, value, id) {
+        var row = document.createElement('div');
+        var left = document.createElement('span');
+        var right = document.createElement('b');
+        row.style.cssText = 'display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eee;';
+        left.textContent = label;
+        right.textContent = value;
+        if (id) right.id = id;
+        row.appendChild(left);
+        row.appendChild(right);
+        panel.appendChild(row);
     }
 
     function closePanel() {
@@ -424,20 +362,15 @@
 
     function updatePanel(data) {
         var x, info = '확인 불가';
-
         x = document.getElementById('ri-v-views'); if (x) x.textContent = fmt(data.views);
         x = document.getElementById('ri-v-likes'); if (x) x.textContent = fmt(data.likes);
         x = document.getElementById('ri-v-comments'); if (x) x.textContent = fmt(data.comments);
         x = document.getElementById('ri-v-reposts'); if (x) x.textContent = fmt(data.reposts);
         x = document.getElementById('ri-v-date'); if (x) x.textContent = data.date || '확인 불가';
-
         if (data.width && data.height) {
             info = data.width + '×' + data.height;
-            if (data.duration !== null && data.duration !== undefined) {
-                info += ' · ' + Number(data.duration).toFixed(1) + '초';
-            }
+            if (data.duration !== null && data.duration !== undefined) info += ' · ' + Number(data.duration).toFixed(1) + '초';
         }
-
         x = document.getElementById('ri-v-video'); if (x) x.textContent = info;
     }
 
@@ -454,39 +387,28 @@
         var initial = currentDomData();
 
         if (tool) tool.remove();
-
         bg.id = 'ri-panel';
         bg.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.4);';
         panel.style.cssText = 'position:absolute;left:0;right:0;bottom:0;background:#fff;color:#111;border-radius:18px 18px 0 0;padding:14px 14px 24px;font:14px system-ui;';
-
         close.textContent = '×';
         close.style.cssText = 'float:right;border:0;background:#eee;border-radius:999px;width:34px;height:34px;font-size:20px;';
         close.onclick = closePanel;
-
         title.textContent = 'Reels Inspector ' + VERSION;
-
         panel.appendChild(close);
         panel.appendChild(title);
-        row(panel, '조회수', fmt(initial.views), 'ri-v-views');
-        row(panel, '좋아요', fmt(initial.likes), 'ri-v-likes');
-        row(panel, '댓글', fmt(initial.comments), 'ri-v-comments');
-        row(panel, '리포스트', fmt(initial.reposts), 'ri-v-reposts');
-        row(panel, '날짜', initial.date || '확인 불가', 'ri-v-date');
-        row(panel, '영상', '읽는 중…', 'ri-v-video');
+        addRow(panel, '조회수', fmt(initial.views), 'ri-v-views');
+        addRow(panel, '좋아요', fmt(initial.likes), 'ri-v-likes');
+        addRow(panel, '댓글', fmt(initial.comments), 'ri-v-comments');
+        addRow(panel, '리포스트', fmt(initial.reposts), 'ri-v-reposts');
+        addRow(panel, '날짜', initial.date || '확인 불가', 'ri-v-date');
+        addRow(panel, '영상', '읽는 중…', 'ri-v-video');
 
         actions.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;';
         img.textContent = '썸네일 열기';
         vid.textContent = '영상 열기';
         img.style.cssText = vid.style.cssText = 'border:0;border-radius:11px;background:#111;color:#fff;padding:11px;font-weight:800;';
-
-        img.onclick = function () {
-            currentData().then(function (d) { openUrl(d.thumbUrl); });
-        };
-
-        vid.onclick = function () {
-            currentData().then(function (d) { openUrl(d.videoUrl); });
-        };
-
+        img.onclick = function () { currentData().then(function (d) { openUrl(d.thumbUrl); }); };
+        vid.onclick = function () { currentData().then(function (d) { openUrl(d.videoUrl); }); };
         actions.appendChild(img);
         actions.appendChild(vid);
         panel.appendChild(actions);
@@ -498,10 +420,7 @@
 
         bg.appendChild(panel);
         document.documentElement.appendChild(bg);
-
-        bg.onclick = function (e) {
-            if (e.target === bg) closePanel();
-        };
+        bg.onclick = function (e) { if (e.target === bg) closePanel(); };
 
         currentData().then(updatePanel);
         setTimeout(function () {
@@ -511,19 +430,9 @@
 
     function syncTool() {
         var b = document.getElementById('ri-tool');
-
-        if (document.getElementById('ri-panel')) {
-            if (b) b.remove();
-            return;
-        }
-
-        if (!detailPage()) {
-            if (b) b.remove();
-            return;
-        }
-
+        if (document.getElementById('ri-panel')) { if (b) b.remove(); return; }
+        if (!detailPage()) { if (b) b.remove(); return; }
         if (b) return;
-
         b = document.createElement('button');
         b.id = 'ri-tool';
         b.textContent = '도구';
@@ -553,13 +462,10 @@
         if (!a.closest('main')) return false;
         if (a.closest('nav,header,[role="navigation"],[role="dialog"],#ri-panel')) return false;
         if (fixedAncestor(a)) return false;
-
         img = a.querySelector('img');
         if (!img) return false;
-
         ar = a.getBoundingClientRect();
         ir = img.getBoundingClientRect();
-
         if (ar.width < 80 || ar.height < 80 || ir.width < 80 || ir.height < 80) return false;
         if (ir.width < ar.width * 0.55) return false;
         return true;
@@ -569,20 +475,18 @@
         var out = [a.textContent || '', a.getAttribute('aria-label') || '', a.getAttribute('title') || ''];
         var all = a.querySelectorAll('[aria-label],[title],img[alt]');
         var i, v;
-
         for (i = 0; i < all.length; i++) {
             v = all[i].getAttribute('aria-label'); if (v) out.push(v);
             v = all[i].getAttribute('title'); if (v) out.push(v);
             v = all[i].getAttribute('alt'); if (v) out.push(v);
         }
-
         return out.join(' ');
     }
 
     function cardData(a) {
         var code = codeFromUrl(a.href);
-        var text = cardText(a);
         var img = a.querySelector('img');
+        var text = cardText(a);
         var nativeData = {
             code: code,
             pageUrl: a.href,
@@ -591,7 +495,6 @@
             comments: labelled(text, ['댓글','comments','comment']),
             thumbUrl: img ? (img.currentSrc || img.src || '') : ''
         };
-
         cache[code] = merge(cache[code], nativeData);
         return cache[code];
     }
@@ -601,33 +504,9 @@
         b.textContent = text;
         b.title = title;
         b.style.cssText = 'min-width:34px;height:29px;padding:0 6px;border:0;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:800 9px system-ui;';
-
-        b.addEventListener('pointerdown', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }, true);
-
-        b.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            fn();
-        }, true);
-
+        b.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
+        b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); fn(); }, true);
         return b;
-    }
-
-    function ensureVideoButton(a, data) {
-        var actions = a.querySelector('.ri-actions');
-        var existing = a.querySelector('.ri-vid');
-        if (!actions || !data || !data.videoUrl || existing) return;
-
-        existing = gridButton('VID', '영상 열기', function () {
-            loadPost(a.href).then(function (d) {
-                openUrl(d.videoUrl || a.href);
-            });
-        });
-        existing.className = 'ri-vid';
-        actions.appendChild(existing);
     }
 
     function paintCard(a) {
@@ -636,20 +515,15 @@
         var actions = a.querySelector('.ri-actions');
         var lines = [], second = [];
         var safe = safeOverlayArea(a);
-
         if (!box) return;
-
         if (data.views !== null && data.views !== undefined) lines.push('▶ ' + fmt(data.views));
         if (data.likes !== null && data.likes !== undefined) second.push('♥ ' + fmt(data.likes));
         if (data.comments !== null && data.comments !== undefined) second.push('💬 ' + fmt(data.comments));
         if (second.length) lines.push(second.join(' · '));
         if (data.date) lines.push(String(data.date).slice(5));
-
         box.textContent = lines.join('\n');
         box.style.display = safe && lines.length ? 'block' : 'none';
         if (actions) actions.style.display = safe ? 'flex' : 'none';
-
-        ensureVideoButton(a, data);
     }
 
     function refreshCard(code) {
@@ -659,9 +533,8 @@
     }
 
     function renderCard(a) {
-        var code, img, box, actions, knownVideo;
+        var code, img, box, actions, vid;
         if (!validGridAnchor(a)) return;
-
         code = codeFromUrl(a.href);
         if (!code) return;
 
@@ -683,19 +556,13 @@
         actions = document.createElement('div');
         actions.className = 'ri-actions';
         actions.style.cssText = 'position:absolute;right:4px;top:4px;z-index:50;display:flex;gap:3px;';
-
-        actions.appendChild(gridButton('IMG', '이미지 열기', function () {
-            openUrl(img.currentSrc || img.src || '');
-        }));
+        actions.appendChild(gridButton('IMG', '이미지 열기', function () { openUrl(img.currentSrc || img.src || ''); }));
 
         if (/\/(reel|reels)\//.test(a.pathname || '')) {
-            knownVideo = gridButton('VID', '영상 열기', function () {
-                loadPost(a.href).then(function (d) {
-                    openUrl(d.videoUrl || a.href);
-                });
+            vid = gridButton('VID', '영상 열기', function () {
+                loadPost(a.href).then(function (d) { openUrl(d.videoUrl || a.href); });
             });
-            knownVideo.className = 'ri-vid';
-            actions.appendChild(knownVideo);
+            actions.appendChild(vid);
         }
 
         a.appendChild(box);
@@ -707,12 +574,10 @@
     function cleanup() {
         var all = document.querySelectorAll('.ri-actions,.ri-metrics');
         var i, host;
-
         for (i = 0; i < all.length; i++) {
             host = all[i].parentElement;
             if (!host || !validGridAnchor(host) || detailPage()) all[i].remove();
         }
-
         all = document.querySelectorAll('[data-ri="1"]');
         for (i = 0; i < all.length; i++) {
             if (!validGridAnchor(all[i]) || detailPage()) {
@@ -720,7 +585,6 @@
                 all[i].removeAttribute('data-ri-code');
             }
         }
-
         all = ['ri-github-retry','ri-install-ok','ri-file-ok','ri-test-box','ri-update'];
         for (i = 0; i < all.length; i++) {
             host = document.getElementById(all[i]);
@@ -733,12 +597,8 @@
         cleanup();
         syncTool();
         if (detailPage()) return;
-
         all = document.querySelectorAll('a[href*="/reel/"],a[href*="/reels/"],a[href*="/p/"]');
-        for (i = 0; i < all.length; i++) {
-            if (validGridAnchor(all[i])) candidates.push(all[i]);
-        }
-
+        for (i = 0; i < all.length; i++) if (validGridAnchor(all[i])) candidates.push(all[i]);
         if (candidates.length < 3) return;
         for (i = 0; i < candidates.length; i++) renderCard(candidates[i]);
     }
@@ -753,20 +613,16 @@
         d.textContent = 'RI ' + VERSION;
         d.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483646;background:#111;color:#fff;padding:6px 9px;border-radius:8px;font:700 12px system-ui;pointer-events:none;';
         (document.body || document.documentElement).appendChild(d);
-        setTimeout(function () {
-            if (d.parentNode) d.remove();
-        }, 1200);
+        setTimeout(function () { if (d.parentNode) d.remove(); }, 1200);
     }
 
     function start() {
         var observer = new MutationObserver(schedule);
         observer.observe(document.documentElement, { childList:true, subtree:true });
         window.addEventListener('scroll', schedule, true);
-
         cleanup();
         status();
         scan();
-
         setInterval(function () {
             if (location.href !== lastUrl) {
                 lastUrl = location.href;
@@ -780,9 +636,6 @@
         }, 900);
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', start);
-    } else {
-        start();
-    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
 })();
