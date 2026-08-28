@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.1.3
+// @version      3.1.4
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '3.1.3';
+    var VERSION = '3.1.4';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var CACHE_KEY = 'ri311:items:v1';
     var SNAP_KEY = 'ri311:snap:v1';
@@ -98,6 +98,12 @@
         return String(Math.round(n));
     }
 
+    function fmtCountOrDash(value) {
+        if (value == null || value === '' || !isFinite(Number(value))) return '-';
+        if (Number(value) === 0) return '0';
+        return fmt(value) || '-';
+    }
+
     function fmtPercent(n) {
         n = Number(n);
         if (!isFinite(n)) return '';
@@ -116,9 +122,7 @@
         return r.width > 2 && r.height > 2 && r.bottom > 0 && r.top < innerHeight;
     }
 
-    function sourceRank(source) {
-        return SOURCE_RANK[source] || 0;
-    }
+    function sourceRank(source) { return SOURCE_RANK[source] || 0; }
 
     function fieldValue(item, key) {
         var f = item && item.fields && item.fields[key];
@@ -370,7 +374,7 @@
     function hookNetwork() {
         var originalFetch = window.fetch;
         var XHR = window.XMLHttpRequest;
-        if (originalFetch && !originalFetch.__ri313) {
+        if (originalFetch && !originalFetch.__ri314) {
             window.fetch = function () {
                 return originalFetch.apply(this, arguments).then(function (response) {
                     try {
@@ -381,22 +385,22 @@
                     return response;
                 });
             };
-            window.fetch.__ri313 = true;
+            window.fetch.__ri314 = true;
         }
-        if (XHR && !XHR.prototype.__ri313) {
+        if (XHR && !XHR.prototype.__ri314) {
             var originalOpen = XHR.prototype.open;
             var originalSend = XHR.prototype.send;
-            XHR.prototype.open = function () { this.__ri313url = arguments[1] || ''; return originalOpen.apply(this, arguments); };
+            XHR.prototype.open = function () { this.__ri314url = arguments[1] || ''; return originalOpen.apply(this, arguments); };
             XHR.prototype.send = function () {
                 this.addEventListener('load', function () {
                     try {
                         var ct = this.getResponseHeader('content-type') || '';
-                        if ((/json/i.test(ct) || /graphql|api|clips|reels|media/i.test(this.__ri313url || '')) && typeof this.responseText === 'string') scanJsonText(this.responseText, 'network');
+                        if ((/json/i.test(ct) || /graphql|api|clips|reels|media/i.test(this.__ri314url || '')) && typeof this.responseText === 'string') scanJsonText(this.responseText, 'network');
                     } catch (e) {}
                 });
                 return originalSend.apply(this, arguments);
             };
-            XHR.prototype.__ri313 = true;
+            XHR.prototype.__ri314 = true;
         }
     }
 
@@ -528,6 +532,46 @@
         a.remove();
     }
 
+    function directDownload(url, filename) {
+        if (!url) return;
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename || 'instagram-media';
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }
+
+    function extensionFromUrl(url, fallback) {
+        var clean = String(url || '').split('?')[0];
+        var m = clean.match(/\.([A-Za-z0-9]{2,5})$/);
+        return m ? '.' + m[1].toLowerCase() : fallback;
+    }
+
+    function downloadMedia(url, filename) {
+        if (!url) return;
+        var fallback = function () { directDownload(url, filename); };
+        try {
+            fetch(url, { credentials: 'omit' }).then(function (response) {
+                if (!response.ok) throw new Error('download');
+                return response.blob();
+            }).then(function (blob) {
+                var objectUrl = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = objectUrl;
+                a.download = filename || 'instagram-media';
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 2500);
+            }).catch(fallback);
+        } catch (e) { fallback(); }
+    }
+
     function copyText(text) {
         if (!text) return;
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -617,8 +661,19 @@
         menu.id = 'ri3-grid-menu';
         menu.dataset.code = code;
         menu.setAttribute('role', 'menu');
-        if (videoCard) addGridMenuButton(menu, videoUrl ? '영상 열기' : '영상 준비중', !!videoUrl, function () { openUrl(videoUrl); });
-        addGridMenuButton(menu, type === 'CAROUSEL' ? '대표 이미지' : (videoCard ? '썸네일 열기' : '이미지 열기'), !!imageUrl, function () { openUrl(imageUrl); });
+
+        if (videoCard) {
+            addGridMenuButton(menu, videoUrl ? '영상 다운로드' : '영상 준비중', !!videoUrl, function () {
+                downloadMedia(videoUrl, 'instagram_' + code + '_video' + extensionFromUrl(videoUrl, '.mp4'));
+            });
+            addGridMenuButton(menu, '썸네일 다운로드', !!imageUrl, function () {
+                downloadMedia(imageUrl, 'instagram_' + code + '_thumb' + extensionFromUrl(imageUrl, '.jpg'));
+            });
+        } else {
+            addGridMenuButton(menu, type === 'CAROUSEL' ? '대표 이미지 다운로드' : '이미지 다운로드', !!imageUrl, function () {
+                downloadMedia(imageUrl, 'instagram_' + code + '_image' + extensionFromUrl(imageUrl, '.jpg'));
+            });
+        }
         addGridMenuButton(menu, '링크 복사', !!pageUrl, function () { copyText(pageUrl); });
         document.documentElement.appendChild(menu);
         var menuRect = menu.getBoundingClientRect();
@@ -631,12 +686,12 @@
 
     function ensureGridCard(anchor, code) {
         var box, actions, mediaButton;
-        if (anchor.dataset.ri313Code !== code) {
-            anchor.dataset.ri313Code = code;
-            anchor.dataset.ri313Render = '';
+        if (anchor.dataset.ri314Code !== code) {
+            anchor.dataset.ri314Code = code;
+            anchor.dataset.ri314Render = '';
         }
-        if (anchor.dataset.ri313Ready === '1' && anchor.querySelector('.ri3-grid-box') && anchor.querySelector('.ri3-grid-actions')) return;
-        anchor.dataset.ri313Ready = '1';
+        if (anchor.dataset.ri314Ready === '1' && anchor.querySelector('.ri3-grid-box') && anchor.querySelector('.ri3-grid-actions')) return;
+        anchor.dataset.ri314Ready = '1';
         anchor.style.position = anchor.style.position || 'relative';
         Array.prototype.slice.call(anchor.querySelectorAll('.ri3-grid-box,.ri3-grid-actions')).forEach(function (el) { el.remove(); });
         box = document.createElement('div');
@@ -648,14 +703,14 @@
         mediaButton = document.createElement('button');
         mediaButton.type = 'button';
         mediaButton.className = 'ri3-grid-media';
-        mediaButton.setAttribute('aria-label', '미디어 메뉴');
-        mediaButton.setAttribute('title', '미디어 메뉴');
+        mediaButton.setAttribute('aria-label', '미디어 저장 메뉴');
+        mediaButton.setAttribute('title', '미디어 저장 메뉴');
         mediaButton.innerHTML = mediaActionIcon();
         mediaButton.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
         mediaButton.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
-            openGridMenu(anchor, anchor.dataset.ri313Code || code);
+            openGridMenu(anchor, anchor.dataset.ri314Code || code);
         }, true);
         actions.appendChild(mediaButton);
         anchor.appendChild(actions);
@@ -674,23 +729,29 @@
         var er = videoCard ? engagement(views, likes, comments, reposts) : null;
         var growth = videoCard && views ? growth24h(data.code, views) : null;
         var multiple = videoCard && views ? accountMultiple(data.code, fieldValue(data, 'owner'), views) : null;
-        var line1 = [], line2 = [], key, actions, safe;
+        var line1, line2, key, actions, safe;
         if (!row1 || !row2) return;
+
+        line1 = [
+            '▶' + (videoCard && Number(views) > 0 ? fmtCountOrDash(views) : '-'),
+            '♥' + fmtCountOrDash(likes),
+            '●' + fmtCountOrDash(comments),
+            '↻' + fmtCountOrDash(reposts)
+        ];
+        line2 = [
+            er != null ? fmtPercent(er) : '-',
+            growth != null ? ((growth >= 0 ? '+' : '') + fmtPercent(growth)) : '-',
+            multiple != null ? fmtMultiple(multiple) : '-',
+            date ? String(date).slice(5).replace('-', '/') : '-'
+        ];
+
         key = [type, views, likes, comments, reposts, date, er, growth, multiple].join('|');
-        if (anchor.dataset.ri313Render !== key) {
-            if (videoCard && views) line1.push('▶' + fmt(views));
-            if (likes != null) line1.push('♥' + fmt(likes));
-            if (comments != null) line1.push('●' + fmt(comments));
-            if (reposts != null) line1.push('↻' + fmt(reposts));
-            if (er != null) line2.push(fmtPercent(er));
-            if (growth != null) line2.push((growth >= 0 ? '+' : '') + fmtPercent(growth));
-            if (multiple != null) line2.push(fmtMultiple(multiple));
-            if (date) line2.push(String(date).slice(5).replace('-', '/'));
+        if (anchor.dataset.ri314Render !== key) {
             row1.textContent = line1.join(' ');
             row2.textContent = line2.join(' ');
-            row1.style.display = line1.length ? 'flex' : 'none';
-            row2.style.display = line2.length ? 'flex' : 'none';
-            anchor.dataset.ri313Render = key;
+            row1.style.display = 'flex';
+            row2.style.display = 'flex';
+            anchor.dataset.ri314Render = key;
         }
         actions = anchor.querySelector('.ri3-grid-actions');
         safe = gridSafe(anchor);
@@ -849,10 +910,10 @@
         if (multiple != null) lines.push(fmtMultiple(multiple));
         if (fieldValue(data, 'date')) lines.push(String(fieldValue(data, 'date')).slice(5).replace('-', '/'));
         key = lines.join('|');
-        if (box.dataset.ri313Render !== key) {
+        if (box.dataset.ri314Render !== key) {
             box.innerHTML = '';
             lines.forEach(function (text) { var row = document.createElement('div'); row.textContent = text; box.appendChild(row); });
-            box.dataset.ri313Render = key;
+            box.dataset.ri314Render = key;
         }
         box.style.display = lines.length ? 'flex' : 'none';
     }
@@ -983,12 +1044,12 @@
         style.textContent = [
             '[id^="ri22"],#ri-tool,#ri-panel,#ri-detail-metrics{display:none!important}',
             '.ri3-grid-box{position:absolute;left:0;right:0;bottom:0;z-index:8;pointer-events:none;display:flex;flex-direction:column;gap:3px;padding:20px 5px 5px;box-sizing:border-box;background:linear-gradient(to bottom,rgba(0,0,0,0),rgba(0,0,0,.50))}',
-            '.ri3-grid-row1,.ri3-grid-row2{display:none;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:clip}',
+            '.ri3-grid-row1,.ri3-grid-row2{display:flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:clip}',
             '.ri3-grid-row1{color:#fff;font:780 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;letter-spacing:-.42px;text-shadow:0 1px 2px rgba(0,0,0,.98),0 0 2px rgba(0,0,0,.78)}',
             '.ri3-grid-row2{color:#111;font:820 9.6px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;letter-spacing:-.38px;-webkit-text-stroke:.6px rgba(255,255,255,.98);paint-order:stroke fill;text-shadow:0 0 2px #fff}',
             '.ri3-grid-actions{position:absolute;left:5px;top:5px;z-index:9;display:flex;visibility:visible}',
             '.ri3-grid-actions button{width:28px;height:28px;padding:0;border:1px solid rgba(255,255,255,.38);border-radius:50%;background:rgba(0,0,0,.30);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);-webkit-tap-highlight-color:transparent}',
-            '#ri3-grid-menu{position:fixed;z-index:2147483646;min-width:116px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}',
+            '#ri3-grid-menu{position:fixed;z-index:2147483646;min-width:132px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}',
             '#ri3-grid-menu button{height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#fff;text-align:left;font:650 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap}',
             '#ri3-grid-menu button:active{background:rgba(255,255,255,.12)}#ri3-grid-menu button:disabled{opacity:.38}',
             '#ri3-reels-overlay{position:fixed;right:60px;top:clamp(112px,16vh,170px);z-index:2147483600;width:74px;display:none;flex-direction:column;align-items:flex-end;gap:5px;text-align:right;pointer-events:none;color:#fff;font:760 12px/1.08 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-shadow:0 1px 3px rgba(0,0,0,.98),0 0 2px rgba(0,0,0,.72)}',
@@ -1028,7 +1089,7 @@
     function hookHistory() {
         var originalPush = history.pushState;
         var originalReplace = history.replaceState;
-        if (!originalPush.__ri313) {
+        if (!originalPush.__ri314) {
             history.pushState = function () {
                 var result = originalPush.apply(this, arguments);
                 closeGridMenu();
@@ -1037,9 +1098,9 @@
                 scheduleRefresh();
                 return result;
             };
-            history.pushState.__ri313 = true;
+            history.pushState.__ri314 = true;
         }
-        if (!originalReplace.__ri313) {
+        if (!originalReplace.__ri314) {
             history.replaceState = function () {
                 var result = originalReplace.apply(this, arguments);
                 closeGridMenu();
@@ -1048,7 +1109,7 @@
                 scheduleRefresh();
                 return result;
             };
-            history.replaceState.__ri313 = true;
+            history.replaceState.__ri314 = true;
         }
         addEventListener('popstate', function () { closeGridMenu(); lastHistorySignature = ''; scanEmbedded(true); scheduleRefresh(); }, true);
     }
