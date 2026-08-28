@@ -4,7 +4,7 @@
 
 ## 현재 배포
 
-- 버전: **v3.1.5**
+- 버전: **v3.1.6**
 - 실행: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
 - 배포 파일: `ri-retry.user.js`
 - 배포 방식: 단일 self-contained userscript
@@ -25,43 +25,62 @@
 - 하단 Instagram 배너와 실제 겹치는 카드만 RI 영역 숨김
 - `ri311:*` 캐시 유지
 
-## v3.1.5 — Grid 슬롯/썸네일/Carousel/저장 경로
+## 실기기에서 확인된 v3.1.5 문제
 
-### 1. 8개 지표 슬롯의 위치 고정
+1. Video/Reel `썸네일 다운로드`가 실제 영상 cover가 아니라 음악/앨범 이미지로 저장되는 사례가 확인됨.
+2. 8개 지표가 DOM상 span으로 나뉘어 있어도 화면에서는 각자 고정된 x 위치가 충분히 드러나지 않고 왼쪽으로 몰려 보임.
+3. Android Edge에서 `저장 폴더 선택`이 나타나지 않고 기본 다운로드 위치로 바로 저장됨.
+4. Carousel 전체 다운로드는 ZIP이 아니라 원본 이미지들을 개별 파일로 한 번에 저장하는 흐름이 필요함.
 
-하단 2줄은 단순 문자열 나열이 아니라 **각 항목이 독립된 고정 셀**을 사용합니다.
+## v3.1.6 — Grid media/slot 수정
 
-1줄 4셀:
+### 1. 8개 슬롯 위치를 절대 고정
+
+각 행을 문자열 흐름이나 일반 flex/grid 정렬에 맡기지 않고, 4개 span을 카드 폭의 정해진 구간에 **absolute positioning**으로 고정합니다.
+
+1줄:
 
 `조회수 | 좋아요 | 댓글 | 리포스트`
 
-2줄 4셀:
+- 조회수: 0~32%
+- 좋아요: 32~59%
+- 댓글: 59~79%
+- 리포스트: 79~100%
+
+2줄:
 
 `ER | 24h | 계정 대비 | 날짜`
 
-규칙:
+- ER: 0~26%
+- 24h: 26~51%
+- 계정 대비: 51~75%
+- 날짜: 75~100%
 
-- 앞 슬롯 숫자가 길어져도 뒤 슬롯 시작 위치를 밀지 않음
-- 각 줄은 `30% / 24% / 23% / 23%` 고정 Grid column 사용
-- 미확보 값은 `-`
-- PHOTO/CAROUSEL은 조회수 추정 없이 `▶-`
-- 값이 같으면 기존 renderKey로 DOM 갱신하지 않음
+모든 셀은 가운데 정렬하고 `font-variant-numeric: tabular-nums`를 사용합니다. 다른 슬롯 값의 길이가 바뀌어도 위치는 이동하지 않습니다. 값이 없으면 기존처럼 `-`를 유지합니다.
 
-### 2. Video/Reel 썸네일 정확도 개선
+### 2. 음악 앨범 이미지와 실제 cover 분리
 
-기존에는 Store에서 수집된 `thumbUrl`을 먼저 사용하여 다른 nested media의 이미지가 섞일 가능성이 있었습니다.
+v3.1.5의 문제 원인은 현재 카드 안에서 단순히 첫 번째 `img`를 선택할 수 있었던 점입니다. Instagram 카드 안에는 음악/앨범 이미지 같은 작은 보조 이미지도 존재할 수 있습니다.
 
-v3.1.5에서는 Grid 다운로드 시:
+v3.1.6에서는 Grid cover를 다음 순서로 결정합니다.
 
-1. **현재 카드 DOM의 실제 `img` / `srcset`**을 최우선 사용
-2. `srcset`이 있으면 가장 큰 후보를 선택
-3. DOM 이미지가 없을 때만 Verified Store `thumbUrl` fallback
+1. 현재 카드와 **넓게 겹치는 큰 `img`**만 후보로 사용
+2. 카드 폭/높이의 약 62% 이상, 카드 면적의 약 38% 이상을 덮는 이미지 요구
+3. `music/audio/album/음원/앨범/프로필` 계열 보조 이미지는 작은 경우 제외
+4. 해당 `img`의 `srcset`이 있으면 가장 큰 후보 사용
+5. DOM에서 확실한 큰 cover가 없으면 현재 media object의 직접 이미지에서 만든 `coverUrl` 사용
+6. 마지막에만 기존 `thumbUrl` fallback
 
-Extractor에서도 `image_versions2.candidates`, `display_resources`, `display_url`, `thumbnail_src` 등 현재 media object의 직접 이미지 후보를 먼저 사용합니다.
+Extractor도 임의 nested image를 `thumbUrl`로 채우지 않고, shortcode를 가진 현재 media object의 `image_versions2 / display_resources / display_url` 등 직접 cover만 저장합니다.
 
-### 3. Carousel 전체 이미지 수집/다운로드
+### 3. Carousel 전체 이미지 다운로드 확대
 
-`carousel_media[]`가 확보되면 parent shortcode에 연결하여 순서대로 `carouselImages`에 저장합니다.
+Carousel slide 목록은 다음 두 Instagram 데이터 형태를 모두 지원합니다.
+
+- `carousel_media[]`
+- `edge_sidecar_to_children.edges[].node`
+
+각 slide에서 가장 큰 이미지 후보를 선택하고 parent shortcode에 순서대로 연결합니다.
 
 Grid 메뉴:
 
@@ -69,78 +88,73 @@ Grid 메뉴:
 - `대표 이미지 다운로드`
 - `링크 복사`
 
-파일명:
+ZIP은 사용하지 않습니다. `전체 이미지 다운로드` 한 번으로 다음처럼 **개별 파일을 순차 저장**합니다.
 
-`Instagram_<shortcode>_slide_01.jpg`
-`Instagram_<shortcode>_slide_02.jpg`
+`Instagram_<shortcode>_slide_01.*`
+`Instagram_<shortcode>_slide_02.*`
+`Instagram_<shortcode>_slide_03.*`
 ...
 
-- 슬라이드 순서 유지
-- 중복 URL 제거
-- 아직 `carousel_media[]`가 확보되지 않았으면 `전체 이미지 준비중`으로 표시
-- permalink HTML 내부 JSON도 추가 스캔하여 Carousel slide 확보 가능성을 높임
+저장 중에는 `1/N`, `2/N` 형태의 진행 toast를 표시합니다. 브라우저가 여러 자동 다운로드 권한을 요구하면 사용자가 해당 사이트의 여러 파일 다운로드를 허용해야 할 수 있습니다.
 
-현재 구현은 **Carousel 이미지/포스터** 전체를 대상으로 합니다. Carousel 안의 video child를 원본 영상으로 일괄 저장하는 기능은 공통 `media[]` 모델 단계에서 확장합니다.
+### 4. Android Edge 저장 폴더 제한을 UI에 명확히 표시
 
-### 4. 다운로드 폴더
+현재 Android Edge 실행 환경에서는 `window.showDirectoryPicker`가 노출되지 않아 userscript가 사용자가 지정한 폴더의 write handle을 받을 수 없습니다.
 
-브라우저가 File System Access API의 `showDirectoryPicker()`를 제공하면 Grid 메뉴에:
+따라서 현재 기기에서는:
 
-- `저장 폴더 선택`
-- 선택 후 `저장 폴더 변경`
+- 메뉴에 `저장 위치: 기본 Downloads` 표시
+- 다운로드 시 최초 1회 `Android Edge: 폴더 지정 불가 · 기본 Downloads에 저장` 안내
+- 파일명을 `Instagram_<shortcode>_...` 형태로 통일
 
-을 표시합니다. 선택한 폴더는 현재 페이지 세션의 다운로드 대상이 됩니다.
+웹 페이지/Tampermonkey가 브라우저 권한 없이 Android 파일시스템에 임의로 `Instagram/` 폴더를 생성하고 그 안에 파일을 쓰는 것은 브라우저 sandbox 때문에 할 수 없습니다.
 
-지원하지 않는 브라우저에서는:
-
-- `저장 폴더: 브라우저 기본` 비활성 표시
-- 브라우저/OS가 설정한 Downloads 위치로 저장
-- 파일명을 `Instagram_...` 접두사로 통일
-
-웹 페이지/userscript는 브라우저가 File System Access 권한을 제공하지 않는 환경에서 임의의 로컬 폴더를 생성하거나 다운로드 경로를 강제할 수 없습니다. 이는 브라우저 sandbox 보안 제한입니다.
-
-선택 폴더를 사용 중이어도 Instagram CDN이 CORS로 Blob fetch를 거부하면 선택 폴더 직접 쓰기가 불가능할 수 있으며, 이 경우 기본 브라우저 다운로드로 fallback합니다.
+`showDirectoryPicker()`를 제공하는 다른 환경에서는 기존처럼 사용자가 폴더를 선택할 수 있습니다.
 
 ## Grid 미디어 메뉴
 
-REEL / VIDEO:
+### REEL / VIDEO
+
 - `영상 다운로드`
 - `썸네일 다운로드`
-- 저장 폴더 항목
+- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
 
-PHOTO:
+### PHOTO
+
 - `이미지 다운로드`
-- 저장 폴더 항목
+- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
 
-CAROUSEL:
+### CAROUSEL
+
 - `전체 이미지 다운로드 (N)`
 - `대표 이미지 다운로드`
-- 저장 폴더 항목
+- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
 
-## 실기기 검증 항목
+## 현재 실기기 검증 항목
 
-1. 조회수 숫자 길이가 달라도 좋아요/댓글/리포스트 위치가 움직이지 않는지
-2. 2줄의 ER/24h/계정대비/날짜도 각각 같은 위치를 유지하는지
-3. 값 미확보 슬롯에 `-`가 유지되는지
-4. Video/Reel `썸네일 다운로드`가 현재 Grid에 보이는 해당 콘텐츠의 실제 cover인지
-5. Carousel 메뉴에 확보된 slide 수가 `(N)`으로 표시되는지
-6. `전체 이미지 다운로드`가 같은 shortcode의 모든 slide 이미지를 순서대로 저장하는지
-7. 우리 Grid 버튼은 카드당 1개인지
-8. Instagram 기본 미디어 아이콘은 그대로인지
-9. 영상/이미지 다운로드가 다른 카드와 섞이지 않는지
-10. 폴더 선택 지원 환경에서는 선택한 폴더로 저장되는지
-11. 미지원 환경에서는 브라우저 기본 다운로드로 정상 fallback하는지
-12. 숫자 깜빡임이 다시 생기지 않는지
-13. 하단 앱 배너와 겹치는 카드만 RI 영역이 숨겨지는지
+1. 8개 지표가 각 카드에서 동일한 x 위치에 고정되는지
+2. 조회수/좋아요 숫자 길이가 달라도 댓글/리포스트 위치가 움직이지 않는지
+3. 미확보 값이 해당 자리의 `-`로 유지되는지
+4. Video/Reel 썸네일 다운로드가 음악 앨범 이미지가 아니라 실제 Grid cover인지
+5. 같은 카드에서 반복 다운로드해도 다른 shortcode cover가 섞이지 않는지
+6. Carousel 메뉴의 `(N)`이 실제 slide 수와 맞는지
+7. `전체 이미지 다운로드`가 ZIP 없이 slide 01~N을 각각 저장하는지
+8. Carousel 순서가 Instagram slide 순서와 일치하는지
+9. Android Edge에서는 `저장 위치: 기본 Downloads`가 표시되는지
+10. 다운로드 시 폴더 지정 불가 안내가 한 번 표시되는지
+11. 기존 숫자 깜빡임이 다시 생기지 않는지
+12. 우리 Grid 버튼이 카드당 1개만 유지되는지
+13. Instagram 기본 미디어 아이콘이 그대로인지
+14. 하단 앱 배너와 겹치는 카드만 RI 영역이 숨겨지는지
 
 ## 다음 개발 단계
 
-Grid의 위 회귀를 실기기에서 확인한 뒤 v3.2 Grid 안정화를 마감합니다.
+위 Grid 회귀를 실기기에서 확인한 뒤 v3.2 Grid 안정화를 마감합니다.
 
-그 다음 v3.3 Content Types에서 현재의 `carouselImages` 임시 필드를 공통 `media[]` 모델로 확장합니다.
+그 다음 v3.3 Content Types에서 현재 `carouselImages`를 공통 `media[]` 모델로 확장합니다.
 
 - Photo
 - Feed Video
@@ -156,10 +170,12 @@ Grid의 위 회귀를 실기기에서 확인한 뒤 v3.2 Grid 안정화를 마�
 
 - 좋아진 동작을 기능 복구 때문에 과거 방식으로 되돌리지 않습니다.
 - Grid Frozen UI는 명시적 요청 없이는 크게 재설계하지 않습니다.
-- 8개 지표의 **슬롯 위치는 고정**합니다.
-- Video/Reel 썸네일은 현재 카드 identity와 일치하는 DOM image를 우선합니다.
-- Carousel 전체 이미지는 parent shortcode의 `carousel_media[]`에서만 구성합니다.
+- 8개 지표의 x 위치는 각각 고정합니다.
+- Video/Reel cover는 카드의 큰 본문 이미지와 현재 shortcode media object만 신뢰합니다.
+- 음악/앨범/프로필 보조 이미지를 영상 cover로 사용하지 않습니다.
+- Carousel 전체 이미지는 parent carousel의 slide 구조에서만 구성합니다.
+- ZIP을 기본 다운로드 방식으로 사용하지 않습니다.
 - 검증되지 않은 media URL을 만들지 않습니다.
-- 브라우저 sandbox를 우회해 임의 다운로드 폴더를 강제하지 않습니다.
+- 브라우저 sandbox를 우회해 Android 로컬 폴더를 강제 생성하지 않습니다.
 - hotfix `@require` 체인은 다시 만들지 않습니다.
 - 각 수정 후 `STATUS.md`를 갱신합니다.
