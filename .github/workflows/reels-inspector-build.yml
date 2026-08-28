@@ -6,6 +6,7 @@ on:
     paths:
       - 'reels-inspector/src/**'
       - 'reels-inspector/scripts/**'
+      - 'reels-inspector/tests/**'
       - 'reels-inspector/package.json'
       - '.github/workflows/reels-inspector-build.yml'
   workflow_dispatch:
@@ -28,6 +29,10 @@ jobs:
       - name: Install build dependency
         working-directory: reels-inspector
         run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Unit tests
+        working-directory: reels-inspector
+        run: npm test
 
       - name: Build userscript
         working-directory: reels-inspector
