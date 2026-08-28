@@ -165,70 +165,84 @@ ZIP은 기본 방식으로 사용하지 않는다.
 
 선택 폴더 쓰기가 가능한 환경에서는 향후 게시물별 하위 폴더로 batch를 묶는 옵션을 고려할 수 있다.
 
-## 코드 파일 구조 — 확정
+## 코드 파일 구조 — 재정비 완료
 
-상위 제품 설계와 별도로 실제 구현 파일 책임은 `CODE_STRUCTURE.md`에 고정한다.
+`CODE_STRUCTURE.md`를 **파일 수보다 책임과 회귀 방지를 우선하는 Progressive Modularization 기준**으로 다시 정리했다.
 
-목표 계층:
+초기 실제 목표는 약 10~15개 의미 있는 파일이다.
 
 ```text
 src/
-├ bootstrap/    # subsystem 조립/시작
-├ core/         # constants/events/capability/route
-├ instagram/    # identity/extractor/normalizer
-├ store/        # Verified/Settings/Snapshot/Persistence
-├ metrics/      # 순수 계산
-├ media/        # resolver/cover/carousel/Download Manager
-├ ui/           # global RI/Grid/Reel/Panel
-├ comments/     # 댓글 연구 로직
-└ analysis/     # 분석 서버 client/job
+├ main.js
+├ core/
+│  ├ app.js
+│  └ capability.js
+├ instagram/
+│  ├ identity.js
+│  └ extractor.js
+├ store/
+│  ├ verified-store.js
+│  └ settings-store.js
+├ metrics/
+│  └ metrics.js
+├ media/
+│  ├ media-resolver.js
+│  └ download-manager.js
+└ ui/
+   ├ grid.js
+   ├ reel.js
+   ├ ri-panel.js
+   └ styles.js
 ```
 
-원칙:
+규칙:
 
-- `ui`에서 Instagram raw parsing 금지
-- `metrics`에서 DOM 접근 금지
-- `store`가 `ui`를 import하지 않음
-- Grid 메뉴가 directory/file-system API를 직접 호출하지 않음
-- 모든 저장은 `media/download-manager.js`를 통과
+- 실제 책임이 생길 때만 파일 생성
+- 빈 placeholder 폴더/파일을 미리 만들지 않음
+- 약 300~500줄 이상으로 계속 커지거나 책임/테스트/재사용 경계가 명확할 때만 분리
+- `old/new/final/fix/hotfix/backup/copy` 파일명 금지
+- 과거 버전은 Git history로 관리
+- UI에서 raw Instagram parsing 금지
+- UI에서 File System Access 직접 호출 금지
+- 모든 다운로드는 `media/download-manager.js`를 통과
 - 순환 의존성 금지
-- Tampermonkey 배포는 계속 `ri-retry.user.js` 하나
+- 모듈 전환 완료 후 `src/*`만 개발 원본으로 사용
+- `ri-retry.user.js`는 generated deployment artifact로 유지
 
-현재 monolith를 한 번에 분해하지 않는다. 실기기에서 검증된 v3.1 기능을 보호하기 위해 **신규 v3.2 Foundation부터 모듈로 작성**하고 단계적으로 기존 코드를 연결한다.
+`.gitignore`도 추가해 HAR/debug dump/local downloads/.env/cache/개인 fixture가 저장소에 섞이지 않게 했다.
 
-v3.2에서 먼저 만들 파일:
-
-```text
-src/core/capability.js
-src/store/settings-store.js
-src/media/download-manager.js
-src/media/download-strategies/directory-writer.js
-src/media/download-strategies/browser-download.js
-src/media/download-strategies/save-picker.js
-src/ui/shell/global-ri-button.js
-src/ui/shell/ri-panel.js
-src/ui/panel/settings-tab.js
-```
-
-이 첫 단계에서는 Grid 8슬롯, cover identity, network extractor, Verified Store를 대규모 재작성하지 않는다.
+현재 v3.1.6 실행 코드 자체는 이 파일구조 정비 작업에서 변경하지 않았다.
 
 ## v3.2 — UI/Foundation 실행 순서
 
-1. `CODE_STRUCTURE.md` 기준 신규 Foundation 소스 모듈 생성
-2. capability detection
-3. Settings Store
-4. 공통 Download Manager + strategies
-5. 전역 RI 버튼을 모든 Instagram 화면에 표시
-6. RI 버튼 위치를 우측 하단 safe area로 통일
-7. 공용 RI Panel shell 생성
-8. `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell
-9. Grid 카드 메뉴에서 저장 위치 설정 제거
-10. 지정 폴더 / 기본 Downloads / 매번 선택 정책
-11. 영상·썸네일·사진·Carousel 저장경로 통합
-12. Grid 8개 고정 슬롯 실기기 마감
-13. cover identity 회귀 마감
-14. Carousel 개별 batch 다운로드 안정화
-15. regression test/실기기 검증
+첫 구현 세트는 아래 정도로 제한한다.
+
+```text
+src/main.js
+src/core/app.js
+src/core/capability.js
+src/store/settings-store.js
+src/media/download-manager.js
+src/ui/ri-panel.js
+src/ui/styles.js
+```
+
+순서:
+
+1. capability detection
+2. Settings Store
+3. 공통 Download Manager 기반
+4. 전역 RI 버튼
+5. 공용 RI Panel shell
+6. Grid 카드 메뉴에서 저장 위치 설정 제거
+7. 영상·썸네일·사진·Carousel 저장경로 통합
+8. 필요 시 `media-resolver.js`, `ui/grid.js`, `ui/reel.js` 추가
+9. Grid 8개 고정 슬롯 실기기 마감
+10. cover identity 회귀 마감
+11. Carousel 개별 batch 다운로드 안정화
+12. regression test/실기기 검증
+
+가장 회귀 위험이 높은 `identity / extractor / verified-store / metrics` 분리는 v3.2 Foundation과 다운로드 통합이 안정된 뒤 진행한다.
 
 그 다음 `v3.3 Content Types`에서 공통 Post/media 모델을 완성한다.
 
@@ -274,7 +288,8 @@ src/ui/panel/settings-tab.js
 - Grid Frozen UI를 관련 없는 기능 수정 때문에 되돌리지 않는다.
 - 카드별 메뉴에 전역 설정을 반복 배치하지 않는다.
 - 저장정책은 미디어 종류별로 분기하지 않고 공통 manager에서 처리한다.
-- 실제 코드 작성 위치/의존성은 `CODE_STRUCTURE.md`를 따른다.
+- 실제 코드 작성 위치/의존성/파일 분리 기준은 `CODE_STRUCTURE.md`를 따른다.
+- 테스트 fixture는 인증정보와 개인 raw dump를 제거한 sanitized data만 사용한다.
 - 검증되지 않은 값을 만들지 않는다.
 - hotfix `@require` 체인은 다시 만들지 않는다.
 - 구조/UI/우선순위/파일 책임이 바뀌면 `PROJECT_PLAN.md`, `CODE_STRUCTURE.md`와 관련 문서를 코드보다 먼저 또는 같은 작업에서 갱신한다.
