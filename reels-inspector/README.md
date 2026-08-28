@@ -2,11 +2,19 @@
 
 Instagram 모바일 웹에서 콘텐츠를 빠르게 조사하기 위한 Tampermonkey 리서치 도구입니다.
 
+## 개발 기준 문서
+개발의 단일 기준 문서는 **`PROJECT_PLAN.md`** 입니다.
+
+- 기능 수정/추가 전에 `PROJECT_PLAN.md`와 현재 실행 파일을 먼저 확인합니다.
+- 구조·기능·우선순위 결정이 바뀌면 `PROJECT_PLAN.md`도 함께 갱신합니다.
+- 현재 그리드 UI는 동결 영역으로 취급하며, Core 수정 중 외형과 정보 배치를 유지합니다.
+
 ## 현재 구조
 이 폴더의 실제 실행 파일은 **`ri-retry.user.js` 하나뿐**입니다.
 
 - `ri-retry.user.js` — 설치/업데이트/실행을 모두 담당하는 단일 self-contained userscript
-- `README.md` — 구조와 개발 원칙 문서
+- `PROJECT_PLAN.md` — 전체 제품 구조, 데이터 모델, UI 기준, 개발 로드맵, 회귀 기준
+- `README.md` — 설치와 현재 프로젝트 요약
 
 과거의 `@require` 체인, hotfix 파일, 테스트 설치 파일, 구형 모듈 파일은 모두 제거했습니다. 이전 버전은 Git 히스토리에서 복구할 수 있습니다.
 
