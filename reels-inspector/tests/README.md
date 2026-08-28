@@ -46,8 +46,6 @@
 
 ## v3.2 UI/Foundation 승인 기준
 
-아래는 v3.2 구현 시 추가되는 필수 acceptance criteria입니다.
-
 ### 전역 RI 버튼
 
 1. 프로필/검색/탐색/Grid/Reel/Post 상세에서 동일 RI 버튼이 표시된다.
@@ -79,10 +77,63 @@
 18. 저장정책은 미디어 종류가 아니라 전역 설정값으로 결정된다.
 19. 지정 폴더 모드에서 영상과 이미지가 서로 다른 폴더로 갈라지지 않는다.
 20. 지정 폴더 쓰기 실패 시 조용히 기본 Downloads로 fallback하지 않는다.
-21. 실패 이유를 사용자에게 표시하고 재시도/기본 다운로드를 명시적으로 선택하게 한다.
+21. 실패는 구조화된 `DownloadResult`로 반환되고 UI가 사용자에게 표시한다.
 22. `Android` 문자열만으로 지원 여부를 결정하지 않고 실제 API/permission을 검사한다.
 23. `매번 선택` 미지원 환경에서는 해당 옵션을 활성화하지 않는다.
-24. Carousel batch는 한 번 정한 batch destination에 slide 1..N을 모두 저장한다.
+24. Carousel batch는 destination을 한 번만 정하고 slide 1..N을 모두 같은 destination에 저장한다.
 25. 다운로드 파일명은 `Instagram_` 접두사와 shortcode/slide index를 유지한다.
+26. 이미지/영상 transport 방식이 달라져도 UI가 별도 다운로드 구현을 만들지 않는다.
+
+## v3.2 Architecture / Source-of-Truth 승인 기준
+
+### Source of Truth
+
+1. module 전환 시 root `ri-retry.user.js`와 `src/*`를 동시에 수작업 수정하지 않는다.
+2. build 전환 후 `src/*`만 개발 원본이다.
+3. `ri-retry.user.js`에는 generated warning/header가 포함된다.
+4. current runtime을 옮긴 `src/legacy-runtime.js`는 migration용 canonical module이지 backup이 아니다.
+5. 신규 기능을 `legacy-runtime.js`에 계속 추가하지 않는다.
+6. migration 완료 후 `legacy-runtime.js`를 삭제한다.
+
+### Single Owner / dependency
+
+7. route/event/lifecycle은 `core/app.js`가 소유한다.
+8. capability/permission probe는 `core/capability.js`가 소유한다.
+9. 저장정책 state/persistence는 `store/settings-store.js`가 소유한다.
+10. destination/file write는 `media/download-manager.js`가 소유한다.
+11. RI 전역 버튼/패널은 `ui/ri-panel.js`가 소유한다.
+12. 같은 책임을 다른 파일에서 별도 구현하지 않는다.
+13. `store -> ui` import가 없다.
+14. `metrics`에서 DOM 접근하지 않는다.
+15. `ui`에서 File System Access/localStorage/IndexedDB를 직접 사용하지 않는다.
+16. `ui`에서 fetch/XHR hook을 만들지 않는다.
+17. 순환 import가 없다.
+18. 신규 `src/*`에서 `oldFn = fn; fn = override` 형태 patch stack을 만들지 않는다.
+
+### Event / lifecycle
+
+19. 공식 event는 `app.js`에서 한 곳에 정의한다.
+20. subscribe API는 unsubscribe/cleanup을 반환한다.
+21. route 전환 후 이전 화면 listener가 남지 않는다.
+22. 동일 render key는 한 frame 안에서 dedupe된다.
+23. MutationObserver가 변경마다 전체 Grid scan/전체 rerender를 반복하지 않는다.
+
+### 중복/크기 관리
+
+24. private helper는 한 파일에서 시작하고 두 번째 사용처가 생길 때 owner API 승격 여부를 검토한다.
+25. 같은 핵심 로직을 복사해서 두 구현을 동시에 유지하지 않는다.
+26. 의미 없는 `utils.js`, `helpers.js`, `final2.js`, `hotfix.js`, `backup.js` 파일을 만들지 않는다.
+27. 일반 source 파일이 350줄을 넘으면 책임 분리를 검토한다.
+28. 일반 source 파일이 500줄을 넘으면 단일책임 근거가 없을 경우 분리한다.
+29. `legacy-runtime.js`는 migration 동안만 크기 예외다.
+30. 약 8줄 이상의 동일/거의 동일한 로직이 반복되면 owner 공통화 여부를 검토한다.
+
+### Build / Check
+
+31. bundle/syntax check 실패 시 배포파일을 갱신하지 않는다.
+32. build version과 userscript metadata/STATUS version이 일치한다.
+33. `check.mjs`는 금지 의존성/API 사용과 파일 크기 규칙을 검사한다.
+34. 가능한 경우 긴 반복 code block도 check 단계에서 warning 처리한다.
+35. build/check/regression 이후에만 generated `ri-retry.user.js`를 main에 반영한다.
 
 실기기 검증 결과는 `STATUS.md`에 기록합니다.
