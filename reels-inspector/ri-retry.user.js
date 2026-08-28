@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.1.5
+// @version      3.1.6
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '3.1.5';
+    var VERSION = '3.1.6';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var CACHE_KEY = 'ri311:items:v1';
     var SNAP_KEY = 'ri311:snap:v1';
@@ -1277,6 +1277,301 @@
             closeGridMenu();
         }, true);
     }
+
+    // v3.1.6: keep the proven v3.1.5 core and replace only the Grid/media pieces that regressed on-device.
+    var injectStyle315 = injectStyle;
+    var downloadMedia315 = downloadMedia;
+    var downloadLocationNoticeShown316 = false;
+
+    var carouselSlidesFromMedia316 = function (obj) {
+        var edges;
+        if (!obj || typeof obj !== 'object') return [];
+        if (Array.isArray(obj.carousel_media)) return obj.carousel_media;
+        if (Array.isArray(obj.carouselMedia)) return obj.carouselMedia;
+        edges = obj.edge_sidecar_to_children && obj.edge_sidecar_to_children.edges;
+        if (Array.isArray(edges)) return edges.map(function (edge) { return edge && (edge.node || edge); }).filter(Boolean);
+        return [];
+    };
+
+    detectMediaType = function (obj) {
+        var mt = Number(obj && (obj.media_type != null ? obj.media_type : obj.mediaType));
+        var pt = String(obj && (obj.product_type || obj.productType) || '').toLowerCase();
+        if (/reel|clips/.test(pt)) return 'REEL';
+        if (mt === 8 || carouselSlidesFromMedia316(obj).length) return 'CAROUSEL';
+        if (mt === 2 || (obj && (obj.video_versions || obj.video_url))) return 'VIDEO';
+        if (mt === 1) return 'PHOTO';
+        return '';
+    };
+
+    carouselImagesFromMedia = function (obj) {
+        var out = [], seen = Object.create(null), slides = carouselSlidesFromMedia316(obj);
+        slides.forEach(function (slide) {
+            var url = bestImageFromMedia(slide), key = normalizeUrl(url) || url;
+            if (url && !seen[key]) { seen[key] = 1; out.push(url); }
+        });
+        return out;
+    };
+
+    saveItem = function (code, patch, source, confidence) {
+        var item, keys, i, key, changed = false;
+        if (!code) return null;
+        item = items[code] || { code: code, fields: {}, conflicts: {} };
+        patch = patch || {};
+        if (!patch.mediaType && isReelUrl(patch.pageUrl || patch.canonicalUrl || '')) patch.mediaType = 'REEL';
+        keys = ['views','likes','comments','reposts','date','owner','videoUrl','thumbUrl','coverUrl','carouselImages','mediaId','ownerId','mediaType','productType','canonicalUrl'];
+        for (i = 0; i < keys.length; i++) {
+            key = keys[i];
+            if (patch[key] != null && patch[key] !== '' && setField(item, key, patch[key], source, confidence)) changed = true;
+        }
+        if (patch.pageUrl) item.pageUrl = patch.pageUrl;
+        if (patch.fetched) item.fetched = patch.fetched;
+        item.seen = Date.now();
+        item.identity = {
+            shortcode: code,
+            mediaId: fieldValue(item, 'mediaId') || '',
+            ownerId: fieldValue(item, 'ownerId') || '',
+            username: fieldValue(item, 'owner') || '',
+            mediaType: fieldValue(item, 'mediaType') || '',
+            productType: fieldValue(item, 'productType') || '',
+            canonicalUrl: fieldValue(item, 'canonicalUrl') || item.pageUrl || '',
+            state: fieldValue(item, 'mediaType') && fieldValue(item, 'owner') ? 'IDENTIFIED' : 'IDENTIFYING'
+        };
+        items[code] = item;
+        if (changed) {
+            scheduleStoreWrite();
+            recordSnapshot(code, fieldValue(item, 'views'));
+            recordPost(item);
+            scheduleRefresh();
+        }
+        return item;
+    };
+
+    rememberObject = function (obj, source) {
+        var code, patch = {}, n, user, videos = [], images = [], i, key, type, directCover, carouselImages;
+        if (!obj || typeof obj !== 'object') return;
+        code = obj.code || obj.shortcode || obj.short_code;
+        if (!code || typeof code !== 'string' || code.length < 5 || code.length > 40) return;
+        n = sameMediaNumber(obj, VIEW_KEYS, code, 0); if (n != null) patch.views = n;
+        n = sameMediaNumber(obj, ['like_count','likes_count'], code, 0); if (n != null) patch.likes = n;
+        n = sameMediaNumber(obj, ['comment_count','comments_count'], code, 0); if (n != null) patch.comments = n;
+        n = sameMediaNumber(obj, ['reshare_count','repost_count','reposts_count'], code, 0); if (n != null) patch.reposts = n;
+        n = sameMediaNumber(obj, ['taken_at','taken_at_timestamp'], code, 0);
+        if (n) { try { patch.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e) {} }
+        user = obj.user || obj.owner || obj.owner_user;
+        if (user && user.username) patch.owner = String(user.username).toLowerCase();
+        if (obj.pk || obj.id || obj.media_id) patch.mediaId = String(obj.pk || obj.id || obj.media_id);
+        if (obj.user_id || obj.owner_id || (user && (user.pk || user.id))) patch.ownerId = String(obj.user_id || obj.owner_id || user.pk || user.id);
+        type = detectMediaType(obj); if (type) patch.mediaType = type;
+        if (obj.product_type || obj.productType) patch.productType = String(obj.product_type || obj.productType);
+
+        directCover = bestImageFromMedia(obj);
+        if (directCover) {
+            patch.coverUrl = directCover;
+            patch.thumbUrl = directCover;
+            key = normalizeUrl(directCover);
+            if (key) posterMap[key] = code;
+        }
+        carouselImages = carouselImagesFromMedia(obj);
+        if (carouselImages.length) patch.carouselImages = carouselImages;
+
+        collectUrls(obj, code, videos, images, 0);
+        for (i = 0; i < videos.length; i++) {
+            key = normalizeUrl(videos[i]);
+            if (key) videoMap[key] = code;
+            if (!patch.videoUrl) patch.videoUrl = videos[i];
+        }
+        for (i = 0; i < images.length; i++) {
+            key = normalizeUrl(images[i]);
+            if (key) posterMap[key] = code;
+        }
+        saveItem(code, patch, source || 'embedded', source === 'network' ? 'high' : 'medium');
+    };
+
+    parsePermalink = function (html, url) {
+        var code = codeFromUrl(url), patch = { pageUrl: url, canonicalUrl: url }, doc, meta, desc = '', m, n, hasVideo = false;
+        try {
+            doc = new DOMParser().parseFromString(html, 'text/html');
+            meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
+            desc = meta ? (meta.getAttribute('content') || '') : '';
+            m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+likes?/i); if (m) patch.likes = parseCount(m[1]);
+            m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+comments?/i); if (m) patch.comments = parseCount(m[1]);
+            meta = doc.querySelector('meta[property="og:image"]');
+            if (meta && meta.getAttribute('content')) { patch.coverUrl = meta.getAttribute('content'); patch.thumbUrl = patch.coverUrl; }
+            meta = doc.querySelector('meta[property="og:video"],meta[property="og:video:secure_url"]');
+            if (meta && meta.getAttribute('content')) { patch.videoUrl = meta.getAttribute('content'); hasVideo = true; }
+        } catch (e) {}
+        if (isReelUrl(url)) patch.mediaType = 'REEL';
+        else if (hasVideo) patch.mediaType = 'VIDEO';
+        if (patch.mediaType === 'REEL' || patch.mediaType === 'VIDEO') patch.views = nearMetric(html, code, VIEW_KEYS);
+        if (patch.likes == null) patch.likes = nearMetric(html, code, ['like_count','likes_count']);
+        if (patch.comments == null) patch.comments = nearMetric(html, code, ['comment_count','comments_count']);
+        patch.reposts = nearMetric(html, code, ['reshare_count','repost_count','reposts_count']);
+        n = nearMetric(html, code, ['taken_at','taken_at_timestamp']);
+        if (n) { try { patch.date = new Date(n * 1000).toISOString().slice(0,10); } catch (e) {} }
+        return patch;
+    };
+
+    scanPermalinkJson = function (html) {
+        try {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var scripts = doc.querySelectorAll('script[type="application/json"],script:not([src])');
+            var i, text;
+            for (i = 0; i < scripts.length && i < 220; i++) {
+                text = scripts[i].textContent || '';
+                if (text && (scripts[i].type === 'application/json' || /"(?:carousel_media|edge_sidecar_to_children|shortcode|media_type|video_versions|image_versions2)"/.test(text))) scanJsonText(text, 'permalink');
+            }
+        } catch (e) {}
+    };
+
+    var bestSrcFromImg316 = function (img) {
+        var srcset = img && img.getAttribute ? (img.getAttribute('srcset') || '') : '';
+        var best = '', bestWidth = -1;
+        if (srcset) {
+            srcset.split(',').forEach(function (part) {
+                var p = part.trim(), m = p.match(/^(.*)\s+(\d+(?:\.\d+)?)(w|x)$/), score;
+                if (!m) return;
+                score = Number(m[2]);
+                if (m[3] === 'x') score *= 10000;
+                if (score > bestWidth) { bestWidth = score; best = m[1].trim(); }
+            });
+        }
+        return best || (img && (img.currentSrc || img.src)) || '';
+    };
+
+    bestDomImageUrl = function (anchor) {
+        var imgs, ar, anchorArea, best = '', bestScore = -1, i, img, r, iw, ih, overlap, coverage, label, score, url;
+        if (!anchor || !anchor.querySelectorAll) return '';
+        ar = anchor.getBoundingClientRect();
+        anchorArea = Math.max(1, ar.width * ar.height);
+        imgs = anchor.querySelectorAll('img');
+        for (i = 0; i < imgs.length; i++) {
+            img = imgs[i];
+            r = img.getBoundingClientRect();
+            iw = Math.max(0, Math.min(ar.right, r.right) - Math.max(ar.left, r.left));
+            ih = Math.max(0, Math.min(ar.bottom, r.bottom) - Math.max(ar.top, r.top));
+            overlap = iw * ih;
+            if (!overlap) continue;
+            coverage = overlap / anchorArea;
+            if (r.width < ar.width * 0.62 || r.height < ar.height * 0.62 || coverage < 0.38) continue;
+            label = [img.alt || '', img.getAttribute('aria-label') || '', img.getAttribute('title') || ''].join(' ').toLowerCase();
+            if (/music|audio|album|avatar|profile|음악|음원|오디오|앨범|프로필/.test(label) && coverage < 0.80) continue;
+            url = bestSrcFromImg316(img);
+            if (!url) continue;
+            score = coverage * 1000000 + overlap;
+            if (r.width >= ar.width * 0.90 && r.height >= ar.height * 0.90) score += 1000000;
+            if (score > bestScore) { bestScore = score; best = url; }
+        }
+        return best;
+    };
+
+    cardImageUrl = function (anchor, data) {
+        return bestDomImageUrl(anchor) || fieldValue(data, 'coverUrl') || fieldValue(data, 'thumbUrl') || '';
+    };
+
+    downloadMedia = function (url, filename) {
+        if (!supportsDirectoryPicker() && !downloadLocationNoticeShown316) {
+            downloadLocationNoticeShown316 = true;
+            showToast('Android Edge: 폴더 지정 불가 · 기본 Downloads에 저장');
+        }
+        return downloadMedia315(url, filename);
+    };
+
+    downloadCarousel = function (images, code) {
+        var list = Array.isArray(images) ? images.filter(Boolean) : [];
+        var chain = Promise.resolve();
+        if (!list.length) { showToast('캐러셀 이미지가 아직 확보되지 않았습니다'); return chain; }
+        showToast('캐러셀 ' + list.length + '장 저장 시작');
+        list.forEach(function (url, index) {
+            chain = chain.then(function () {
+                var n = String(index + 1).padStart(2, '0');
+                showToast('캐러셀 ' + (index + 1) + '/' + list.length + ' 저장 중');
+                return downloadMedia(url, 'Instagram_' + code + '_slide_' + n + extensionFromUrl(url, '.jpg'));
+            }).then(function () {
+                return new Promise(function (resolve) { setTimeout(resolve, 420); });
+            });
+        });
+        return chain.then(function () { showToast('캐러셀 ' + list.length + '장 저장 요청 완료'); });
+    };
+
+    supportsDirectoryPicker = function () {
+        return typeof window.showDirectoryPicker === 'function';
+    };
+
+    chooseDownloadDirectory = function () {
+        if (!supportsDirectoryPicker()) {
+            showToast('Android Edge에서는 폴더 선택 API를 사용할 수 없습니다');
+            return Promise.resolve(false);
+        }
+        return window.showDirectoryPicker({ mode: 'readwrite' }).then(function (handle) {
+            downloadDirectoryHandle = handle;
+            showToast('선택한 폴더로 저장합니다');
+            return true;
+        }).catch(function () { return false; });
+    };
+
+    openGridMenu = function (anchor, code) {
+        var existing = document.getElementById('ri3-grid-menu');
+        if (existing && existing.dataset.code === code) { closeGridMenu(); return; }
+        closeGridMenu();
+        var data = items[code] || { code: code, fields: {} };
+        var type = effectiveCardType(anchor, data);
+        var videoCard = type === 'REEL' || type === 'VIDEO';
+        var imageUrl = cardImageUrl(anchor, data);
+        var videoUrl = fieldValue(data, 'videoUrl') || '';
+        var carouselImages = fieldValue(data, 'carouselImages');
+        var pageUrl = (anchor.href || '').split('?')[0] || ('https://www.instagram.com/' + (videoCard ? 'reel/' : 'p/') + code + '/');
+        var trigger = anchor.querySelector('.ri3-grid-media');
+        var rect = trigger ? trigger.getBoundingClientRect() : anchor.getBoundingClientRect();
+        var menu = document.createElement('div');
+        menu.id = 'ri3-grid-menu';
+        menu.dataset.code = code;
+        menu.setAttribute('role', 'menu');
+
+        if (videoCard) {
+            addGridMenuButton(menu, videoUrl ? '영상 다운로드' : '영상 준비중', !!videoUrl, function () {
+                downloadMedia(videoUrl, 'Instagram_' + code + '_video' + extensionFromUrl(videoUrl, '.mp4'));
+            });
+            addGridMenuButton(menu, imageUrl ? '썸네일 다운로드' : '썸네일 준비중', !!imageUrl, function () {
+                downloadMedia(imageUrl, 'Instagram_' + code + '_thumb' + extensionFromUrl(imageUrl, '.jpg'));
+            });
+        } else if (type === 'CAROUSEL') {
+            addGridMenuButton(menu, Array.isArray(carouselImages) && carouselImages.length ? '전체 이미지 다운로드 (' + carouselImages.length + ')' : '전체 이미지 준비중', Array.isArray(carouselImages) && carouselImages.length > 0, function () {
+                downloadCarousel(carouselImages, code);
+            });
+            addGridMenuButton(menu, '대표 이미지 다운로드', !!imageUrl, function () {
+                downloadMedia(imageUrl, 'Instagram_' + code + '_cover' + extensionFromUrl(imageUrl, '.jpg'));
+            });
+        } else {
+            addGridMenuButton(menu, '이미지 다운로드', !!imageUrl, function () {
+                downloadMedia(imageUrl, 'Instagram_' + code + '_image' + extensionFromUrl(imageUrl, '.jpg'));
+            });
+        }
+
+        if (supportsDirectoryPicker()) addGridMenuButton(menu, downloadDirectoryHandle ? '저장 폴더 변경' : '저장 폴더 선택', true, chooseDownloadDirectory);
+        else addGridMenuButton(menu, '저장 위치: 기본 Downloads', false, function () {});
+        addGridMenuButton(menu, '링크 복사', !!pageUrl, function () { copyText(pageUrl); });
+        document.documentElement.appendChild(menu);
+        var menuRect = menu.getBoundingClientRect();
+        var left = Math.max(6, Math.min(innerWidth - menuRect.width - 6, rect.left));
+        var top = rect.bottom + 6;
+        if (top + menuRect.height > innerHeight - 8) top = Math.max(8, rect.top - menuRect.height - 6);
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+    };
+
+    injectStyle = function () {
+        injectStyle315();
+        if (document.getElementById('ri3-style-316')) return;
+        var style = document.createElement('style');
+        style.id = 'ri3-style-316';
+        style.textContent = [
+            '.ri3-grid-row1,.ri3-grid-row2{position:relative!important;display:block!important;width:100%!important;height:10px!important;overflow:hidden!important;white-space:nowrap!important}',
+            '.ri3-grid-row1>span,.ri3-grid-row2>span{position:absolute!important;top:0!important;height:10px!important;line-height:10px!important;min-width:0!important;overflow:hidden!important;text-align:center!important;font-variant-numeric:tabular-nums!important}',
+            '.ri3-grid-row1>span:nth-child(1){left:0!important;width:32%!important}.ri3-grid-row1>span:nth-child(2){left:32%!important;width:27%!important}.ri3-grid-row1>span:nth-child(3){left:59%!important;width:20%!important}.ri3-grid-row1>span:nth-child(4){left:79%!important;width:21%!important}',
+            '.ri3-grid-row2>span:nth-child(1){left:0!important;width:26%!important}.ri3-grid-row2>span:nth-child(2){left:26%!important;width:25%!important}.ri3-grid-row2>span:nth-child(3){left:51%!important;width:24%!important}.ri3-grid-row2>span:nth-child(4){left:75%!important;width:25%!important}'
+        ].join('');
+        (document.head || document.documentElement).appendChild(style);
+    };
 
     hookNetwork();
     hookHistory();
