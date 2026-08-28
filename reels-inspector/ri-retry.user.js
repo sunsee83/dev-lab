@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.1.4
+// @version      3.1.5
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '3.1.4';
+    var VERSION = '3.1.5';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var CACHE_KEY = 'ri311:items:v1';
     var SNAP_KEY = 'ri311:snap:v1';
@@ -37,6 +37,7 @@
     var currentContextKey = '';
     var appBannerCacheAt = 0;
     var appBannerTop = Infinity;
+    var downloadDirectoryHandle = null;
 
     function readStore(key, fallback) {
         try {
@@ -158,7 +159,7 @@
                 b = Number(value);
                 age = Date.now() - Number(old.updatedAt || 0);
                 if (a > 0 && ((b < a && a - b > Math.max(5, a * 0.02)) || (age < 120000 && a > 100 && b > a * 20))) return markConflict(item, key, old, value, source);
-            } else if (key !== 'videoUrl' && key !== 'thumbUrl' && !(key === 'mediaType' && old.value === 'VIDEO' && value === 'REEL') && newRank <= oldRank) {
+            } else if (key !== 'videoUrl' && key !== 'thumbUrl' && key !== 'carouselImages' && !(key === 'mediaType' && old.value === 'VIDEO' && value === 'REEL') && newRank <= oldRank) {
                 return markConflict(item, key, old, value, source);
             }
         }
@@ -181,7 +182,7 @@
         item = items[code] || { code: code, fields: {}, conflicts: {} };
         patch = patch || {};
         if (!patch.mediaType && isReelUrl(patch.pageUrl || patch.canonicalUrl || '')) patch.mediaType = 'REEL';
-        keys = ['views','likes','comments','reposts','date','owner','videoUrl','thumbUrl','mediaId','ownerId','mediaType','productType','canonicalUrl'];
+        keys = ['views','likes','comments','reposts','date','owner','videoUrl','thumbUrl','carouselImages','mediaId','ownerId','mediaType','productType','canonicalUrl'];
         for (i = 0; i < keys.length; i++) {
             key = keys[i];
             if (patch[key] != null && patch[key] !== '' && setField(item, key, patch[key], source, confidence)) changed = true;
@@ -287,6 +288,31 @@
         return '';
     }
 
+    function bestImageFromMedia(obj) {
+        var best = '', bestScore = -1, candidates = [], i, c, url, w, h;
+        if (!obj || typeof obj !== 'object') return '';
+        if (obj.image_versions2 && Array.isArray(obj.image_versions2.candidates)) candidates = candidates.concat(obj.image_versions2.candidates);
+        if (Array.isArray(obj.display_resources)) candidates = candidates.concat(obj.display_resources);
+        for (i = 0; i < candidates.length; i++) {
+            c = candidates[i] || {};
+            url = c.url || c.src || '';
+            w = Number(c.width || c.config_width || 0);
+            h = Number(c.height || c.config_height || 0);
+            if (url && (w * h > bestScore || !best)) { best = url; bestScore = w * h; }
+        }
+        return best || obj.display_url || obj.thumbnail_src || obj.thumbnail_url || obj.image_url || '';
+    }
+
+    function carouselImagesFromMedia(obj) {
+        var out = [], seen = Object.create(null), slides = obj && obj.carousel_media;
+        if (!Array.isArray(slides)) return out;
+        slides.forEach(function (slide) {
+            var url = bestImageFromMedia(slide), key = normalizeUrl(url) || url;
+            if (url && !seen[key]) { seen[key] = 1; out.push(url); }
+        });
+        return out;
+    }
+
     function directNumber(obj, keys) {
         var i;
         if (!obj || typeof obj !== 'object') return null;
@@ -326,7 +352,7 @@
     }
 
     function rememberObject(obj, source) {
-        var code, patch = {}, n, user, videos = [], images = [], i, key, type;
+        var code, patch = {}, n, user, videos = [], images = [], i, key, type, directThumb, carouselImages;
         if (!obj || typeof obj !== 'object') return;
         code = obj.code || obj.shortcode || obj.short_code;
         if (!code || typeof code !== 'string' || code.length < 5 || code.length > 40) return;
@@ -342,6 +368,12 @@
         if (obj.user_id || obj.owner_id || (user && (user.pk || user.id))) patch.ownerId = String(obj.user_id || obj.owner_id || user.pk || user.id);
         type = detectMediaType(obj); if (type) patch.mediaType = type;
         if (obj.product_type || obj.productType) patch.productType = String(obj.product_type || obj.productType);
+
+        directThumb = bestImageFromMedia(obj);
+        if (directThumb) patch.thumbUrl = directThumb;
+        carouselImages = carouselImagesFromMedia(obj);
+        if (carouselImages.length) patch.carouselImages = carouselImages;
+
         collectUrls(obj, code, videos, images, 0);
         for (i = 0; i < videos.length; i++) {
             key = normalizeUrl(videos[i]);
@@ -374,7 +406,7 @@
     function hookNetwork() {
         var originalFetch = window.fetch;
         var XHR = window.XMLHttpRequest;
-        if (originalFetch && !originalFetch.__ri314) {
+        if (originalFetch && !originalFetch.__ri315) {
             window.fetch = function () {
                 return originalFetch.apply(this, arguments).then(function (response) {
                     try {
@@ -385,22 +417,22 @@
                     return response;
                 });
             };
-            window.fetch.__ri314 = true;
+            window.fetch.__ri315 = true;
         }
-        if (XHR && !XHR.prototype.__ri314) {
+        if (XHR && !XHR.prototype.__ri315) {
             var originalOpen = XHR.prototype.open;
             var originalSend = XHR.prototype.send;
-            XHR.prototype.open = function () { this.__ri314url = arguments[1] || ''; return originalOpen.apply(this, arguments); };
+            XHR.prototype.open = function () { this.__ri315url = arguments[1] || ''; return originalOpen.apply(this, arguments); };
             XHR.prototype.send = function () {
                 this.addEventListener('load', function () {
                     try {
                         var ct = this.getResponseHeader('content-type') || '';
-                        if ((/json/i.test(ct) || /graphql|api|clips|reels|media/i.test(this.__ri314url || '')) && typeof this.responseText === 'string') scanJsonText(this.responseText, 'network');
+                        if ((/json/i.test(ct) || /graphql|api|clips|reels|media/i.test(this.__ri315url || '')) && typeof this.responseText === 'string') scanJsonText(this.responseText, 'network');
                     } catch (e) {}
                 });
                 return originalSend.apply(this, arguments);
             };
-            XHR.prototype.__ri314 = true;
+            XHR.prototype.__ri315 = true;
         }
     }
 
@@ -432,6 +464,18 @@
             if (m) return Number(m[1]);
         }
         return null;
+    }
+
+    function scanPermalinkJson(html) {
+        try {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var scripts = doc.querySelectorAll('script[type="application/json"],script:not([src])');
+            var i, text;
+            for (i = 0; i < scripts.length && i < 220; i++) {
+                text = scripts[i].textContent || '';
+                if (text && (scripts[i].type === 'application/json' || /"(?:carousel_media|shortcode|media_type|video_versions|image_versions2)"/.test(text))) scanJsonText(text, 'permalink');
+            }
+        } catch (e) {}
     }
 
     function parsePermalink(html, url) {
@@ -485,6 +529,7 @@
                     if (xhr.readyState !== 4) return;
                     activeRequests--;
                     if (xhr.status >= 200 && xhr.status < 400) {
+                        scanPermalinkJson(xhr.responseText || '');
                         var patch = parsePermalink(xhr.responseText || '', job.url);
                         patch.fetched = Date.now();
                         saveItem(job.code, patch, 'permalink', 'medium');
@@ -532,17 +577,30 @@
         a.remove();
     }
 
+    function showToast(text) {
+        var old = document.getElementById('ri3-toast');
+        if (old) old.remove();
+        var toast = document.createElement('div');
+        toast.id = 'ri3-toast';
+        toast.textContent = text;
+        document.documentElement.appendChild(toast);
+        setTimeout(function () { if (toast.parentNode) toast.remove(); }, 2200);
+    }
+
     function directDownload(url, filename) {
-        if (!url) return;
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = filename || 'instagram-media';
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        if (!url) return Promise.resolve(false);
+        try {
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = filename || 'Instagram_media';
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            return Promise.resolve(true);
+        } catch (e) { return Promise.resolve(false); }
     }
 
     function extensionFromUrl(url, fallback) {
@@ -551,25 +609,75 @@
         return m ? '.' + m[1].toLowerCase() : fallback;
     }
 
+    function fetchMediaBlob(url) {
+        return fetch(url, { credentials: 'omit' }).then(function (response) {
+            if (!response.ok) throw new Error('download');
+            return response.blob();
+        });
+    }
+
+    function saveBlobToSelectedDirectory(blob, filename) {
+        if (!downloadDirectoryHandle) return Promise.reject(new Error('no-directory'));
+        return downloadDirectoryHandle.getFileHandle(filename, { create: true }).then(function (fileHandle) {
+            return fileHandle.createWritable();
+        }).then(function (writable) {
+            return writable.write(blob).then(function () { return writable.close(); });
+        });
+    }
+
     function downloadMedia(url, filename) {
-        if (!url) return;
-        var fallback = function () { directDownload(url, filename); };
-        try {
-            fetch(url, { credentials: 'omit' }).then(function (response) {
-                if (!response.ok) throw new Error('download');
-                return response.blob();
-            }).then(function (blob) {
-                var objectUrl = URL.createObjectURL(blob);
-                var a = document.createElement('a');
-                a.href = objectUrl;
-                a.download = filename || 'instagram-media';
-                a.style.display = 'none';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 2500);
-            }).catch(fallback);
-        } catch (e) { fallback(); }
+        if (!url) return Promise.resolve(false);
+        filename = filename || 'Instagram_media';
+        if (downloadDirectoryHandle) {
+            return fetchMediaBlob(url).then(function (blob) {
+                return saveBlobToSelectedDirectory(blob, filename);
+            }).then(function () { return true; }).catch(function () {
+                showToast('선택 폴더 저장 실패 · 기본 다운로드로 전환');
+                return directDownload(url, filename);
+            });
+        }
+        return fetchMediaBlob(url).then(function (blob) {
+            var objectUrl = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = objectUrl;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 2500);
+            return true;
+        }).catch(function () { return directDownload(url, filename); });
+    }
+
+    function supportsDirectoryPicker() {
+        return typeof window.showDirectoryPicker === 'function';
+    }
+
+    function chooseDownloadDirectory() {
+        if (!supportsDirectoryPicker()) {
+            showToast('이 브라우저는 저장 폴더 선택을 지원하지 않습니다');
+            return Promise.resolve(false);
+        }
+        return window.showDirectoryPicker({ mode: 'readwrite' }).then(function (handle) {
+            downloadDirectoryHandle = handle;
+            showToast('선택한 폴더로 저장합니다');
+            return true;
+        }).catch(function () { return false; });
+    }
+
+    function downloadCarousel(images, code) {
+        var list = Array.isArray(images) ? images.filter(Boolean) : [];
+        var chain = Promise.resolve();
+        list.forEach(function (url, index) {
+            chain = chain.then(function () {
+                var n = String(index + 1).padStart(2, '0');
+                return downloadMedia(url, 'Instagram_' + code + '_slide_' + n + extensionFromUrl(url, '.jpg'));
+            }).then(function () {
+                return new Promise(function (resolve) { setTimeout(resolve, 180); });
+            });
+        });
+        return chain;
     }
 
     function copyText(text) {
@@ -621,9 +729,25 @@
         return type === 'REEL' || type === 'VIDEO';
     }
 
-    function cardImageUrl(anchor, data) {
+    function bestDomImageUrl(anchor) {
         var img = anchor && anchor.querySelector ? anchor.querySelector('img') : null;
-        return fieldValue(data, 'thumbUrl') || (img && (img.currentSrc || img.src)) || '';
+        var srcset, best = '', bestWidth = -1;
+        if (!img) return '';
+        srcset = img.getAttribute('srcset') || '';
+        if (srcset) {
+            srcset.split(',').forEach(function (part) {
+                var p = part.trim(), m = p.match(/^(.*)\s+(\d+(?:\.\d+)?)(w|x)$/), score;
+                if (!m) return;
+                score = Number(m[2]);
+                if (m[3] === 'x') score *= 10000;
+                if (score > bestWidth) { bestWidth = score; best = m[1].trim(); }
+            });
+        }
+        return best || img.currentSrc || img.src || '';
+    }
+
+    function cardImageUrl(anchor, data) {
+        return bestDomImageUrl(anchor) || fieldValue(data, 'thumbUrl') || '';
     }
 
     function closeGridMenu() {
@@ -654,6 +778,7 @@
         var videoCard = type === 'REEL' || type === 'VIDEO';
         var imageUrl = cardImageUrl(anchor, data);
         var videoUrl = fieldValue(data, 'videoUrl') || '';
+        var carouselImages = fieldValue(data, 'carouselImages');
         var pageUrl = (anchor.href || '').split('?')[0] || ('https://www.instagram.com/' + (videoCard ? 'reel/' : 'p/') + code + '/');
         var trigger = anchor.querySelector('.ri3-grid-media');
         var rect = trigger ? trigger.getBoundingClientRect() : anchor.getBoundingClientRect();
@@ -664,15 +789,28 @@
 
         if (videoCard) {
             addGridMenuButton(menu, videoUrl ? '영상 다운로드' : '영상 준비중', !!videoUrl, function () {
-                downloadMedia(videoUrl, 'instagram_' + code + '_video' + extensionFromUrl(videoUrl, '.mp4'));
+                downloadMedia(videoUrl, 'Instagram_' + code + '_video' + extensionFromUrl(videoUrl, '.mp4'));
             });
             addGridMenuButton(menu, '썸네일 다운로드', !!imageUrl, function () {
-                downloadMedia(imageUrl, 'instagram_' + code + '_thumb' + extensionFromUrl(imageUrl, '.jpg'));
+                downloadMedia(imageUrl, 'Instagram_' + code + '_thumb' + extensionFromUrl(imageUrl, '.jpg'));
+            });
+        } else if (type === 'CAROUSEL') {
+            addGridMenuButton(menu, Array.isArray(carouselImages) && carouselImages.length ? '전체 이미지 다운로드 (' + carouselImages.length + ')' : '전체 이미지 준비중', Array.isArray(carouselImages) && carouselImages.length > 0, function () {
+                downloadCarousel(carouselImages, code);
+            });
+            addGridMenuButton(menu, '대표 이미지 다운로드', !!imageUrl, function () {
+                downloadMedia(imageUrl, 'Instagram_' + code + '_cover' + extensionFromUrl(imageUrl, '.jpg'));
             });
         } else {
-            addGridMenuButton(menu, type === 'CAROUSEL' ? '대표 이미지 다운로드' : '이미지 다운로드', !!imageUrl, function () {
-                downloadMedia(imageUrl, 'instagram_' + code + '_image' + extensionFromUrl(imageUrl, '.jpg'));
+            addGridMenuButton(menu, '이미지 다운로드', !!imageUrl, function () {
+                downloadMedia(imageUrl, 'Instagram_' + code + '_image' + extensionFromUrl(imageUrl, '.jpg'));
             });
+        }
+
+        if (supportsDirectoryPicker()) {
+            addGridMenuButton(menu, downloadDirectoryHandle ? '저장 폴더 변경' : '저장 폴더 선택', true, chooseDownloadDirectory);
+        } else {
+            addGridMenuButton(menu, '저장 폴더: 브라우저 기본', false, function () {});
         }
         addGridMenuButton(menu, '링크 복사', !!pageUrl, function () { copyText(pageUrl); });
         document.documentElement.appendChild(menu);
@@ -686,17 +824,17 @@
 
     function ensureGridCard(anchor, code) {
         var box, actions, mediaButton;
-        if (anchor.dataset.ri314Code !== code) {
-            anchor.dataset.ri314Code = code;
-            anchor.dataset.ri314Render = '';
+        if (anchor.dataset.ri315Code !== code) {
+            anchor.dataset.ri315Code = code;
+            anchor.dataset.ri315Render = '';
         }
-        if (anchor.dataset.ri314Ready === '1' && anchor.querySelector('.ri3-grid-box') && anchor.querySelector('.ri3-grid-actions')) return;
-        anchor.dataset.ri314Ready = '1';
+        if (anchor.dataset.ri315Ready === '1' && anchor.querySelector('.ri3-grid-box') && anchor.querySelector('.ri3-grid-actions')) return;
+        anchor.dataset.ri315Ready = '1';
         anchor.style.position = anchor.style.position || 'relative';
         Array.prototype.slice.call(anchor.querySelectorAll('.ri3-grid-box,.ri3-grid-actions')).forEach(function (el) { el.remove(); });
         box = document.createElement('div');
         box.className = 'ri3-grid-box';
-        box.innerHTML = '<div class="ri3-grid-row1"></div><div class="ri3-grid-row2"></div>';
+        box.innerHTML = '<div class="ri3-grid-row1"><span></span><span></span><span></span><span></span></div><div class="ri3-grid-row2"><span></span><span></span><span></span><span></span></div>';
         anchor.appendChild(box);
         actions = document.createElement('div');
         actions.className = 'ri3-grid-actions';
@@ -710,10 +848,15 @@
         mediaButton.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
-            openGridMenu(anchor, anchor.dataset.ri314Code || code);
+            openGridMenu(anchor, anchor.dataset.ri315Code || code);
         }, true);
         actions.appendChild(mediaButton);
         anchor.appendChild(actions);
+    }
+
+    function setGridSlots(row, values) {
+        var spans = row ? row.children : [], i;
+        for (i = 0; i < 4; i++) if (spans[i] && spans[i].textContent !== values[i]) spans[i].textContent = values[i];
     }
 
     function renderGridCard(anchor, data) {
@@ -746,12 +889,10 @@
         ];
 
         key = [type, views, likes, comments, reposts, date, er, growth, multiple].join('|');
-        if (anchor.dataset.ri314Render !== key) {
-            row1.textContent = line1.join(' ');
-            row2.textContent = line2.join(' ');
-            row1.style.display = 'flex';
-            row2.style.display = 'flex';
-            anchor.dataset.ri314Render = key;
+        if (anchor.dataset.ri315Render !== key) {
+            setGridSlots(row1, line1);
+            setGridSlots(row2, line2);
+            anchor.dataset.ri315Render = key;
         }
         actions = anchor.querySelector('.ri3-grid-actions');
         safe = gridSafe(anchor);
@@ -910,10 +1051,10 @@
         if (multiple != null) lines.push(fmtMultiple(multiple));
         if (fieldValue(data, 'date')) lines.push(String(fieldValue(data, 'date')).slice(5).replace('-', '/'));
         key = lines.join('|');
-        if (box.dataset.ri314Render !== key) {
+        if (box.dataset.ri315Render !== key) {
             box.innerHTML = '';
             lines.forEach(function (text) { var row = document.createElement('div'); row.textContent = text; box.appendChild(row); });
-            box.dataset.ri314Render = key;
+            box.dataset.ri315Render = key;
         }
         box.style.display = lines.length ? 'flex' : 'none';
     }
@@ -1044,14 +1185,17 @@
         style.textContent = [
             '[id^="ri22"],#ri-tool,#ri-panel,#ri-detail-metrics{display:none!important}',
             '.ri3-grid-box{position:absolute;left:0;right:0;bottom:0;z-index:8;pointer-events:none;display:flex;flex-direction:column;gap:3px;padding:20px 5px 5px;box-sizing:border-box;background:linear-gradient(to bottom,rgba(0,0,0,0),rgba(0,0,0,.50))}',
-            '.ri3-grid-row1,.ri3-grid-row2{display:flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:clip}',
-            '.ri3-grid-row1{color:#fff;font:780 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;letter-spacing:-.42px;text-shadow:0 1px 2px rgba(0,0,0,.98),0 0 2px rgba(0,0,0,.78)}',
-            '.ri3-grid-row2{color:#111;font:820 9.6px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;letter-spacing:-.38px;-webkit-text-stroke:.6px rgba(255,255,255,.98);paint-order:stroke fill;text-shadow:0 0 2px #fff}',
+            '.ri3-grid-row1,.ri3-grid-row2{display:grid;width:100%;grid-template-columns:30% 24% 23% 23%;align-items:center;white-space:nowrap;overflow:hidden}',
+            '.ri3-grid-row1>span,.ri3-grid-row2>span{min-width:0;overflow:hidden;text-overflow:clip;text-align:center}',
+            '.ri3-grid-row1>span:first-child,.ri3-grid-row2>span:first-child{text-align:left}.ri3-grid-row1>span:last-child,.ri3-grid-row2>span:last-child{text-align:right}',
+            '.ri3-grid-row1{color:#fff;font:780 9.6px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;letter-spacing:-.46px;text-shadow:0 1px 2px rgba(0,0,0,.98),0 0 2px rgba(0,0,0,.78)}',
+            '.ri3-grid-row2{color:#111;font:820 9.2px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;letter-spacing:-.42px;-webkit-text-stroke:.6px rgba(255,255,255,.98);paint-order:stroke fill;text-shadow:0 0 2px #fff}',
             '.ri3-grid-actions{position:absolute;left:5px;top:5px;z-index:9;display:flex;visibility:visible}',
             '.ri3-grid-actions button{width:28px;height:28px;padding:0;border:1px solid rgba(255,255,255,.38);border-radius:50%;background:rgba(0,0,0,.30);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);-webkit-tap-highlight-color:transparent}',
-            '#ri3-grid-menu{position:fixed;z-index:2147483646;min-width:132px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}',
+            '#ri3-grid-menu{position:fixed;z-index:2147483646;min-width:148px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}',
             '#ri3-grid-menu button{height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#fff;text-align:left;font:650 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap}',
             '#ri3-grid-menu button:active{background:rgba(255,255,255,.12)}#ri3-grid-menu button:disabled{opacity:.38}',
+            '#ri3-toast{position:fixed;left:50%;bottom:126px;transform:translateX(-50%);z-index:2147483647;max-width:80vw;padding:8px 12px;border-radius:16px;background:rgba(20,20,20,.92);color:#fff;font:650 11px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap}',
             '#ri3-reels-overlay{position:fixed;right:60px;top:clamp(112px,16vh,170px);z-index:2147483600;width:74px;display:none;flex-direction:column;align-items:flex-end;gap:5px;text-align:right;pointer-events:none;color:#fff;font:760 12px/1.08 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-shadow:0 1px 3px rgba(0,0,0,.98),0 0 2px rgba(0,0,0,.72)}',
             '#ri3-tool{position:fixed;z-index:2147483602;width:34px;height:34px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.12);color:#fff;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}',
             '#ri3-panel{position:fixed;right:10px;bottom:max(82px,calc(env(safe-area-inset-bottom) + 72px));z-index:2147483647;width:min(46vw,190px);max-height:69vh;overflow:auto;padding:10px;border:1px solid rgba(255,255,255,.13);border-radius:18px;background:rgba(14,14,14,.97);color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}',
@@ -1089,7 +1233,7 @@
     function hookHistory() {
         var originalPush = history.pushState;
         var originalReplace = history.replaceState;
-        if (!originalPush.__ri314) {
+        if (!originalPush.__ri315) {
             history.pushState = function () {
                 var result = originalPush.apply(this, arguments);
                 closeGridMenu();
@@ -1098,9 +1242,9 @@
                 scheduleRefresh();
                 return result;
             };
-            history.pushState.__ri314 = true;
+            history.pushState.__ri315 = true;
         }
-        if (!originalReplace.__ri314) {
+        if (!originalReplace.__ri315) {
             history.replaceState = function () {
                 var result = originalReplace.apply(this, arguments);
                 closeGridMenu();
@@ -1109,7 +1253,7 @@
                 scheduleRefresh();
                 return result;
             };
-            history.replaceState.__ri314 = true;
+            history.replaceState.__ri315 = true;
         }
         addEventListener('popstate', function () { closeGridMenu(); lastHistorySignature = ''; scanEmbedded(true); scheduleRefresh(); }, true);
     }
