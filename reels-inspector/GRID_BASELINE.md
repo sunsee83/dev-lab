@@ -1,6 +1,6 @@
 # Grid Frozen UI Baseline
 
-이 문서는 Instagram 프로필/검색 Grid에서 **유지해야 하는 현재 UI 기준**을 기록합니다. Core/Identity/Store를 수정하더라도 아래 표현은 명시적 UI 변경 요청이 없는 한 유지합니다.
+이 문서는 Instagram 프로필/검색/탐색 Grid에서 **유지해야 하는 UI 기준**을 기록합니다. Core/Identity/Store/Download 구조를 수정하더라도 아래 표현은 명시적 UI 변경 요청이 없는 한 유지합니다.
 
 ## 누적 개선 원칙 — 최우선
 
@@ -8,9 +8,9 @@ Grid 개발은 **rollback 방식이 아니라 cumulative 방식**으로 진행�
 
 - 이미 실기기에서 좋아졌다고 확인된 동작/표현은 다음 수정에서 유지합니다.
 - 한 항목이 누락되었다고 해서 이전 버전 전체 UI나 로직으로 되돌리지 않습니다.
-- 수정은 항상 **현재 승인된 baseline + 필요한 delta만 추가**하는 방식으로 합니다.
+- 수정은 항상 **현재 승인된 baseline + 필요한 delta**만 적용합니다.
 - 숫자 깜빡임 제거, 이벤트 기반 갱신, 동일 값 DOM 재작성 방지 등 이미 좋아진 구조는 유지합니다.
-- 새 버전에서 기존 승인 항목이 사라지면 회귀(regression)로 간주합니다.
+- 기존 승인 항목이 사라지면 regression으로 간주합니다.
 
 현재 누적 승인 상태:
 
@@ -21,9 +21,11 @@ Grid 개발은 **rollback 방식이 아니라 cumulative 방식**으로 진행�
 5. REEL/VIDEO의 검증된 조회수 및 파생지표 유지
 6. PHOTO/CAROUSEL의 잘못된 조회수 차단
 7. 하단 Instagram 배너와 실제 겹치는 영역만 숨김
-8. Instagram 기본 media-type 아이콘은 그대로 유지
-9. 우리 Grid 액션은 **단일 미디어 메뉴 버튼**으로 유지
+8. Instagram 기본 media-type 아이콘 유지
+9. 우리 Grid 액션은 **단일 미디어 메뉴 버튼**
 10. 하단 8개 지표는 각각 독립된 고정 x 영역 사용
+11. Video/Reel 실제 cover 우선, 음악/앨범 artwork 제외
+12. Carousel은 ZIP 없이 parent slide 개별 batch 다운로드
 
 ## 정보영역 — 8개 고정 슬롯
 
@@ -48,7 +50,7 @@ Grid 개발은 **rollback 방식이 아니라 cumulative 방식**으로 진행�
 
 - REEL/VIDEO의 검증된 조회수만 숫자로 표시
 - PHOTO/CAROUSEL은 `▶-`
-- 좋아요/댓글/리포스트 미확보 시 각각 `♥- / ●- / ↻-`
+- 좋아요/댓글/리포스트 미확보 시 `♥- / ●- / ↻-`
 - 모든 셀 가운데 정렬
 - tabular numeric 사용
 - 한 슬롯의 값 길이가 다른 슬롯 위치를 변경하지 않음
@@ -70,7 +72,7 @@ Grid 개발은 **rollback 방식이 아니라 cumulative 방식**으로 진행�
 
 - 값 미확보 시 해당 셀은 `-`
 - ER/24h/계정대비는 조회수가 확인된 REEL/VIDEO에서만 계산
-- 24h는 실제 과거 snapshot이 있을 때만 숫자 표시
+- 24h는 실제 snapshot이 있을 때만 숫자 표시
 - 계정 대비는 동일 계정 비교 데이터가 최소 5개일 때만 숫자 표시
 - 날짜가 없으면 마지막 셀 `-`
 
@@ -88,25 +90,26 @@ Instagram이 이미 Reel/Video/Carousel 종류를 자체 아이콘으로 표시�
 
 ## 미디어 메뉴
 
+Grid 메뉴는 **무엇을 저장할지만 결정**합니다. 저장 위치/폴더 설정은 카드 메뉴에 두지 않습니다.
+
 ### REEL / VIDEO
 
 - `영상 다운로드`
 - `썸네일 다운로드`
-- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
 
 ### PHOTO
 
 - `이미지 다운로드`
-- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
 
 ### CAROUSEL
 
 - `전체 이미지 다운로드 (N)`
 - `대표 이미지 다운로드`
-- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
+
+저장 위치는 전역 RI Panel의 `설정`에서 공통으로 관리합니다.
 
 ## Video/Reel cover identity 규칙
 
@@ -114,12 +117,12 @@ Video/Reel 썸네일은 카드 내부의 첫 번째 image URL을 사용하지 �
 
 우선순위:
 
-1. 현재 Grid 카드와 넓게 겹치는 **큰 본문 `img`**
-2. 후보 이미지가 카드 폭/높이의 약 62% 이상이고 면적의 약 38% 이상을 덮는지 확인
-3. 작은 `music/audio/album/음원/앨범/프로필` 계열 이미지는 제외
-4. 해당 `img`의 `srcset`에서 가장 큰 후보 사용
-5. 현재 shortcode media object의 직접 image candidate를 `coverUrl`로 사용
-6. 마지막에만 기존 `thumbUrl` fallback
+1. 현재 shortcode와 연결된 media object의 직접 cover 후보
+2. 현재 Grid 카드와 넓게 겹치는 **큰 본문 `img`**와 대조
+3. 후보 이미지가 카드 폭/높이의 충분한 영역을 차지하는지 확인
+4. 작은 `music/audio/album/음원/앨범/프로필` 이미지는 제외
+5. 해당 `img`의 `srcset`에서 가장 큰 후보 사용
+6. 마지막에만 검증된 legacy `thumbUrl` fallback
 
 Extractor 규칙:
 
@@ -130,7 +133,7 @@ Extractor 규칙:
 
 등 **현재 shortcode media object에 직접 달린 이미지**를 cover 후보로 사용합니다.
 
-재귀 탐색 중 발견한 임의 nested image는 영상 cover 값으로 채우지 않습니다.
+재귀 탐색 중 발견한 임의 nested image는 영상 cover로 저장하지 않습니다.
 
 ## Carousel 전체 이미지 규칙
 
@@ -146,9 +149,9 @@ Extractor 규칙:
 - 각 slide에서 가장 큰 image candidate 선택
 - 중복 URL 제거
 - 다른 shortcode/nested media image를 합치지 않음
-- 확보되지 않았으면 임의 생성하지 않고 `전체 이미지 준비중`
+- 확보되지 않았으면 `전체 이미지 준비중`
 
-ZIP은 기본 방식으로 사용하지 않습니다. 사용자가 `전체 이미지 다운로드 (N)`을 한 번 누르면 개별 이미지가 순서대로 저장됩니다.
+ZIP은 기본 방식으로 사용하지 않습니다. `전체 이미지 다운로드 (N)` 한 번으로 개별 이미지가 순서대로 저장됩니다.
 
 파일명:
 
@@ -157,20 +160,36 @@ ZIP은 기본 방식으로 사용하지 않습니다. 사용자가 `전체 이�
 `Instagram_<shortcode>_slide_03.*`
 ...
 
-브라우저가 여러 자동 다운로드 권한을 요구하면 사이트에 대해 여러 파일 다운로드를 허용해야 할 수 있습니다.
+## 저장 위치 규칙
 
-## 다운로드 경로 규칙
+저장 위치는 Grid card가 아니라 **전역 RI 설정**의 책임입니다.
 
-웹 페이지/userscript는 브라우저 sandbox 밖의 파일시스템을 임의로 제어하지 않습니다.
+공통 Download Manager가 영상/썸네일/사진/Carousel에 같은 저장정책을 적용합니다.
 
-- `showDirectoryPicker()` 지원 환경: 사용자가 직접 저장 폴더 선택 가능
-- 선택한 폴더는 현재 세션의 다운로드 대상으로 사용
-- 현재 Android Edge처럼 `showDirectoryPicker()`가 없는 환경: **기본 Downloads** 사용
-- 미지원 환경 메뉴에는 `저장 위치: 기본 Downloads` 표시
-- 최초 다운로드 시 폴더 지정 불가 이유를 안내
-- 파일명은 `Instagram_` 접두사 + shortcode 사용
-- 브라우저 권한 없이 `Instagram/` 하위 폴더를 임의 생성하지 않음
-- CDN CORS로 선택 폴더 직접 쓰기가 실패하면 기본 다운로드로 fallback 가능
+지원 가능한 정책:
+
+- `지정 폴더`
+- `기본 Downloads`
+- `매번 선택`
+
+규칙:
+
+- 실제 browser API/permission을 runtime에서 확인해 지원 가능한 기능만 표시
+- 영상만 지정 폴더, 이미지만 기본 Downloads처럼 정책을 미디어별로 나누지 않음
+- 지정 폴더 쓰기 실패 시 조용히 다른 위치로 fallback하지 않음
+- 실패를 명확히 표시하고 사용자가 다른 저장방법을 선택하도록 함
+- 브라우저 권한 없이 임의 로컬 폴더를 강제 생성하지 않음
+
+## 전역 RI 버튼과 Grid의 관계
+
+전역 RI 버튼은 모든 Instagram 화면에서 공용 리서치/설정 진입점으로 사용합니다.
+
+Grid에서는 역할을 분리합니다.
+
+- 카드 미디어 버튼: **현재 카드의 빠른 저장**
+- 전역 RI 버튼: **상세 리서치 + 공용 설정**
+
+따라서 카드마다 별도 설정 UI를 반복하지 않습니다.
 
 ## mediaType 판정
 
@@ -192,8 +211,8 @@ Grid는 URL만으로 미디어 종류를 결정하지 않습니다.
 
 ## 가시영역
 
-- 검색창/상단 영역과 하단 네비게이션을 침범하지 않습니다.
-- Instagram의 `앱 사용`, `Open app`, `Use app` 같은 하단 고정 배너와 **실제로 겹치는 카드만** RI 정보/액션을 숨깁니다.
+- 검색창/상단 영역과 하단 navigation을 침범하지 않습니다.
+- Instagram의 `앱 사용`, `Open app`, `Use app` 같은 하단 고정 배너와 실제로 겹치는 카드만 RI 정보/액션을 숨깁니다.
 
 ## 회귀 기준
 
@@ -209,10 +228,10 @@ Grid는 URL만으로 미디어 종류를 결정하지 않습니다.
 - 우리 Grid 버튼은 카드당 1개만 보임
 - 우리 플레이/영상종류 표시 버튼은 없음
 - Instagram 기본 미디어 아이콘은 그대로임
-- Video/Reel 썸네일 다운로드가 음악 앨범 이미지가 아니라 현재 카드 cover와 일치함
+- Grid 메뉴에 저장 폴더 설정을 중복 배치하지 않음
+- Video/Reel 썸네일이 음악 앨범 이미지가 아니라 현재 카드 cover와 일치함
 - Carousel 전체 이미지 다운로드가 parent shortcode의 slide만 사용함
 - Carousel 전체 다운로드는 ZIP 없이 개별 파일 순서를 유지함
-- Android Edge에서는 폴더 선택 기능을 허위로 표시하지 않음
-- 미디어 메뉴가 다른 카드의 URL을 열지 않음
+- 미디어 메뉴가 다른 카드의 URL을 사용하지 않음
 - 정보영역을 카드 밖 별도 영역으로 이동하지 않음
 - **새 수정 때문에 기존 승인 개선사항이 다시 나빠지지 않음**
