@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.0
+// @version      3.2.1
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.0
+// Build version: 3.2.1
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.0";
+  var VERSION = "3.2.1";
 
   // src/core/app.js
   var EVENTS = Object.freeze({
@@ -31,6 +31,7 @@
     let destroyed = false;
     let route = { href: "", pathname: "" };
     let currentIdentity = null;
+    let stopRouteTracking2 = null;
     const app2 = {
       version,
       services: /* @__PURE__ */ Object.create(null),
@@ -101,8 +102,54 @@
       getCurrentIdentity() {
         return currentIdentity;
       },
+      startRouteTracking({ env = globalThis, resolveIdentity } = {}) {
+        stopRouteTracking2?.();
+        if (destroyed) return () => {
+        };
+        const doc = env.document;
+        let stopped = false;
+        let queued = false;
+        let lastHref = "";
+        const sync = () => {
+          queued = false;
+          if (stopped || destroyed) return;
+          const href = String(env.location?.href || "");
+          if (href === lastHref) return;
+          lastHref = href;
+          app2.setRoute({ href, pathname: String(env.location?.pathname || "") });
+          if (typeof resolveIdentity === "function") {
+            try {
+              app2.setCurrentIdentity(resolveIdentity(href) || null);
+            } catch (error) {
+              console.warn("[RI] route identity sync failed", error);
+              app2.setCurrentIdentity(null);
+            }
+          }
+        };
+        const schedule = () => {
+          if (stopped || destroyed || queued) return;
+          queued = true;
+          const raf = env.requestAnimationFrame || ((fn) => (env.setTimeout || setTimeout)(fn, 16));
+          raf(sync);
+        };
+        const observer = env.MutationObserver && doc?.documentElement ? new env.MutationObserver(schedule) : null;
+        observer?.observe(doc.documentElement, { childList: true, subtree: true });
+        const eventNames = ["popstate", "hashchange", "pageshow"];
+        for (const name of eventNames) env.addEventListener?.(name, schedule, true);
+        sync();
+        const cleanup = () => {
+          if (stopped) return;
+          stopped = true;
+          observer?.disconnect();
+          for (const name of eventNames) env.removeEventListener?.(name, schedule, true);
+          if (stopRouteTracking2 === cleanup) stopRouteTracking2 = null;
+        };
+        stopRouteTracking2 = cleanup;
+        return cleanup;
+      },
       destroy() {
         if (destroyed) return;
+        stopRouteTracking2?.();
         destroyed = true;
         listeners.clear();
         renderQueue.clear();
@@ -357,6 +404,95 @@
     return withHandleStore(indexedDB, "readwrite", (store) => store.delete(DIRECTORY_KEY));
   }
 
+  // src/media/media-resolver.js
+  function resolveGridCardMedia({ anchor, post, shortcode } = {}) {
+    const type = effectiveType(anchor, post);
+    const imageUrl = bestDomImageUrl(anchor) || post?.coverUrl || post?.thumbUrl || "";
+    const videoUrl = /^https?:/i.test(String(post?.videoUrl || "")) ? post.videoUrl : "";
+    const carouselImages = Array.isArray(post?.carouselImages) ? post.carouselImages.filter(Boolean) : [];
+    const href = String(anchor?.href || "");
+    return {
+      shortcode: shortcode || post?.shortcode || "",
+      type,
+      imageUrl,
+      videoUrl,
+      carouselImages,
+      pageUrl: stripQuery(href) || post?.canonicalUrl || ""
+    };
+  }
+  function extensionFromUrl(url, fallback = "") {
+    const clean = String(url || "").split("?")[0];
+    const match = clean.match(/\.([A-Za-z0-9]{2,5})$/);
+    return match ? `.${match[1].toLowerCase()}` : fallback;
+  }
+  function mediaFilename({ kind, shortcode, url = "", slideIndex = null } = {}) {
+    const code = String(shortcode || "media").replace(/[^A-Za-z0-9_-]/g, "") || "media";
+    if (kind === "video") return `Instagram_${code}_video${extensionFromUrl(url, ".mp4")}`;
+    if (kind === "cover") return `Instagram_${code}_thumb${extensionFromUrl(url, ".jpg")}`;
+    if (kind === "photo") return `Instagram_${code}_image${extensionFromUrl(url, ".jpg")}`;
+    if (kind === "carousel-slide") {
+      const index = Math.max(0, Number(slideIndex || 0));
+      return `Instagram_${code}_slide_${String(index).padStart(2, "0")}${extensionFromUrl(url, ".jpg")}`;
+    }
+    return `Instagram_${code}_export.txt`;
+  }
+  function effectiveType(anchor, post) {
+    const stored = String(post?.mediaType || "").toUpperCase();
+    if (["REEL", "VIDEO", "PHOTO", "CAROUSEL"].includes(stored)) return stored;
+    const href = String(anchor?.href || "");
+    if (/\/(?:reel|reels)\//.test(href)) return "REEL";
+    if (anchor?.querySelector?.("video")) return "VIDEO";
+    return /\/p\//.test(href) ? "PHOTO" : "";
+  }
+  function bestDomImageUrl(anchor) {
+    if (!anchor?.querySelectorAll) return "";
+    const ar = anchor.getBoundingClientRect();
+    const anchorArea = Math.max(1, ar.width * ar.height);
+    let best = "";
+    let bestScore = -1;
+    for (const img of anchor.querySelectorAll("img")) {
+      const rect = img.getBoundingClientRect();
+      const overlapWidth = Math.max(0, Math.min(ar.right, rect.right) - Math.max(ar.left, rect.left));
+      const overlapHeight = Math.max(0, Math.min(ar.bottom, rect.bottom) - Math.max(ar.top, rect.top));
+      const overlap = overlapWidth * overlapHeight;
+      if (!overlap) continue;
+      const coverage = overlap / anchorArea;
+      if (rect.width < ar.width * 0.62 || rect.height < ar.height * 0.62 || coverage < 0.38) continue;
+      const label = [img.alt || "", img.getAttribute?.("aria-label") || "", img.getAttribute?.("title") || ""].join(" ").toLowerCase();
+      if (/music|audio|album|avatar|profile|음악|음원|오디오|앨범|프로필/.test(label) && coverage < 0.8) continue;
+      const url = bestSrcFromImg(img);
+      if (!url) continue;
+      let score = coverage * 1e6 + overlap;
+      if (rect.width >= ar.width * 0.9 && rect.height >= ar.height * 0.9) score += 1e6;
+      if (score > bestScore) {
+        bestScore = score;
+        best = url;
+      }
+    }
+    return best;
+  }
+  function bestSrcFromImg(img) {
+    const srcset = img?.getAttribute?.("srcset") || "";
+    let best = "";
+    let bestWidth = -1;
+    if (srcset) {
+      for (const part of srcset.split(",")) {
+        const match = part.trim().match(/^(.*)\s+(\d+(?:\.\d+)?)(w|x)$/);
+        if (!match) continue;
+        let score = Number(match[2]);
+        if (match[3] === "x") score *= 1e4;
+        if (score > bestWidth) {
+          bestWidth = score;
+          best = match[1].trim();
+        }
+      }
+    }
+    return best || img?.currentSrc || img?.src || "";
+  }
+  function stripQuery(url) {
+    return String(url || "").split("?")[0].split("#")[0];
+  }
+
   // src/media/download-manager.js
   var VALID_KINDS = /* @__PURE__ */ new Set(["video", "cover", "photo", "carousel-slide", "export"]);
   function createDownloadManager({ env = globalThis, settings: settings2, capabilities: capabilities2, onChange } = {}) {
@@ -533,7 +669,12 @@
       return { ok: false, result: { ok: false, code: "invalid-media", message: "다운로드할 미디어 정보가 올바르지 않습니다." } };
     }
     const shortcode = String(request.shortcode || "").replace(/[^A-Za-z0-9_-]/g, "");
-    const filename = sanitizeFilename(request.filename || defaultFilename(request.kind, shortcode, request.slideIndex));
+    const filename = sanitizeFilename(request.filename || mediaFilename({
+      kind: request.kind,
+      shortcode,
+      url: request.url,
+      slideIndex: request.slideIndex
+    }));
     return {
       ok: true,
       request: {
@@ -545,14 +686,6 @@
         slideIndex: request.slideIndex ?? null
       }
     };
-  }
-  function defaultFilename(kind, shortcode, slideIndex) {
-    const code = shortcode || "media";
-    if (kind === "video") return `Instagram_${code}_video.mp4`;
-    if (kind === "cover") return `Instagram_${code}_thumb.jpg`;
-    if (kind === "photo") return `Instagram_${code}_image.jpg`;
-    if (kind === "carousel-slide") return `Instagram_${code}_slide_${String(Number(slideIndex || 0)).padStart(2, "0")}.jpg`;
-    return `Instagram_${code}_export.txt`;
   }
   function sanitizeFilename(filename) {
     return String(filename || "Instagram_media").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").replace(/\s+/g, " ").trim().slice(0, 180) || "Instagram_media";
@@ -622,7 +755,7 @@
         username: post.username || "",
         mediaType: post.mediaType || inferTypeFromUrl(url),
         productType: post.productType || "",
-        canonicalUrl: post.canonicalUrl || stripQuery(url),
+        canonicalUrl: post.canonicalUrl || stripQuery2(url),
         parentMediaId: "",
         childMediaId: "",
         slideIndex: null,
@@ -649,7 +782,7 @@
   function inferTypeFromUrl(url) {
     return /\/(?:reel|reels)\//.test(String(url || "")) ? "REEL" : "";
   }
-  function stripQuery(url) {
+  function stripQuery2(url) {
     try {
       const parsed = new URL(String(url || ""));
       parsed.search = "";
@@ -660,82 +793,35 @@
     }
   }
 
-  // src/media/media-resolver.js
-  function resolveGridCardMedia({ anchor, post, shortcode } = {}) {
-    const type = effectiveType(anchor, post);
-    const imageUrl = bestDomImageUrl(anchor) || post?.coverUrl || post?.thumbUrl || "";
-    const videoUrl = /^https?:/i.test(String(post?.videoUrl || "")) ? post.videoUrl : "";
-    const carouselImages = Array.isArray(post?.carouselImages) ? post.carouselImages.filter(Boolean) : [];
-    const href = String(anchor?.href || "");
-    return {
-      shortcode: shortcode || post?.shortcode || "",
-      type,
-      imageUrl,
-      videoUrl,
-      carouselImages,
-      pageUrl: stripQuery2(href) || post?.canonicalUrl || ""
-    };
-  }
-  function extensionFromUrl(url, fallback = "") {
-    const clean = String(url || "").split("?")[0];
-    const match = clean.match(/\.([A-Za-z0-9]{2,5})$/);
-    return match ? `.${match[1].toLowerCase()}` : fallback;
-  }
-  function effectiveType(anchor, post) {
-    const stored = String(post?.mediaType || "").toUpperCase();
-    if (["REEL", "VIDEO", "PHOTO", "CAROUSEL"].includes(stored)) return stored;
-    const href = String(anchor?.href || "");
-    if (/\/(?:reel|reels)\//.test(href)) return "REEL";
-    if (anchor?.querySelector?.("video")) return "VIDEO";
-    return /\/p\//.test(href) ? "PHOTO" : "";
-  }
-  function bestDomImageUrl(anchor) {
-    if (!anchor?.querySelectorAll) return "";
-    const ar = anchor.getBoundingClientRect();
-    const anchorArea = Math.max(1, ar.width * ar.height);
-    let best = "";
-    let bestScore = -1;
-    for (const img of anchor.querySelectorAll("img")) {
-      const rect = img.getBoundingClientRect();
-      const overlapWidth = Math.max(0, Math.min(ar.right, rect.right) - Math.max(ar.left, rect.left));
-      const overlapHeight = Math.max(0, Math.min(ar.bottom, rect.bottom) - Math.max(ar.top, rect.top));
-      const overlap = overlapWidth * overlapHeight;
-      if (!overlap) continue;
-      const coverage = overlap / anchorArea;
-      if (rect.width < ar.width * 0.62 || rect.height < ar.height * 0.62 || coverage < 0.38) continue;
-      const label = [img.alt || "", img.getAttribute?.("aria-label") || "", img.getAttribute?.("title") || ""].join(" ").toLowerCase();
-      if (/music|audio|album|avatar|profile|음악|음원|오디오|앨범|프로필/.test(label) && coverage < 0.8) continue;
-      const url = bestSrcFromImg(img);
-      if (!url) continue;
-      let score = coverage * 1e6 + overlap;
-      if (rect.width >= ar.width * 0.9 && rect.height >= ar.height * 0.9) score += 1e6;
-      if (score > bestScore) {
-        bestScore = score;
-        best = url;
+  // src/core/clipboard.js
+  async function copyText(text, { env = globalThis, doc = env.document, capabilities: capabilities2 } = {}) {
+    const value = String(text || "");
+    if (!value) return false;
+    if (capabilities2?.clipboard && env.navigator?.clipboard?.writeText) {
+      try {
+        await env.navigator.clipboard.writeText(value);
+        return true;
+      } catch {
       }
     }
-    return best;
-  }
-  function bestSrcFromImg(img) {
-    const srcset = img?.getAttribute?.("srcset") || "";
-    let best = "";
-    let bestWidth = -1;
-    if (srcset) {
-      for (const part of srcset.split(",")) {
-        const match = part.trim().match(/^(.*)\s+(\d+(?:\.\d+)?)(w|x)$/);
-        if (!match) continue;
-        let score = Number(match[2]);
-        if (match[3] === "x") score *= 1e4;
-        if (score > bestWidth) {
-          bestWidth = score;
-          best = match[1].trim();
-        }
-      }
+    if (!doc?.body || typeof doc.createElement !== "function") return false;
+    let textarea = null;
+    try {
+      textarea = doc.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute?.("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.opacity = "0";
+      doc.body.appendChild(textarea);
+      textarea.select?.();
+      textarea.setSelectionRange?.(0, value.length);
+      return doc.execCommand?.("copy") !== false;
+    } catch {
+      return false;
+    } finally {
+      textarea?.remove?.();
     }
-    return best || img?.currentSrc || img?.src || "";
-  }
-  function stripQuery2(url) {
-    return String(url || "").split("?")[0].split("#")[0];
   }
 
   // src/ui/toast.js
@@ -769,6 +855,8 @@
     doc.addEventListener("click", onClick, true);
     env.addEventListener?.("scroll", closeMenu, true);
     env.addEventListener?.("resize", closeMenu, true);
+    const unsubscribeRoute = app2?.on?.(EVENTS.ROUTE_CHANGED, closeMenu) || (() => {
+    });
     function onPointerDown(event) {
       const mediaButton = event.target?.closest?.(".ri3-grid-media");
       if (mediaButton) {
@@ -807,14 +895,12 @@
         addButton(menu, media.videoUrl ? "영상 다운로드" : "영상 준비중", !!media.videoUrl, () => downloadSingle({
           kind: "video",
           shortcode,
-          url: media.videoUrl,
-          filename: `Instagram_${shortcode}_video${extensionFromUrl(media.videoUrl, ".mp4")}`
+          url: media.videoUrl
         }));
         addButton(menu, media.imageUrl ? "썸네일 다운로드" : "썸네일 준비중", !!media.imageUrl, () => downloadSingle({
           kind: "cover",
           shortcode,
-          url: media.imageUrl,
-          filename: `Instagram_${shortcode}_thumb${extensionFromUrl(media.imageUrl, ".jpg")}`
+          url: media.imageUrl
         }));
       } else if (media.type === "CAROUSEL") {
         const count = media.carouselImages.length;
@@ -822,19 +908,17 @@
         addButton(menu, media.imageUrl ? "대표 이미지 다운로드" : "대표 이미지 준비중", !!media.imageUrl, () => downloadSingle({
           kind: "photo",
           shortcode,
-          url: media.imageUrl,
-          filename: `Instagram_${shortcode}_cover${extensionFromUrl(media.imageUrl, ".jpg")}`
+          url: media.imageUrl
         }));
       } else {
         addButton(menu, media.imageUrl ? "이미지 다운로드" : "이미지 준비중", !!media.imageUrl, () => downloadSingle({
           kind: "photo",
           shortcode,
-          url: media.imageUrl,
-          filename: `Instagram_${shortcode}_image${extensionFromUrl(media.imageUrl, ".jpg")}`
+          url: media.imageUrl
         }));
       }
       addButton(menu, "링크 복사", !!media.pageUrl, async () => {
-        const ok = await copyText(media.pageUrl);
+        const ok = await copyText(media.pageUrl, { env, doc, capabilities: capabilities2 });
         showToast(doc, ok ? "링크를 복사했습니다." : "링크 복사에 실패했습니다.");
       });
       doc.documentElement.appendChild(menu);
@@ -869,36 +953,12 @@
         kind: "carousel-slide",
         shortcode,
         url,
-        slideIndex: index + 1,
-        filename: `Instagram_${shortcode}_slide_${String(index + 1).padStart(2, "0")}${extensionFromUrl(url, ".jpg")}`
+        slideIndex: index + 1
       }));
       showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
       const result2 = await downloads2.downloadBatch(requests);
       showResult(doc, result2);
       return result2;
-    }
-    async function copyText(text) {
-      if (!text) return false;
-      if (capabilities2?.clipboard && env.navigator?.clipboard?.writeText) {
-        try {
-          await env.navigator.clipboard.writeText(text);
-          return true;
-        } catch {
-        }
-      }
-      try {
-        const textarea = doc.createElement("textarea");
-        textarea.value = text;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        doc.body?.appendChild(textarea);
-        textarea.select();
-        const ok = doc.execCommand?.("copy") !== false;
-        textarea.remove();
-        return ok;
-      } catch {
-        return false;
-      }
     }
     function positionMenu(menu, trigger) {
       const rect = trigger.getBoundingClientRect();
@@ -918,6 +978,7 @@
       if (destroyed) return;
       destroyed = true;
       closeMenu();
+      unsubscribeRoute();
       doc.removeEventListener("pointerdown", onPointerDown, true);
       doc.removeEventListener("click", onClick, true);
       env.removeEventListener?.("scroll", closeMenu, true);
@@ -1005,6 +1066,10 @@
       settingsState = next;
       if (open && activeTab === "settings") renderBody();
     });
+    const unsubscribeRoute = app2?.on?.(EVENTS.ROUTE_CHANGED, scheduleContextRender) || (() => {
+    });
+    const unsubscribeIdentity = app2?.on?.(EVENTS.IDENTITY_CHANGED, scheduleContextRender) || (() => {
+    });
     button.addEventListener("click", toggle);
     function toggle() {
       if (open) closePanel();
@@ -1025,6 +1090,16 @@
       button.setAttribute("aria-expanded", "false");
       panel?.remove();
       panel = null;
+    }
+    function scheduleContextRender() {
+      if (!open || activeTab === "settings") return;
+      if (app2?.scheduleRender) {
+        app2.scheduleRender("ri32-panel-context", () => {
+          if (open && activeTab !== "settings") renderBody();
+        });
+        return;
+      }
+      renderBody();
     }
     function ensurePanel() {
       panel = doc.getElementById("ri32-panel");
@@ -1078,6 +1153,7 @@
     function renderSummary(body, post) {
       if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.");
       const section = createSection(body, "현재 콘텐츠");
+      addRow(section, "계정", post.username ? `@${post.username}` : "—");
       addRow(section, "Shortcode", post.shortcode);
       addRow(section, "유형", post.mediaType || "확인 중");
       addRow(section, "조회수", countLabel(post.views));
@@ -1094,36 +1170,32 @@
       if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.");
       const section = createSection(body, "미디어");
       const type = String(post.mediaType || "").toUpperCase();
+      let actionCount = 0;
       if ((type === "REEL" || type === "VIDEO") && post.videoUrl) {
-        addAction(section, "영상 다운로드", () => save({
-          kind: "video",
-          shortcode: post.shortcode,
-          url: post.videoUrl,
-          filename: `Instagram_${post.shortcode}_video${extensionFromUrl(post.videoUrl, ".mp4")}`
-        }));
+        addAction(section, "영상 다운로드", () => save({ kind: "video", shortcode: post.shortcode, url: post.videoUrl }));
+        actionCount += 1;
       }
       if ((type === "REEL" || type === "VIDEO") && (post.coverUrl || post.thumbUrl)) {
         const url = post.coverUrl || post.thumbUrl;
-        addAction(section, "썸네일 다운로드", () => save({
-          kind: "cover",
-          shortcode: post.shortcode,
-          url,
-          filename: `Instagram_${post.shortcode}_thumb${extensionFromUrl(url, ".jpg")}`
-        }));
+        addAction(section, "썸네일 다운로드", () => save({ kind: "cover", shortcode: post.shortcode, url }));
+        actionCount += 1;
       }
       if (type === "PHOTO" && (post.coverUrl || post.thumbUrl)) {
         const url = post.coverUrl || post.thumbUrl;
-        addAction(section, "이미지 다운로드", () => save({
-          kind: "photo",
-          shortcode: post.shortcode,
-          url,
-          filename: `Instagram_${post.shortcode}_image${extensionFromUrl(url, ".jpg")}`
-        }));
+        addAction(section, "이미지 다운로드", () => save({ kind: "photo", shortcode: post.shortcode, url }));
+        actionCount += 1;
       }
       if (type === "CAROUSEL" && post.carouselImages?.length) {
         addAction(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
+        actionCount += 1;
       }
       addAction(section, "링크 복사", () => copyCurrentLink(post));
+      if (!actionCount) {
+        const note = doc.createElement("div");
+        note.className = "ri32-note";
+        note.textContent = "원본 미디어 주소는 아직 확보되지 않았습니다.";
+        section.appendChild(note);
+      }
     }
     function renderPlaceholder(body, post) {
       const label = tabLabel(activeTab);
@@ -1188,31 +1260,23 @@
         kind: "carousel-slide",
         shortcode: post.shortcode,
         url,
-        slideIndex: index + 1,
-        filename: `Instagram_${post.shortcode}_slide_${String(index + 1).padStart(2, "0")}${extensionFromUrl(url, ".jpg")}`
+        slideIndex: index + 1
       }));
       showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
       showResult(doc, await downloads2.downloadBatch(requests));
     }
     async function copyCurrentLink(post) {
       const text = post.canonicalUrl || `https://www.instagram.com/${post.mediaType === "REEL" ? "reel" : "p"}/${post.shortcode}/`;
-      try {
-        if (capabilities2?.clipboard && env.navigator?.clipboard?.writeText) {
-          await env.navigator.clipboard.writeText(text);
-          return showToast(doc, "링크를 복사했습니다.");
-        }
-      } catch {
-      }
-      showToast(doc, "이 환경에서는 링크 복사를 완료하지 못했습니다.");
+      const ok = await copyText(text, { env, doc, capabilities: capabilities2 });
+      showToast(doc, ok ? "링크를 복사했습니다." : "링크 복사에 실패했습니다.");
     }
     function syncCurrentIdentity() {
       const identity = adapter?.getCurrentIdentity?.() || null;
-      app2?.setRoute?.({ href: env.location?.href || "", pathname: env.location?.pathname || "" });
       app2?.setCurrentIdentity?.(identity);
       return identity;
     }
     function currentPost() {
-      const identity = syncCurrentIdentity() || app2?.getCurrentIdentity?.();
+      const identity = app2?.getCurrentIdentity?.() || syncCurrentIdentity();
       return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
     }
     function createSection(body, title) {
@@ -1253,6 +1317,8 @@
       if (destroyed) return;
       destroyed = true;
       unsubscribeSettings();
+      unsubscribeRoute();
+      unsubscribeIdentity();
       button?.removeEventListener("click", toggle);
       panel?.remove();
       button?.remove();
@@ -2000,7 +2066,7 @@
       });
       return chain;
     }
-    function copyText(text) {
+    function copyText2(text) {
       if (!text) return;
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).catch(function() {
@@ -2131,7 +2197,7 @@
         });
       }
       addGridMenuButton(menu, "링크 복사", !!pageUrl, function() {
-        copyText(pageUrl);
+        copyText2(pageUrl);
       });
       document.documentElement.appendChild(menu);
       var menuRect = menu.getBoundingClientRect();
@@ -2483,7 +2549,7 @@
         ["링크 복사", function() {
           var latest = reelContext() || panelContext;
           var text = latest && latest.code ? "https://www.instagram.com/reel/" + latest.code + "/" : location.href;
-          copyText(text);
+          copyText2(text);
         }],
         ["새 버전", function() {
           window.open(UPDATE_URL + "?ri=" + Date.now(), "_blank");
@@ -2906,7 +2972,7 @@
       else addGridMenuButton(menu, "저장 위치: 기본 Downloads", false, function() {
       });
       addGridMenuButton(menu, "링크 복사", !!pageUrl, function() {
-        copyText(pageUrl);
+        copyText2(pageUrl);
       });
       document.documentElement.appendChild(menu);
       var menuRect = menu.getBoundingClientRect();
@@ -2959,8 +3025,12 @@
   var legacyStore = createLegacyStoreAdapter({ env: globalThis });
   app.services = { capabilities, settings, downloads };
   app.adapters.legacyStore = legacyStore;
-  app.setRoute({ href: location.href, pathname: location.pathname });
-  app.setCurrentIdentity(legacyStore.getCurrentIdentity());
+  var stopRouteTracking = app.startRouteTracking({
+    env: globalThis,
+    resolveIdentity(url) {
+      return legacyStore.getCurrentIdentity(url);
+    }
+  });
   var grid = mountGridActions({ app, adapter: legacyStore, downloads, capabilities, doc: document, env: globalThis });
   var riPanel = mountRiPanel({
     app,
@@ -2972,6 +3042,7 @@
     doc: document,
     env: globalThis
   });
+  app.adapters.stopRouteTracking = stopRouteTracking;
   app.adapters.grid = grid;
   app.adapters.riPanel = riPanel;
   void settings.init().catch((error) => {
