@@ -9,7 +9,7 @@
 - 배포 파일: `ri-retry.user.js`
 - 배포 방식: 단일 self-contained userscript
 - 현재 개발 단계: **v3.2 UI/Foundation 기반 구현 중**
-- 현재 사용자-visible 동작: **v3.1.6과 동일하게 유지**
+- 현재 사용자-visible UI/다운로드 동작: **legacy v3.1.6 유지**
 
 `ri-retry.user.js`는 이제 수작업 원본이 아니라 `src/*`에서 생성되는 **generated deployment artifact**입니다.
 
@@ -35,13 +35,18 @@
 // Build version: 3.1.6
 ```
 
-현재 구조:
+현재 source 흐름:
 
 ```text
 src/main.js
-   ↓ import
-src/legacy-runtime.js
-   ↓ esbuild
+   ├ core/app.js
+   ├ core/capability.js
+   ├ store/settings-store.js
+   ├ media/download-manager.js
+   └ legacy-runtime.js
+          ↓
+        esbuild
+          ↓
 ri-retry.user.js
 ```
 
@@ -54,12 +59,14 @@ ri-retry.user.js
 - root `ri-retry.user.js` 직접 수정 금지
 - migration 완료 후 `legacy-runtime.js` 삭제
 
-### Build / Check 자동화 완료
+### Build / Test / Check 자동화 완료
 
 GitHub Actions에서 다음 단계가 실제 실행됩니다.
 
 ```text
 npm install
+  ↓
+npm test
   ↓
 npm run build
   ↓
@@ -70,32 +77,57 @@ node --check ri-retry.user.js
 변경된 generated userscript만 자동 commit
 ```
 
-확인 결과:
+현재 자동 검증 결과:
 
-- 최초 source-of-truth 전환 workflow: **success**
-- v3.2 Foundation owner 추가 후 workflow: **success**
+- source-of-truth 전환 workflow: **success**
+- Foundation owner 추가 workflow: **success**
+- RI Panel shell source 추가 workflow: **success**
+- dormant Foundation wiring + unit gate workflow: **success**
+- unit tests 성공
 - build 성공
 - architecture check 성공
 - generated userscript `node --check` 성공
 
-중요: 이는 **build/문법/구조 검사 통과**를 의미합니다. Android Edge 실기기에서 build 전환 후 동작 parity가 확인됐다는 뜻은 아닙니다. 실기기 동작은 별도로 확인해야 합니다.
+중요: 이는 **unit/build/문법/구조 검사 통과**를 의미합니다. Android Edge 실기기에서 source-of-truth 전환 후 기존 v3.1.6 동작 parity가 확인됐다는 뜻은 아닙니다. 실기기 동작은 별도로 확인해야 합니다.
 
-### Phase 2 — Foundation owner 일부 구현 완료
+### Phase 2 — Foundation owner 구현 + dormant wiring 완료
 
-실제 생성된 owner module:
+현재 구현된 owner module:
 
 ```text
 src/core/app.js
 src/core/capability.js
 src/store/settings-store.js
 src/media/download-manager.js
+src/ui/ri-panel.js
+src/ui/styles.js
 ```
 
-현재 이 네 파일은 **owner API 구현까지 완료했지만 아직 `src/main.js`에서 활성화하지 않았습니다.** 따라서 현재 배포 동작은 legacy runtime과 동일하며, 새 Settings Store/Download Manager가 기존 Grid 저장경로를 아직 바꾸지 않습니다.
+`src/main.js`는 현재 다음을 실제 생성합니다.
 
-이 순서를 지키는 이유는 새 구조를 먼저 검증하고, 기존에 좋아진 Grid/cover/network 동작을 동시에 깨뜨리지 않기 위해서입니다.
+```text
+AppContext
+Capabilities
+Settings Store
+Download Manager
+```
 
-## 신규 Foundation의 실제 책임
+Settings Store도 `init()`까지 실행합니다.
+
+다만 **새 RI Panel은 의도적으로 아직 mount하지 않았습니다.** 이유는 현재 legacy Grid 다운로드가 새 Download Manager로 전환되기 전에 설정 UI를 먼저 노출하면, 사용자가 보는 저장설정과 실제 저장경로가 서로 달라질 수 있기 때문입니다.
+
+즉 현재 단계는:
+
+```text
+새 Foundation service = runtime에 생성/초기화됨
+새 RI Panel source = 구현됨, 아직 dormant
+legacy Grid/Reel UI = 기존 동작 유지
+legacy download path = 아직 유지
+```
+
+입니다.
+
+## Foundation owner 실제 책임
 
 ### `core/app.js`
 
@@ -203,9 +235,44 @@ DownloadResult
 - directory/file writer
 - 구조화된 실패 결과
 
-Carousel `downloadBatch()`는 destination을 한 번만 결정하고 전체 slide에 동일 destination을 사용하도록 설계했습니다.
+Carousel `downloadBatch()`는 destination을 한 번만 결정하고 전체 slide에 동일 destination을 사용하도록 구현했습니다.
 
 지정 폴더 저장 실패 시 **자동으로 default Downloads로 조용히 fallback하지 않습니다.**
+
+### `ui/ri-panel.js`
+
+공용 RI UI shell source 구현 완료.
+
+포함:
+
+- 전역 RI 버튼
+- `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell
+- open/close
+- Settings Store subscribe
+- 저장 방식 UI
+- 현재 폴더/권한 표시
+- 폴더 선택/변경
+
+아직 runtime에 mount하지 않았으므로 현재 사용자 화면에는 나타나지 않습니다.
+
+### `ui/styles.js`
+
+새 RI 전역 버튼/패널/설정 UI 스타일의 단일 owner입니다.
+
+## Unit test gate
+
+`tests/unit/foundation.test.mjs`를 추가했습니다.
+
+현재 확인 항목:
+
+1. AppContext event publish/unsubscribe
+2. 같은 render key frame dedupe
+3. capability가 플랫폼명이 아니라 runtime API로 판단되는지
+4. Settings Store의 공용 download mode persistence
+5. 지정 폴더 write 실패 시 browser default로 무단 fallback하지 않는지
+6. Carousel prompt batch가 폴더 선택을 한 번만 하고 모든 slide에 재사용하는지
+
+GitHub Actions는 이제 `tests/**` 변경에도 실행되고 `npm test` 실패 시 build/deploy 단계로 진행하지 않습니다.
 
 ## 누적 보존 대상
 
@@ -242,7 +309,7 @@ Carousel `downloadBatch()`는 destination을 한 번만 결정하고 전체 slid
 3. 현재 legacy 저장경로가 미디어 종류별로 동일 manager를 통과하지 않음.
 4. 카드별 메뉴에 전역 성격의 저장 위치 설정이 들어가 있어 UI 의미가 맞지 않음.
 
-이 문제는 v3.2에서 새 `Settings Store + Download Manager`를 실제 runtime에 연결하면서 해결합니다.
+이 문제는 v3.2에서 새 `Settings Store + Download Manager`를 legacy Grid media action과 연결하면서 해결합니다.
 
 ## 확정된 전체 UI 역할
 
@@ -424,44 +491,40 @@ Identity / Extractor / Verified Store / Metrics / Media Resolver / Grid / Reel�
 - userscript/STATUS version 일치
 - runtime `@require` 금지
 
-## v3.2 남은 실행 순서
+## v3.2 다음 실행 순서
 
-### Phase 2 계속 — Foundation 연결
+### 현재 안전 체크포인트
 
-1. `ui/styles.js` 구현
-2. `ui/ri-panel.js` 구현
-3. `src/main.js`에서 AppContext / capability / Settings Store / Download Manager를 실제 생성
-4. Settings Store init 후 RI Panel에 주입
-5. 아직 legacy runtime과 충돌하지 않도록 adapter 경계 설계
+Phase 1과 Foundation owner 구축/자동검사는 완료했습니다. 새 RI UI/새 다운로드 정책을 사용자에게 노출하기 전에 **현재 generated v3.1.6이 Android Edge에서 기존 승인 기능을 그대로 유지하는지 parity 확인**이 필요합니다.
 
-### Phase 3 — 저장경로 실제 통합
+이 확인 전에는 가장 회귀 위험이 높은 legacy data engine을 건드리지 않습니다.
 
-6. legacy에서 현재 shortcode/media를 읽기 위한 최소 adapter 공개
-7. Grid 카드 저장 메뉴를 새 Download Manager 호출로 전환
-8. 카드 메뉴의 폴더 설정 제거
-9. video / cover / photo / carousel 모두 동일 manager 사용
-10. 이미지 cross-origin transport가 directory 저장에서 실패하는지 실기기 확인
-11. 필요할 때만 `media/transport.js`를 분리하고 Tampermonkey privileged transport 여부 검토
-12. 지정 폴더 / 기본 Downloads / 매번 선택 실기기 확인
-13. Carousel batch 동일 destination 확인
+### Phase 3 — Legacy adapter + 저장경로 통합
 
-### Phase 4 — 전역 UI
+다음 구현 순서:
 
-14. 기존 Reel 전용 RI 버튼을 전역 RI 버튼으로 교체
-15. 공용 RI Panel shell 연결
-16. Grid / Reel / Post 상세에서 중복 RI 버튼이 생기지 않는지 확인
-17. safe-area / 하단 배너 겹침 확인
+1. `legacy-runtime.js`를 ES module adapter 형태로 전환해 필요한 최소 API만 공개
+2. arbitrary global 대신 `main.js`가 adapter를 직접 주입받는 구조 사용
+3. legacy single media download를 Download Manager에 연결
+4. legacy Carousel batch를 `downloadBatch()`에 연결
+5. Grid 카드 메뉴의 폴더 설정을 제거
+6. 새 RI Settings UI를 실제 mount
+7. 기존 Reel 전용 RI 버튼과 새 전역 RI 버튼의 중복을 제거
+8. video / cover / photo / carousel 동일 저장정책 적용
+9. 이미지 cross-origin transport가 designated directory에서 실패하는지 실기기 확인
+10. 필요할 때만 `media/transport.js`와 Tampermonkey privileged transport 검토
+11. 지정 폴더 / 기본 Downloads / 매번 선택 실기기 확인
+12. Carousel batch 동일 destination 확인
+
+### Phase 4 — 전역 UI/상세 연결
+
+- 기존 Reel detail 데이터를 공용 RI Panel `요약/미디어`에 adapter로 연결
+- 전역 RI 버튼을 Grid/Reel/Post 상세 전체에서 하나만 유지
+- safe-area / 하단 배너 겹침 확인
 
 ### Phase 5 — Data engine migration
 
-18. Identity
-19. Extractor
-20. Verified Store
-21. Metrics
-22. Media Resolver
-23. Grid/Reel UI
-
-순으로 하나씩 이동합니다.
+Identity → Extractor → Verified Store → Metrics → Media Resolver → Grid/Reel UI 순으로 하나씩 이동합니다.
 
 한 단계가 회귀/실기기 확인되기 전에 다음 위험 계층을 동시에 대규모 이동하지 않습니다.
 
