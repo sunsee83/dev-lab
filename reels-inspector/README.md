@@ -9,7 +9,7 @@ Instagram 모바일 웹에서 콘텐츠를 빠르게 조사하기 위한 Tamperm
 1. `PROJECT_PLAN.md` — 제품 구조, 데이터 모델, 전체 UI, 다운로드 구조, 개발 로드맵의 단일 기준
 2. `STATUS.md` — 현재 배포 버전, 실기기 확인사항, 다음 구현 순서
 3. `GRID_BASELINE.md` — Grid Frozen UI 세부 기준
-4. `CODE_STRUCTURE.md` — 실제 코드 파일 분류, 모듈 책임, 의존성, build/migration 기준
+4. `CODE_STRUCTURE.md` — 실제 코드 파일 구조, 파일 책임, 분리/생성 규칙
 5. `tests/README.md` — Core/Grid/UI/Foundation 회귀검증 기준
 
 요구사항·구조·UI·우선순위가 바뀌면 기존 설계를 먼저 참고한 뒤 새 결정을 현재 구조에 통합하고 관련 문서를 갱신합니다. 관련 없는 기존 설계를 통째로 삭제하거나 과거 방식으로 되돌리지 않습니다.
@@ -94,27 +94,76 @@ Grid 카드 메뉴에는 저장 위치 설정을 두지 않습니다.
 
 실제 브라우저 API/permission을 확인해 가능한 옵션만 노출합니다.
 
-## 코드 작성 구조
+## 코드 파일 관리
 
-현재 `ri-retry.user.js`는 실기기 동작을 보존하기 위해 그대로 유지하면서 신규 v3.2 Foundation부터 `src/` 모듈로 작성합니다.
+코드는 **Progressive Modularization** 방식으로 관리합니다.
 
-핵심 계층:
+- 처음부터 수십 개 파일을 만들지 않음
+- 실제 책임이 생길 때만 파일 생성
+- 초기 `src/`는 약 10~15개 의미 있는 파일로 시작
+- 책임/테스트/재사용 경계가 명확해질 때만 분리
+- 빈 placeholder 폴더/파일을 미리 만들지 않음
+- `old`, `backup`, `hotfix`, `final2` 같은 보관용 파일 금지
+- 과거 버전은 Git history로 관리
+
+초기 목표 구조:
 
 ```text
 src/
-├ core/        # capability/event/route 공통 기반
-├ instagram/   # identity/extractor/normalizer
-├ store/       # Verified Store/Settings/Snapshot/Persistence
-├ metrics/     # ER/24h/account-relative 순수 계산
-├ media/       # resolver/cover/carousel/Download Manager
-├ ui/          # global RI/Grid/Reel/Panel
-├ comments/    # 댓글 연구 로직
-└ analysis/    # 향후 분석 서버 client/job
+├ main.js
+├ core/
+│  ├ app.js
+│  └ capability.js
+├ instagram/
+│  ├ identity.js
+│  └ extractor.js
+├ store/
+│  ├ verified-store.js
+│  └ settings-store.js
+├ metrics/
+│  └ metrics.js
+├ media/
+│  ├ media-resolver.js
+│  └ download-manager.js
+└ ui/
+   ├ grid.js
+   ├ reel.js
+   ├ ri-panel.js
+   └ styles.js
 ```
 
-세부 파일 책임과 의존성, monolith → module 전환 순서는 `CODE_STRUCTURE.md`를 기준으로 합니다.
+세부 파일 책임, 분리 기준, 의존성 규칙은 `CODE_STRUCTURE.md`를 따릅니다.
 
-v3.2에서 먼저 분리할 코드는 **capability / Settings Store / Download Manager / 전역 RI button / RI Panel shell / settings tab**입니다. 기존 Grid 데이터엔진과 cover/network/store는 첫 단계에서 대규모 재작성하지 않습니다.
+목표 흐름:
+
+```text
+src/*
+  ↓
+build / check
+  ↓
+ri-retry.user.js
+```
+
+모듈 전환이 완료되면:
+
+- `src/*` = 사람이 수정하는 개발 원본
+- `ri-retry.user.js` = 생성된 Tampermonkey 배포파일
+
+으로 고정합니다.
+
+## Git 파일 관리
+
+`.gitignore`를 사용해 다음 로컬 자료가 저장소에 섞이지 않게 합니다.
+
+- 다운로드한 Instagram 영상/사진
+- HAR/network capture/debug dump
+- `.env`/secret
+- 임시 파일/로그/cache
+- 개인 테스트 데이터
+
+테스트용 Instagram 데이터는 필요한 구조만 남긴 **sanitized fixture**만 commit합니다.
+
+`ri-retry.user.js`는 Tampermonkey 직접 설치/업데이트 대상이므로 generated artifact가 된 이후에도 GitHub에서 계속 추적합니다.
 
 ## 다음 구현 — v3.2 UI/Foundation
 
@@ -138,5 +187,5 @@ v3.2에서 먼저 분리할 코드는 **capability / Settings Store / Download M
 - 같은 값이면 DOM을 다시 그리지 않습니다.
 - Grid Frozen UI는 관련 없는 기능 때문에 되돌리지 않습니다.
 - 실기기에서 좋아진 동작은 누적 보존합니다.
-- 실제 개발 원본을 모듈화한 뒤에도 Tampermonkey 배포는 self-contained `ri-retry.user.js` 하나로 유지합니다.
+- 파일 수보다 책임 분리와 회귀 방지를 우선합니다.
 - 설계 변경 시 `PROJECT_PLAN.md`, `CODE_STRUCTURE.md`와 관련 문서를 코드보다 먼저 또는 같은 작업에서 갱신합니다.
