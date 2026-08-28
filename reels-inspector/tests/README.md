@@ -5,8 +5,10 @@
 ## fixture
 
 - `fixtures/core-cases.json` — mediaType, Verified Store conflict, Grid 안전성 기준
+- `unit/foundation.test.mjs` — AppContext/capability/settings/download policy
+- `unit/migration.test.mjs` — legacy cache adapter와 migrated media resolver
 
-## v3.1 Core/Grid 필수 회귀 항목
+## v3.1 Core/Grid 필수 회귀 항목 — v3.2에서도 계속 보존
 
 1. Reel: 조회수/좋아요/댓글/리포스트가 동일 shortcode에만 결합된다.
 2. Photo/Carousel: 검증되지 않은 조회수/ER/24h/배수의 숫자값은 표시하지 않고 해당 슬롯을 `-`로 유지한다.
@@ -50,90 +52,118 @@
 
 1. 프로필/검색/탐색/Grid/Reel/Post 상세에서 동일 RI 버튼이 표시된다.
 2. 화면마다 별도의 중복 RI 버튼을 만들지 않는다.
-3. 기본 위치는 우측 하단 safe area이다.
-4. Instagram 하단 navigation 또는 `앱 사용/Open app` 배너와 겹치면 자동으로 위로 이동한다.
-5. Reel 전용 `...` 추적 위치와 전역 고정 위치가 동시에 남지 않는다.
+3. 새 전역 RI가 활성화되면 legacy Reel 전용 `#ri3-tool/#ri3-panel`은 사용자에게 동시에 보이지 않는다.
+4. 기본 위치는 우측 하단 safe area이다.
+5. Instagram 하단 navigation 또는 `앱 사용/Open app` 배너와 실제 충돌하지 않아야 한다.
+6. Reel 전용 `...` 추적 위치와 전역 고정 위치가 동시에 남지 않는다.
 
 ### 공용 RI Panel
 
-6. RI 버튼 하나가 동일한 공용 panel을 toggle한다.
-7. panel shell은 `요약 / 콘텐츠 / 댓글 / 분석 / 미디어 / 설정` 탭 구조를 가진다.
-8. 현재 콘텐츠가 변경되면 이전 shortcode의 상세값을 계속 보여주지 않는다.
-9. Store 변경 시 panel은 필요한 값만 live update한다.
-10. `설정`은 현재 카드/콘텐츠와 무관한 전역 설정으로 동작한다.
+7. RI 버튼 하나가 동일한 공용 panel을 toggle한다.
+8. panel shell은 `요약 / 콘텐츠 / 댓글 / 분석 / 미디어 / 설정` 탭 구조를 가진다.
+9. 현재 URL에 shortcode가 있으면 migration adapter가 그 shortcode만 읽는다.
+10. 현재 콘텐츠가 변경되면 이전 shortcode의 상세값을 계속 보여주지 않는다.
+11. 미확보 조회수/좋아요/댓글/리포스트를 `0`으로 만들지 않는다.
+12. Store 변경 시 panel은 필요한 값만 live update하는 구조로 진행한다.
+13. `설정`은 현재 카드/콘텐츠와 무관한 전역 설정으로 동작한다.
+14. `미디어` action은 자체 저장 구현이 아니라 Download Manager를 호출한다.
 
 ### Grid 카드 메뉴
 
-11. Grid card 메뉴에는 저장 위치/폴더 설정을 넣지 않는다.
-12. Reel/Video 메뉴는 `영상 다운로드 / 썸네일 다운로드 / 링크 복사`만 제공한다.
-13. Photo 메뉴는 `이미지 다운로드 / 링크 복사`를 제공한다.
-14. Carousel 메뉴는 `전체 이미지 다운로드 / 대표 이미지 다운로드 / 링크 복사`를 제공한다.
-15. 카드 메뉴 변경이 기존 Grid 8슬롯/3열/깜빡임 개선을 되돌리지 않는다.
+15. 기존 카드당 단일 `.ri3-grid-media` 버튼 위치/개수는 유지한다.
+16. 새 action layer가 button click을 처리할 때 legacy 저장 메뉴와 새 저장 메뉴가 동시에 열리지 않는다.
+17. Grid card 메뉴에는 저장 위치/폴더 설정을 넣지 않는다.
+18. Reel/Video 메뉴는 `영상 다운로드 / 썸네일 다운로드 / 링크 복사`를 제공한다.
+19. Photo 메뉴는 `이미지 다운로드 / 링크 복사`를 제공한다.
+20. Carousel 메뉴는 `전체 이미지 다운로드 / 대표 이미지 다운로드 / 링크 복사`를 제공한다.
+21. 카드 메뉴 변경이 기존 Grid 8슬롯/3열/깜빡임 개선을 되돌리지 않는다.
+22. 새 `media-resolver.js`도 큰 본문 image 우선/작은 album artwork 제외 규칙을 유지한다.
 
 ### 공통 Download Manager
 
-16. 영상/썸네일/사진/Carousel이 동일 Download Manager를 사용한다.
-17. 저장정책은 `지정 폴더 / 기본 Downloads / 매번 선택` 중 capability가 지원하는 것만 노출한다.
-18. 저장정책은 미디어 종류가 아니라 전역 설정값으로 결정된다.
-19. 지정 폴더 모드에서 영상과 이미지가 서로 다른 폴더로 갈라지지 않는다.
-20. 지정 폴더 쓰기 실패 시 조용히 기본 Downloads로 fallback하지 않는다.
-21. 실패는 구조화된 `DownloadResult`로 반환되고 UI가 사용자에게 표시한다.
-22. `Android` 문자열만으로 지원 여부를 결정하지 않고 실제 API/permission을 검사한다.
-23. `매번 선택` 미지원 환경에서는 해당 옵션을 활성화하지 않는다.
-24. Carousel batch는 destination을 한 번만 정하고 slide 1..N을 모두 같은 destination에 저장한다.
-25. 다운로드 파일명은 `Instagram_` 접두사와 shortcode/slide index를 유지한다.
-26. 이미지/영상 transport 방식이 달라져도 UI가 별도 다운로드 구현을 만들지 않는다.
+23. 영상/썸네일/사진/Carousel이 동일 Download Manager를 사용한다.
+24. 저장정책은 `지정 폴더 / 기본 Downloads / 매번 선택` 중 capability가 지원하는 것만 노출한다.
+25. 저장정책은 미디어 종류가 아니라 전역 설정값으로 결정된다.
+26. 지정 폴더 모드에서 영상과 이미지가 서로 다른 폴더로 갈라지지 않는다.
+27. 지정 폴더 fetch/write 실패 시 조용히 기본 Downloads로 fallback하지 않는다.
+28. 실패는 구조화된 `DownloadResult`로 반환되고 UI가 사용자에게 표시한다.
+29. `Android` 문자열만으로 지원 여부를 결정하지 않고 실제 API/permission을 검사한다.
+30. `매번 선택` 미지원 환경에서는 해당 옵션을 활성화하지 않는다.
+31. Carousel batch는 destination을 한 번만 정하고 slide 1..N을 모두 같은 destination에 저장한다.
+32. 다운로드 파일명은 `Instagram_` 접두사와 shortcode/slide index를 유지한다.
+33. 이미지/영상 transport 방식이 달라져도 UI가 별도 Blob/network 저장 구현을 만들지 않는다.
+34. 지정 폴더 image/cover가 cross-origin으로 실패하는 경우 UI/Settings를 재구현하지 않고 media transport 경계에서 해결한다.
 
 ## v3.2 Architecture / Source-of-Truth 승인 기준
 
-### Source of Truth
+### Source of Truth / Version
 
-1. module 전환 시 root `ri-retry.user.js`와 `src/*`를 동시에 수작업 수정하지 않는다.
-2. build 전환 후 `src/*`만 개발 원본이다.
+1. root `ri-retry.user.js`와 `src/*`를 동시에 수작업 수정하지 않는다.
+2. `src/*`만 개발 원본이다.
 3. `ri-retry.user.js`에는 generated warning/header가 포함된다.
-4. current runtime을 옮긴 `src/legacy-runtime.js`는 migration용 canonical module이지 backup이 아니다.
-5. 신규 기능을 `legacy-runtime.js`에 계속 추가하지 않는다.
-6. migration 완료 후 `legacy-runtime.js`를 삭제한다.
+4. 제품 version의 단일 원본은 `src/version.js`이다.
+5. `src/version.js`, generated `@version`, generated Build version, `STATUS.md` version이 일치한다.
+6. `src/legacy-runtime.js`는 migration용 canonical module이지 backup이 아니다.
+7. 신규 기능을 `legacy-runtime.js`에 계속 추가하지 않는다.
+8. migration 완료 후 `legacy-runtime.js`와 임시 migration adapter를 삭제한다.
 
 ### Single Owner / dependency
 
-7. route/event/lifecycle은 `core/app.js`가 소유한다.
-8. capability/permission probe는 `core/capability.js`가 소유한다.
-9. 저장정책 state/persistence는 `store/settings-store.js`가 소유한다.
-10. destination/file write는 `media/download-manager.js`가 소유한다.
-11. RI 전역 버튼/패널은 `ui/ri-panel.js`가 소유한다.
-12. 같은 책임을 다른 파일에서 별도 구현하지 않는다.
-13. `store -> ui` import가 없다.
-14. `metrics`에서 DOM 접근하지 않는다.
-15. `ui`에서 File System Access/localStorage/IndexedDB를 직접 사용하지 않는다.
-16. `ui`에서 fetch/XHR hook을 만들지 않는다.
-17. 순환 import가 없다.
-18. 신규 `src/*`에서 `oldFn = fn; fn = override` 형태 patch stack을 만들지 않는다.
+9. route/event/lifecycle은 `core/app.js`가 소유한다.
+10. capability/permission probe는 `core/capability.js`가 소유한다.
+11. 저장정책 state/persistence는 `store/settings-store.js`가 소유한다.
+12. destination/file write는 `media/download-manager.js`가 소유한다.
+13. legacy cache read boundary는 `migration/legacy-store-adapter.js`가 소유한다.
+14. migrated Grid cover/media 선택은 `media/media-resolver.js`가 소유한다.
+15. RI 전역 버튼/패널은 `ui/ri-panel.js`가 소유한다.
+16. 같은 책임을 다른 신규 파일에서 별도 구현하지 않는다.
+17. `store -> ui` import가 없다.
+18. `metrics`에서 DOM 접근하지 않는다.
+19. `ui`에서 File System Access/localStorage/IndexedDB를 직접 사용하지 않는다.
+20. `ui`에서 fetch/XHR hook 또는 Blob transport를 만들지 않는다.
+21. 순환 import가 없다.
+22. 신규 `src/*`에서 `oldFn = fn; fn = override` 형태 patch stack을 만들지 않는다.
 
 ### Event / lifecycle
 
-19. 공식 event는 `app.js`에서 한 곳에 정의한다.
-20. subscribe API는 unsubscribe/cleanup을 반환한다.
-21. route 전환 후 이전 화면 listener가 남지 않는다.
-22. 동일 render key는 한 frame 안에서 dedupe된다.
-23. MutationObserver가 변경마다 전체 Grid scan/전체 rerender를 반복하지 않는다.
+23. 공식 event는 `app.js`에서 한 곳에 정의한다.
+24. subscribe API는 unsubscribe/cleanup을 반환한다.
+25. route 전환 후 이전 화면 listener가 남지 않는다.
+26. 동일 render key는 한 frame 안에서 dedupe된다.
+27. MutationObserver가 변경마다 전체 Grid scan/전체 rerender를 반복하지 않는다.
+28. 새 Grid action은 document-level listener를 한 세트만 등록하고 카드마다 global listener를 복제하지 않는다.
 
 ### 중복/크기 관리
 
-24. private helper는 한 파일에서 시작하고 두 번째 사용처가 생길 때 owner API 승격 여부를 검토한다.
-25. 같은 핵심 로직을 복사해서 두 구현을 동시에 유지하지 않는다.
-26. 의미 없는 `utils.js`, `helpers.js`, `final2.js`, `hotfix.js`, `backup.js` 파일을 만들지 않는다.
-27. 일반 source 파일이 350줄을 넘으면 책임 분리를 검토한다.
-28. 일반 source 파일이 500줄을 넘으면 단일책임 근거가 없을 경우 분리한다.
-29. `legacy-runtime.js`는 migration 동안만 크기 예외다.
-30. 약 8줄 이상의 동일/거의 동일한 로직이 반복되면 owner 공통화 여부를 검토한다.
+29. private helper는 한 파일에서 시작하고 두 번째 사용처가 생길 때 owner API 승격 여부를 검토한다.
+30. 같은 핵심 로직을 복사해서 두 구현을 영구 유지하지 않는다.
+31. migration 중 일시적 중복은 새 호출부 전환 → 회귀 확인 → legacy 제거 순서로 해소한다.
+32. 의미 없는 `utils.js`, `helpers.js`, `final2.js`, `hotfix.js`, `backup.js` 파일을 만들지 않는다.
+33. 일반 source 파일이 350줄을 넘으면 책임 분리를 검토한다.
+34. 일반 source 파일이 500줄을 넘으면 분리한다.
+35. `legacy-runtime.js`는 migration 동안만 크기 예외다.
+36. 약 8줄 이상의 동일/거의 동일한 로직이 반복되면 owner 공통화 여부를 검토한다.
 
 ### Build / Check
 
-31. bundle/syntax check 실패 시 배포파일을 갱신하지 않는다.
-32. build version과 userscript metadata/STATUS version이 일치한다.
-33. `check.mjs`는 금지 의존성/API 사용과 파일 크기 규칙을 검사한다.
-34. 가능한 경우 긴 반복 code block도 check 단계에서 warning 처리한다.
-35. build/check/regression 이후에만 generated `ri-retry.user.js`를 main에 반영한다.
+37. unit test/build/syntax/architecture check 실패 시 배포파일을 갱신하지 않는다.
+38. `check.mjs`는 금지 의존성/API 사용, 순환 import, 파일 크기, version 일치를 검사한다.
+39. 가능한 경우 긴 반복 code block도 check 단계에서 warning 처리한다.
+40. 자동 검증 이후에만 generated `ri-retry.user.js`를 main에 반영한다.
+
+## v3.2.0 실기기 확인 항목
+
+코드/CI 통과와 실기기 승인은 분리합니다. Android Edge에서 다음을 확인합니다.
+
+1. 전역 RI 버튼이 Grid/Reel/Post 상세에서 정확히 1개 보이는가.
+2. RI Panel의 닫기와 탭이 정상 동작하는가.
+3. Grid 카드 메뉴에서 저장 폴더 항목이 사라졌는가.
+4. RI `설정`에서 지정 폴더 선택이 동작하는가.
+5. 선택한 정책이 다른 카드의 영상/사진/썸네일에도 공통 적용되는가.
+6. 지정 폴더 image/cover 저장이 CORS 때문에 실패하는가.
+7. 실패할 경우 기본 Downloads로 몰래 저장되지 않고 오류가 표시되는가.
+8. Carousel 전체 저장이 한 destination에 개별 파일로 저장되는가.
+9. 기존 Grid 8-slot/no-flicker/cover가 유지되는가.
+10. Instagram native media icon과 카드 click 동작이 유지되는가.
 
 실기기 검증 결과는 `STATUS.md`에 기록합니다.
