@@ -1,0 +1,38 @@
+# Dependencies / build cache
+node_modules/
+coverage/
+.cache/
+.tmp/
+tmp/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Debug / network captures / local test dumps
+*.har
+captures/
+debug/
+dumps/
+tests/fixtures/private/
+
+# Downloaded Instagram media / local exports
+downloads/
+exports/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Keep generated deployment artifact tracked intentionally:
+# ri-retry.user.js
