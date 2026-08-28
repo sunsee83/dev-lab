@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.1.2
+// @version      3.1.3
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '3.1.2';
+    var VERSION = '3.1.3';
     var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var CACHE_KEY = 'ri311:items:v1';
     var SNAP_KEY = 'ri311:snap:v1';
@@ -128,12 +128,7 @@
 
     function markConflict(item, key, oldField, incoming, source) {
         item.conflicts = item.conflicts || {};
-        item.conflicts[key] = {
-            previous: oldField.value,
-            incoming: incoming,
-            source: source,
-            at: Date.now()
-        };
+        item.conflicts[key] = { previous: oldField.value, incoming: incoming, source: source, at: Date.now() };
         item.fields[key] = {
             value: oldField.value,
             source: oldField.source,
@@ -152,23 +147,18 @@
         old = item.fields[key] || null;
         newRank = sourceRank(source);
         oldRank = old ? sourceRank(old.source) : -1;
-
         if (old && (old.status === 'verified' || old.status === 'conflict') && String(old.value) !== String(value)) {
             if (newRank < oldRank) return false;
             if (METRIC_FIELDS[key]) {
                 a = Number(old.value);
                 b = Number(value);
                 age = Date.now() - Number(old.updatedAt || 0);
-                if (a > 0 && ((b < a && a - b > Math.max(5, a * 0.02)) || (age < 120000 && a > 100 && b > a * 20))) {
-                    return markConflict(item, key, old, value, source);
-                }
+                if (a > 0 && ((b < a && a - b > Math.max(5, a * 0.02)) || (age < 120000 && a > 100 && b > a * 20))) return markConflict(item, key, old, value, source);
             } else if (key !== 'videoUrl' && key !== 'thumbUrl' && !(key === 'mediaType' && old.value === 'VIDEO' && value === 'REEL') && newRank <= oldRank) {
                 return markConflict(item, key, old, value, source);
             }
         }
-
         if (old && String(old.value) === String(value) && newRank <= oldRank && old.status === 'verified') return false;
-
         item.fields[key] = {
             value: value,
             source: source || 'dom',
@@ -260,13 +250,12 @@
     }
 
     function accountMultiple(code, owner, views) {
-        var store, list = [], keys, vals, mid, median;
+        var store, list = [], vals, mid, median;
         owner = String(owner || '').toLowerCase();
         views = Number(views);
         if (!owner || !views) return null;
         store = readStore(POST_KEY, {});
-        keys = Object.keys(store);
-        keys.forEach(function (k) {
+        Object.keys(store).forEach(function (k) {
             var d = store[k];
             if (k !== code && d && String(d.owner || '').toLowerCase() === owner && Number(d.views)) list.push(d);
         });
@@ -297,9 +286,7 @@
     function directNumber(obj, keys) {
         var i;
         if (!obj || typeof obj !== 'object') return null;
-        for (i = 0; i < keys.length; i++) {
-            if (obj[keys[i]] != null && isFinite(Number(obj[keys[i]]))) return Number(obj[keys[i]]);
-        }
+        for (i = 0; i < keys.length; i++) if (obj[keys[i]] != null && isFinite(Number(obj[keys[i]]))) return Number(obj[keys[i]]);
         return null;
     }
 
@@ -339,21 +326,18 @@
         if (!obj || typeof obj !== 'object') return;
         code = obj.code || obj.shortcode || obj.short_code;
         if (!code || typeof code !== 'string' || code.length < 5 || code.length > 40) return;
-
         n = sameMediaNumber(obj, VIEW_KEYS, code, 0); if (n != null) patch.views = n;
         n = sameMediaNumber(obj, ['like_count','likes_count'], code, 0); if (n != null) patch.likes = n;
         n = sameMediaNumber(obj, ['comment_count','comments_count'], code, 0); if (n != null) patch.comments = n;
         n = sameMediaNumber(obj, ['reshare_count','repost_count','reposts_count'], code, 0); if (n != null) patch.reposts = n;
         n = sameMediaNumber(obj, ['taken_at','taken_at_timestamp'], code, 0);
         if (n) { try { patch.date = new Date(n * 1000).toISOString().slice(0, 10); } catch (e) {} }
-
         user = obj.user || obj.owner || obj.owner_user;
         if (user && user.username) patch.owner = String(user.username).toLowerCase();
         if (obj.pk || obj.id || obj.media_id) patch.mediaId = String(obj.pk || obj.id || obj.media_id);
         if (obj.user_id || obj.owner_id || (user && (user.pk || user.id))) patch.ownerId = String(obj.user_id || obj.owner_id || user.pk || user.id);
         type = detectMediaType(obj); if (type) patch.mediaType = type;
         if (obj.product_type || obj.productType) patch.productType = String(obj.product_type || obj.productType);
-
         collectUrls(obj, code, videos, images, 0);
         for (i = 0; i < videos.length; i++) {
             key = normalizeUrl(videos[i]);
@@ -380,48 +364,39 @@
 
     function scanJsonText(text, source) {
         if (!text || text.length > 12000000) return;
-        try {
-            walkJson(JSON.parse(String(text).replace(/^for\s*\(;;\);\s*/, '')), 0, { count: 0 }, source || 'embedded');
-        } catch (e) {}
+        try { walkJson(JSON.parse(String(text).replace(/^for\s*\(;;\);\s*/, '')), 0, { count: 0 }, source || 'embedded'); } catch (e) {}
     }
 
     function hookNetwork() {
         var originalFetch = window.fetch;
         var XHR = window.XMLHttpRequest;
-        if (originalFetch && !originalFetch.__ri312) {
+        if (originalFetch && !originalFetch.__ri313) {
             window.fetch = function () {
                 return originalFetch.apply(this, arguments).then(function (response) {
                     try {
                         var url = response.url || '';
                         var ct = response.headers && response.headers.get ? (response.headers.get('content-type') || '') : '';
-                        if (/json/i.test(ct) || /graphql|api|clips|reels|media/i.test(url)) {
-                            response.clone().text().then(function (text) { scanJsonText(text, 'network'); }).catch(function () {});
-                        }
+                        if (/json/i.test(ct) || /graphql|api|clips|reels|media/i.test(url)) response.clone().text().then(function (text) { scanJsonText(text, 'network'); }).catch(function () {});
                     } catch (e) {}
                     return response;
                 });
             };
-            window.fetch.__ri312 = true;
+            window.fetch.__ri313 = true;
         }
-        if (XHR && !XHR.prototype.__ri312) {
+        if (XHR && !XHR.prototype.__ri313) {
             var originalOpen = XHR.prototype.open;
             var originalSend = XHR.prototype.send;
-            XHR.prototype.open = function () {
-                this.__ri312url = arguments[1] || '';
-                return originalOpen.apply(this, arguments);
-            };
+            XHR.prototype.open = function () { this.__ri313url = arguments[1] || ''; return originalOpen.apply(this, arguments); };
             XHR.prototype.send = function () {
                 this.addEventListener('load', function () {
                     try {
                         var ct = this.getResponseHeader('content-type') || '';
-                        if ((/json/i.test(ct) || /graphql|api|clips|reels|media/i.test(this.__ri312url || '')) && typeof this.responseText === 'string') {
-                            scanJsonText(this.responseText, 'network');
-                        }
+                        if ((/json/i.test(ct) || /graphql|api|clips|reels|media/i.test(this.__ri313url || '')) && typeof this.responseText === 'string') scanJsonText(this.responseText, 'network');
                     } catch (e) {}
                 });
                 return originalSend.apply(this, arguments);
             };
-            XHR.prototype.__ri312 = true;
+            XHR.prototype.__ri313 = true;
         }
     }
 
@@ -467,10 +442,8 @@
             meta = doc.querySelector('meta[property="og:video"],meta[property="og:video:secure_url"]');
             if (meta && meta.getAttribute('content')) { patch.videoUrl = meta.getAttribute('content'); hasVideo = true; }
         } catch (e) {}
-
         if (isReelUrl(url)) patch.mediaType = 'REEL';
         else if (hasVideo) patch.mediaType = 'VIDEO';
-
         if (patch.mediaType === 'REEL' || patch.mediaType === 'VIDEO') patch.views = nearMetric(html, code, VIEW_KEYS);
         if (patch.likes == null) patch.likes = nearMetric(html, code, ['like_count','likes_count']);
         if (patch.comments == null) patch.comments = nearMetric(html, code, ['comment_count','comments_count']);
@@ -483,14 +456,8 @@
     function enqueue(url, callback) {
         var code = codeFromUrl(url);
         if (!code) return;
-        if (items[code] && Date.now() - Number(items[code].fetched || 0) < 300000) {
-            if (callback) callback(items[code]);
-            return;
-        }
-        if (pending[code]) {
-            if (callback) pending[code].push(callback);
-            return;
-        }
+        if (items[code] && Date.now() - Number(items[code].fetched || 0) < 300000) { if (callback) callback(items[code]); return; }
+        if (pending[code]) { if (callback) pending[code].push(callback); return; }
         pending[code] = callback ? [callback] : [];
         queue.push({ url: url, code: code });
         pumpQueue();
@@ -522,11 +489,7 @@
                     pumpQueue();
                 };
                 try { xhr.send(); }
-                catch (e) {
-                    activeRequests--;
-                    finishPending(job.code, items[job.code] || null);
-                    pumpQueue();
-                }
+                catch (e) { activeRequests--; finishPending(job.code, items[job.code] || null); pumpQueue(); }
             })(job, xhr);
         }
     }
@@ -553,11 +516,6 @@
         return r.bottom > 145 && r.top < innerHeight - 110;
     }
 
-    function mediaIcon(video) {
-        if (video) return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>';
-        return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="M4 17l5-5 4 4 2-2 5 5"/></svg>';
-    }
-
     function openUrl(url) {
         if (!url) return;
         var a = document.createElement('a');
@@ -570,14 +528,34 @@
         a.remove();
     }
 
+    function copyText(text) {
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(function () {});
+            return;
+        }
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+        } catch (e) {}
+    }
+
+    function mediaActionIcon() {
+        return '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M5 18h14"/></svg>';
+    }
+
     function cardDomType(anchor) {
         var text = '', nodes, i;
         if (!anchor) return '';
         if (anchor.querySelector('video')) return 'VIDEO';
         nodes = anchor.querySelectorAll('svg[aria-label],svg[title],[aria-label],[title]');
-        for (i = 0; i < nodes.length && i < 30; i++) {
-            text += ' ' + (nodes[i].getAttribute('aria-label') || '') + ' ' + (nodes[i].getAttribute('title') || '');
-        }
+        for (i = 0; i < nodes.length && i < 30; i++) text += ' ' + (nodes[i].getAttribute('aria-label') || '') + ' ' + (nodes[i].getAttribute('title') || '');
         text = text.toLowerCase();
         if (/reel|릴스/.test(text)) return 'REEL';
         if (/video|동영상|비디오|play|재생/.test(text)) return 'VIDEO';
@@ -599,47 +577,87 @@
         return type === 'REEL' || type === 'VIDEO';
     }
 
-    function ensureGridCard(anchor, code) {
-        var box, actions, imageButton, videoButton;
-        if (anchor.dataset.ri312Code !== code) {
-            anchor.dataset.ri312Code = code;
-            anchor.dataset.ri312Render = '';
-        }
-        if (anchor.dataset.ri312Ready === '1' && anchor.querySelector('.ri3-grid-box') && anchor.querySelector('.ri3-grid-actions')) return;
-        anchor.dataset.ri312Ready = '1';
-        anchor.style.position = anchor.style.position || 'relative';
+    function cardImageUrl(anchor, data) {
+        var img = anchor && anchor.querySelector ? anchor.querySelector('img') : null;
+        return fieldValue(data, 'thumbUrl') || (img && (img.currentSrc || img.src)) || '';
+    }
 
+    function closeGridMenu() {
+        var menu = document.getElementById('ri3-grid-menu');
+        if (menu) menu.remove();
+    }
+
+    function addGridMenuButton(menu, text, enabled, fn) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = text;
+        button.disabled = !enabled;
+        if (enabled) button.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeGridMenu();
+            fn();
+        });
+        menu.appendChild(button);
+    }
+
+    function openGridMenu(anchor, code) {
+        var existing = document.getElementById('ri3-grid-menu');
+        if (existing && existing.dataset.code === code) { closeGridMenu(); return; }
+        closeGridMenu();
+        var data = items[code] || { code: code, fields: {} };
+        var type = effectiveCardType(anchor, data);
+        var videoCard = type === 'REEL' || type === 'VIDEO';
+        var imageUrl = cardImageUrl(anchor, data);
+        var videoUrl = fieldValue(data, 'videoUrl') || '';
+        var pageUrl = (anchor.href || '').split('?')[0] || ('https://www.instagram.com/' + (videoCard ? 'reel/' : 'p/') + code + '/');
+        var trigger = anchor.querySelector('.ri3-grid-media');
+        var rect = trigger ? trigger.getBoundingClientRect() : anchor.getBoundingClientRect();
+        var menu = document.createElement('div');
+        menu.id = 'ri3-grid-menu';
+        menu.dataset.code = code;
+        menu.setAttribute('role', 'menu');
+        if (videoCard) addGridMenuButton(menu, videoUrl ? '영상 열기' : '영상 준비중', !!videoUrl, function () { openUrl(videoUrl); });
+        addGridMenuButton(menu, type === 'CAROUSEL' ? '대표 이미지' : (videoCard ? '썸네일 열기' : '이미지 열기'), !!imageUrl, function () { openUrl(imageUrl); });
+        addGridMenuButton(menu, '링크 복사', !!pageUrl, function () { copyText(pageUrl); });
+        document.documentElement.appendChild(menu);
+        var menuRect = menu.getBoundingClientRect();
+        var left = Math.max(6, Math.min(innerWidth - menuRect.width - 6, rect.left));
+        var top = rect.bottom + 6;
+        if (top + menuRect.height > innerHeight - 8) top = Math.max(8, rect.top - menuRect.height - 6);
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+    }
+
+    function ensureGridCard(anchor, code) {
+        var box, actions, mediaButton;
+        if (anchor.dataset.ri313Code !== code) {
+            anchor.dataset.ri313Code = code;
+            anchor.dataset.ri313Render = '';
+        }
+        if (anchor.dataset.ri313Ready === '1' && anchor.querySelector('.ri3-grid-box') && anchor.querySelector('.ri3-grid-actions')) return;
+        anchor.dataset.ri313Ready = '1';
+        anchor.style.position = anchor.style.position || 'relative';
+        Array.prototype.slice.call(anchor.querySelectorAll('.ri3-grid-box,.ri3-grid-actions')).forEach(function (el) { el.remove(); });
         box = document.createElement('div');
         box.className = 'ri3-grid-box';
         box.innerHTML = '<div class="ri3-grid-row1"></div><div class="ri3-grid-row2"></div>';
         anchor.appendChild(box);
-
         actions = document.createElement('div');
         actions.className = 'ri3-grid-actions';
-        imageButton = document.createElement('button');
-        videoButton = document.createElement('button');
-        imageButton.type = videoButton.type = 'button';
-        imageButton.className = 'ri3-grid-image';
-        videoButton.className = 'ri3-grid-video';
-        imageButton.setAttribute('aria-label', '원본 이미지');
-        videoButton.setAttribute('aria-label', '순수 영상');
-        imageButton.innerHTML = mediaIcon(false);
-        videoButton.innerHTML = mediaIcon(true);
-
-        [imageButton, videoButton].forEach(function (button) {
-            button.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
-        });
-        imageButton.addEventListener('click', function () {
-            var d = items[anchor.dataset.ri312Code] || {};
-            var img = anchor.querySelector('img');
-            openUrl(fieldValue(d, 'thumbUrl') || (img && (img.currentSrc || img.src)) || '');
-        });
-        videoButton.addEventListener('click', function () {
-            var d = items[anchor.dataset.ri312Code] || {};
-            openUrl(fieldValue(d, 'videoUrl') || '');
-        });
-        actions.appendChild(imageButton);
-        actions.appendChild(videoButton);
+        mediaButton = document.createElement('button');
+        mediaButton.type = 'button';
+        mediaButton.className = 'ri3-grid-media';
+        mediaButton.setAttribute('aria-label', '미디어 메뉴');
+        mediaButton.setAttribute('title', '미디어 메뉴');
+        mediaButton.innerHTML = mediaActionIcon();
+        mediaButton.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
+        mediaButton.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            openGridMenu(anchor, anchor.dataset.ri313Code || code);
+        }, true);
+        actions.appendChild(mediaButton);
         anchor.appendChild(actions);
     }
 
@@ -656,11 +674,10 @@
         var er = videoCard ? engagement(views, likes, comments, reposts) : null;
         var growth = videoCard && views ? growth24h(data.code, views) : null;
         var multiple = videoCard && views ? accountMultiple(data.code, fieldValue(data, 'owner'), views) : null;
-        var line1 = [], line2 = [], key, actions, videoButton, safe;
+        var line1 = [], line2 = [], key, actions, safe;
         if (!row1 || !row2) return;
-
         key = [type, views, likes, comments, reposts, date, er, growth, multiple].join('|');
-        if (anchor.dataset.ri312Render !== key) {
+        if (anchor.dataset.ri313Render !== key) {
             if (videoCard && views) line1.push('▶' + fmt(views));
             if (likes != null) line1.push('♥' + fmt(likes));
             if (comments != null) line1.push('●' + fmt(comments));
@@ -669,18 +686,13 @@
             if (growth != null) line2.push((growth >= 0 ? '+' : '') + fmtPercent(growth));
             if (multiple != null) line2.push(fmtMultiple(multiple));
             if (date) line2.push(String(date).slice(5).replace('-', '/'));
-
             row1.textContent = line1.join(' ');
             row2.textContent = line2.join(' ');
             row1.style.display = line1.length ? 'flex' : 'none';
             row2.style.display = line2.length ? 'flex' : 'none';
-            anchor.dataset.ri312Render = key;
+            anchor.dataset.ri313Render = key;
         }
-
         actions = anchor.querySelector('.ri3-grid-actions');
-        videoButton = anchor.querySelector('.ri3-grid-video');
-        if (videoButton) videoButton.style.display = videoCard ? 'flex' : 'none';
-
         safe = gridSafe(anchor);
         if (anchor.querySelector('.ri3-grid-box')) anchor.querySelector('.ri3-grid-box').style.visibility = safe ? 'visible' : 'hidden';
         if (actions) actions.style.visibility = safe ? 'visible' : 'hidden';
@@ -837,10 +849,10 @@
         if (multiple != null) lines.push(fmtMultiple(multiple));
         if (fieldValue(data, 'date')) lines.push(String(fieldValue(data, 'date')).slice(5).replace('-', '/'));
         key = lines.join('|');
-        if (box.dataset.ri312Render !== key) {
+        if (box.dataset.ri313Render !== key) {
             box.innerHTML = '';
             lines.forEach(function (text) { var row = document.createElement('div'); row.textContent = text; box.appendChild(row); });
-            box.dataset.ri312Render = key;
+            box.dataset.ri313Render = key;
         }
         box.style.display = lines.length ? 'flex' : 'none';
     }
@@ -949,7 +961,7 @@
             ['링크 복사', function () {
                 var latest = reelContext() || panelContext;
                 var text = latest && latest.code ? 'https://www.instagram.com/reel/' + latest.code + '/' : location.href;
-                if (navigator.clipboard) navigator.clipboard.writeText(text).catch(function () {});
+                copyText(text);
             }],
             ['새 버전', function () { window.open(UPDATE_URL + '?ri=' + Date.now(), '_blank'); }]
         ];
@@ -974,8 +986,11 @@
             '.ri3-grid-row1,.ri3-grid-row2{display:none;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:clip}',
             '.ri3-grid-row1{color:#fff;font:780 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;letter-spacing:-.42px;text-shadow:0 1px 2px rgba(0,0,0,.98),0 0 2px rgba(0,0,0,.78)}',
             '.ri3-grid-row2{color:#111;font:820 9.6px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;letter-spacing:-.38px;-webkit-text-stroke:.6px rgba(255,255,255,.98);paint-order:stroke fill;text-shadow:0 0 2px #fff}',
-            '.ri3-grid-actions{position:absolute;right:5px;top:5px;z-index:9;display:flex;flex-direction:column;gap:6px;visibility:visible}',
-            '.ri3-grid-actions button{width:34px;height:34px;padding:0;border:1px solid rgba(255,255,255,.35);border-radius:50%;background:rgba(0,0,0,.28);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.3)}',
+            '.ri3-grid-actions{position:absolute;left:5px;top:5px;z-index:9;display:flex;visibility:visible}',
+            '.ri3-grid-actions button{width:28px;height:28px;padding:0;border:1px solid rgba(255,255,255,.38);border-radius:50%;background:rgba(0,0,0,.30);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);-webkit-tap-highlight-color:transparent}',
+            '#ri3-grid-menu{position:fixed;z-index:2147483646;min-width:116px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}',
+            '#ri3-grid-menu button{height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#fff;text-align:left;font:650 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap}',
+            '#ri3-grid-menu button:active{background:rgba(255,255,255,.12)}#ri3-grid-menu button:disabled{opacity:.38}',
             '#ri3-reels-overlay{position:fixed;right:60px;top:clamp(112px,16vh,170px);z-index:2147483600;width:74px;display:none;flex-direction:column;align-items:flex-end;gap:5px;text-align:right;pointer-events:none;color:#fff;font:760 12px/1.08 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-shadow:0 1px 3px rgba(0,0,0,.98),0 0 2px rgba(0,0,0,.72)}',
             '#ri3-tool{position:fixed;z-index:2147483602;width:34px;height:34px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.12);color:#fff;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}',
             '#ri3-panel{position:fixed;right:10px;bottom:max(82px,calc(env(safe-area-inset-bottom) + 72px));z-index:2147483647;width:min(46vw,190px);max-height:69vh;overflow:auto;padding:10px;border:1px solid rgba(255,255,255,.13);border-radius:18px;background:rgba(14,14,14,.97);color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}',
@@ -1013,21 +1028,29 @@
     function hookHistory() {
         var originalPush = history.pushState;
         var originalReplace = history.replaceState;
-        history.pushState = function () {
-            var result = originalPush.apply(this, arguments);
-            lastHistorySignature = '';
-            scanEmbedded(true);
-            scheduleRefresh();
-            return result;
-        };
-        history.replaceState = function () {
-            var result = originalReplace.apply(this, arguments);
-            lastHistorySignature = '';
-            scanEmbedded(true);
-            scheduleRefresh();
-            return result;
-        };
-        addEventListener('popstate', function () { lastHistorySignature = ''; scanEmbedded(true); scheduleRefresh(); }, true);
+        if (!originalPush.__ri313) {
+            history.pushState = function () {
+                var result = originalPush.apply(this, arguments);
+                closeGridMenu();
+                lastHistorySignature = '';
+                scanEmbedded(true);
+                scheduleRefresh();
+                return result;
+            };
+            history.pushState.__ri313 = true;
+        }
+        if (!originalReplace.__ri313) {
+            history.replaceState = function () {
+                var result = originalReplace.apply(this, arguments);
+                closeGridMenu();
+                lastHistorySignature = '';
+                scanEmbedded(true);
+                scheduleRefresh();
+                return result;
+            };
+            history.replaceState.__ri313 = true;
+        }
+        addEventListener('popstate', function () { closeGridMenu(); lastHistorySignature = ''; scanEmbedded(true); scheduleRefresh(); }, true);
     }
 
     function startObservers() {
@@ -1037,10 +1060,17 @@
             attributes: true,
             attributeFilter: ['href','src','poster','aria-label','title']
         });
-        addEventListener('scroll', scheduleRefresh, true);
-        addEventListener('resize', scheduleRefresh, true);
+        addEventListener('scroll', function () { closeGridMenu(); scheduleRefresh(); }, true);
+        addEventListener('resize', function () { closeGridMenu(); scheduleRefresh(); }, true);
         document.addEventListener('play', scheduleRefresh, true);
         document.addEventListener('loadedmetadata', scheduleRefresh, true);
+        document.addEventListener('pointerdown', function (e) {
+            var menu = document.getElementById('ri3-grid-menu');
+            if (!menu) return;
+            if (menu.contains(e.target)) return;
+            if (e.target && e.target.closest && e.target.closest('.ri3-grid-media')) return;
+            closeGridMenu();
+        }, true);
     }
 
     hookNetwork();
