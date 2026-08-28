@@ -15,7 +15,7 @@ Instagram 모바일 웹에서 콘텐츠를 빠르게 조사하기 위한 Tamperm
 
 ## 현재 배포
 
-- 버전: **v3.1.5**
+- 버전: **v3.1.6**
 - 실행: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
 - 배포 파일: `ri-retry.user.js`
 - 배포 방식: 단일 self-contained userscript
@@ -46,15 +46,25 @@ Grid 안정화 후 `v3.3 Content Types`로 진행합니다.
 - 1줄 고정 슬롯: 조회수 · 좋아요 · 댓글 · 리포스트
 - 2줄 고정 슬롯: ER · 24h · 계정 대비 · 게시일
 - 미확보 값은 슬롯을 제거하지 않고 `-`
-- 각 슬롯은 다른 값의 길이에 밀리지 않는 독립 위치 사용
+- 각 슬롯은 정해진 x 영역에 고정되어 다른 값 길이에 밀리지 않음
 - Photo/Carousel에는 검증되지 않은 조회수 기반 숫자 미표시
 - 우리 Grid 액션은 카드당 단일 미디어 저장 메뉴 버튼
-- Reel/Video: 영상 다운로드 + 실제 카드 썸네일 다운로드
+- Reel/Video: 영상 다운로드 + 실제 카드 cover 썸네일 다운로드
 - Photo: 이미지 다운로드
-- Carousel: 확보된 전체 slide 이미지 다운로드
+- Carousel: ZIP 없이 확보된 전체 slide 이미지를 개별 파일로 순차 다운로드
+- Carousel은 `carousel_media[]`와 `edge_sidecar_to_children` 구조 지원
 - File System Access API 지원 환경에서는 사용자가 저장 폴더 선택 가능
-- 미지원 환경에서는 브라우저 기본 Downloads 사용
+- 현재 Android Edge처럼 해당 API가 없는 환경에서는 브라우저 기본 Downloads 사용
 - UI 세부 기준은 `GRID_BASELINE.md` 참고
+
+## 다운로드 파일명
+
+- 영상: `Instagram_<shortcode>_video.*`
+- 썸네일: `Instagram_<shortcode>_thumb.*`
+- 사진: `Instagram_<shortcode>_image.*`
+- 캐러셀: `Instagram_<shortcode>_slide_01.*`, `slide_02.*` ...
+
+Android Edge에서 브라우저가 `showDirectoryPicker()`를 제공하지 않으면 userscript가 임의로 `Instagram/` 폴더를 만들거나 특정 로컬 폴더를 강제할 수 없습니다. 이 경우 기본 Downloads에 위 파일명으로 저장합니다.
 
 ## 개발 원칙
 
