@@ -23,21 +23,24 @@ Grid 개발은 **rollback 방식이 아니라 cumulative 방식**으로 진행�
 7. 하단 Instagram 배너와 실제 겹치는 영역만 숨김
 8. Instagram 기본 media-type 아이콘은 그대로 유지
 9. 우리 Grid 액션은 **단일 미디어 메뉴 버튼**으로 유지
-10. 하단 8개 지표는 각각 독립된 고정 슬롯 사용
+10. 하단 8개 지표는 각각 독립된 고정 x 영역 사용
 
 ## 정보영역 — 8개 고정 슬롯
 
-썸네일 하단에 별도 카드나 흰색/회색 정보바를 만들지 않고, **이미지 위 하단 정보영역**을 유지합니다.
+썸네일 하단에 별도 카드나 흰색/회색 정보바를 만들지 않고 **이미지 위 하단 정보영역**을 유지합니다.
 
-두 줄은 각각 4개의 독립된 Grid cell을 사용하며 앞 항목 문자열 길이가 뒤 항목 위치를 밀지 않습니다.
-
-column 비율:
-
-`30% / 24% / 23% / 23%`
+두 줄은 문자열 길이에 따라 위치가 밀리지 않도록 각 span을 카드 폭의 정해진 영역에 고정합니다.
 
 ### 1줄
 
 `조회수 | 좋아요 | 댓글 | 리포스트`
+
+고정 영역:
+
+- 조회수: `0~32%`
+- 좋아요: `32~59%`
+- 댓글: `59~79%`
+- 리포스트: `79~100%`
 
 예:
 
@@ -46,11 +49,20 @@ column 비율:
 - REEL/VIDEO의 검증된 조회수만 숫자로 표시
 - PHOTO/CAROUSEL은 `▶-`
 - 좋아요/댓글/리포스트 미확보 시 각각 `♥- / ●- / ↻-`
-- 한 슬롯 값이 길어도 다른 슬롯의 시작 위치는 변경하지 않음
+- 모든 셀 가운데 정렬
+- tabular numeric 사용
+- 한 슬롯의 값 길이가 다른 슬롯 위치를 변경하지 않음
 
 ### 2줄
 
 `ER | 24h 증가율 | 계정 대비 배수 | 게시일`
+
+고정 영역:
+
+- ER: `0~26%`
+- 24h: `26~51%`
+- 계정 대비: `51~75%`
+- 게시일: `75~100%`
 
 예:
 
@@ -80,50 +92,72 @@ Instagram이 이미 Reel/Video/Carousel 종류를 자체 아이콘으로 표시�
 
 - `영상 다운로드`
 - `썸네일 다운로드`
-- 저장 폴더 항목
+- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
 
 ### PHOTO
 
 - `이미지 다운로드`
-- 저장 폴더 항목
+- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
 
 ### CAROUSEL
 
 - `전체 이미지 다운로드 (N)`
 - `대표 이미지 다운로드`
-- 저장 폴더 항목
+- 저장 위치 표시/선택(지원 환경만)
 - `링크 복사`
 
-## 썸네일 identity 규칙
+## Video/Reel cover identity 규칙
 
-Video/Reel 썸네일은 단순히 Store의 첫 번째 image URL을 사용하지 않습니다.
+Video/Reel 썸네일은 카드 내부의 첫 번째 image URL을 사용하지 않습니다. Instagram 카드에는 음악/앨범/프로필 같은 보조 이미지가 함께 존재할 수 있습니다.
 
 우선순위:
 
-1. **현재 Grid 카드 DOM의 `img/srcset`**
-2. `srcset`에서 가장 큰 후보
-3. 현재 media object의 `image_versions2.candidates`, `display_resources`, `display_url`, `thumbnail_src`
-4. Verified Store `thumbUrl` fallback
+1. 현재 Grid 카드와 넓게 겹치는 **큰 본문 `img`**
+2. 후보 이미지가 카드 폭/높이의 약 62% 이상이고 면적의 약 38% 이상을 덮는지 확인
+3. 작은 `music/audio/album/음원/앨범/프로필` 계열 이미지는 제외
+4. 해당 `img`의 `srcset`에서 가장 큰 후보 사용
+5. 현재 shortcode media object의 직접 image candidate를 `coverUrl`로 사용
+6. 마지막에만 기존 `thumbUrl` fallback
 
-목적은 해상도보다 먼저 **현재 shortcode의 실제 cover와 identity가 맞는지**를 보장하는 것입니다.
+Extractor 규칙:
+
+- `image_versions2.candidates`
+- `display_resources`
+- `display_url`
+- `thumbnail_src`
+
+등 **현재 shortcode media object에 직접 달린 이미지**를 cover 후보로 사용합니다.
+
+재귀 탐색 중 발견한 임의 nested image는 영상 cover 값으로 채우지 않습니다.
 
 ## Carousel 전체 이미지 규칙
 
-전체 다운로드용 이미지 목록은 parent media의 `carousel_media[]`에서만 만듭니다.
+전체 다운로드용 slide는 parent media의 다음 구조에서만 만듭니다.
 
+- `carousel_media[]`
+- `edge_sidecar_to_children.edges[].node`
+
+규칙:
+
+- parent shortcode 기준
 - slide 순서 유지
 - 각 slide에서 가장 큰 image candidate 선택
 - 중복 URL 제거
-- 다른 shortcode의 nested image를 합치지 않음
+- 다른 shortcode/nested media image를 합치지 않음
 - 확보되지 않았으면 임의 생성하지 않고 `전체 이미지 준비중`
 
-파일명은 slide 순서를 포함합니다.
+ZIP은 기본 방식으로 사용하지 않습니다. 사용자가 `전체 이미지 다운로드 (N)`을 한 번 누르면 개별 이미지가 순서대로 저장됩니다.
+
+파일명:
 
 `Instagram_<shortcode>_slide_01.*`
 `Instagram_<shortcode>_slide_02.*`
+`Instagram_<shortcode>_slide_03.*`
 ...
+
+브라우저가 여러 자동 다운로드 권한을 요구하면 사이트에 대해 여러 파일 다운로드를 허용해야 할 수 있습니다.
 
 ## 다운로드 경로 규칙
 
@@ -131,9 +165,11 @@ Video/Reel 썸네일은 단순히 Store의 첫 번째 image URL을 사용하지 
 
 - `showDirectoryPicker()` 지원 환경: 사용자가 직접 저장 폴더 선택 가능
 - 선택한 폴더는 현재 세션의 다운로드 대상으로 사용
-- 미지원 환경: 브라우저/OS 기본 Downloads 경로 사용
-- 파일명은 `Instagram_` 접두사 사용
-- 브라우저가 지원하지 않는데 임의로 `Instagram/` 하위 폴더를 강제 생성하지 않음
+- 현재 Android Edge처럼 `showDirectoryPicker()`가 없는 환경: **기본 Downloads** 사용
+- 미지원 환경 메뉴에는 `저장 위치: 기본 Downloads` 표시
+- 최초 다운로드 시 폴더 지정 불가 이유를 안내
+- 파일명은 `Instagram_` 접두사 + shortcode 사용
+- 브라우저 권한 없이 `Instagram/` 하위 폴더를 임의 생성하지 않음
 - CDN CORS로 선택 폴더 직접 쓰기가 실패하면 기본 다운로드로 fallback 가능
 
 ## mediaType 판정
@@ -168,12 +204,15 @@ Grid는 URL만으로 미디어 종류를 결정하지 않습니다.
 - PHOTO/CAROUSEL에 잘못된 조회수 없음
 - REEL/VIDEO의 검증된 조회수가 누락되지 않음
 - 8개 슬롯의 x 위치가 다른 슬롯 문자열 길이에 따라 움직이지 않음
+- 모든 슬롯은 자신에게 할당된 영역 안에서 가운데 정렬
 - 미확보 값은 슬롯 삭제가 아니라 `-`
 - 우리 Grid 버튼은 카드당 1개만 보임
 - 우리 플레이/영상종류 표시 버튼은 없음
 - Instagram 기본 미디어 아이콘은 그대로임
-- Video/Reel 썸네일 다운로드가 현재 카드 cover와 일치함
+- Video/Reel 썸네일 다운로드가 음악 앨범 이미지가 아니라 현재 카드 cover와 일치함
 - Carousel 전체 이미지 다운로드가 parent shortcode의 slide만 사용함
+- Carousel 전체 다운로드는 ZIP 없이 개별 파일 순서를 유지함
+- Android Edge에서는 폴더 선택 기능을 허위로 표시하지 않음
 - 미디어 메뉴가 다른 카드의 URL을 열지 않음
 - 정보영역을 카드 밖 별도 영역으로 이동하지 않음
 - **새 수정 때문에 기존 승인 개선사항이 다시 나빠지지 않음**
