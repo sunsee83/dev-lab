@@ -8,13 +8,27 @@
 
 - 현재 실행 방식: **Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹**
 - 현재 배포 파일: `ri-retry.user.js`
-- 현재 배포 버전: **v3.1.6**
+- 현재 배포 버전: **v3.2.0**
 - 배포 방식: 단일 self-contained userscript
+- 개발 원본: **`src/*`**
+- `ri-retry.user.js`: build에서 생성되는 deployment artifact
 - 과거 `@require` hotfix 체인과 구형 실행 파일은 제거 완료
-- 현재 단계: **v3.1 Core/Grid 안정화 마감 → v3.2 UI/Foundation 준비**
+- 현재 단계: **v3.2 UI/Foundation + Download migration 진행 중**
 - Grid는 **Frozen UI + 누적 개선 원칙**을 적용한다.
 
-### 이미 확보한 v3.1 개선사항
+### 현재 v3.2 구현 상태
+
+- `src/version.js`를 버전 단일 원본으로 사용
+- AppContext / capability / Settings Store / Download Manager 활성화
+- migration adapter를 통해 기존 `ri311:*` Verified Store cache를 새 UI/다운로드 계층에서 읽음
+- 기존 Reel 전용 RI 버튼 대신 전역 RI 버튼 활성화
+- 공용 RI Panel `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` shell 활성화
+- Grid 카드 저장 위치 설정을 제거하고 카드 메뉴는 콘텐츠 액션만 담당
+- Grid/RI 미디어 저장은 공통 Download Manager를 사용
+- 기존 Identity/Extractor/Verified merge/Metrics/Grid 정보표시 엔진은 검증된 legacy runtime을 우선 보존하며 단계적으로 이동
+- 사진/썸네일의 지정 폴더 저장은 cross-origin transport 때문에 실기기 검증이 필요하며, 실패가 확인되면 UI가 아니라 media transport 계층만 교체한다.
+
+### 이미 확보한 v3.1 개선사항 — 계속 보존
 
 - 900ms 전체 polling 제거 및 이벤트/Observer 기반 refresh
 - 동일 shortcode pending request dedupe
@@ -607,6 +621,8 @@ CAROUSEL:
 
 패널은 Store 변경을 구독하고, 열린 상태에서도 새 데이터가 도착하면 필요한 부분만 갱신한다.
 
+현재 v3.2.0에서는 `요약`, `미디어`, `설정`을 migration adapter/Download Manager에 먼저 연결하고, `콘텐츠`, `댓글`, `분석`은 이후 데이터 계층 migration과 함께 연결한다.
+
 ---
 
 # 14. Reel 화면 UI
@@ -829,12 +845,11 @@ AI는 최종 교정과 의미 분류를 담당한다.
 
 - 실제 책임이 생길 때만 파일 생성
 - 빈 placeholder 폴더/파일을 미리 만들지 않음
-- 초기에는 약 10~15개의 의미 있는 소스 파일로 시작
 - 책임/테스트/재사용/변경주기 경계가 명확할 때만 분리
 - `old/new/final/fix/hotfix/backup/copy` 파일을 만들지 않음
 - 과거 버전은 Git history로 관리
 
-v3.2 초기 목표 구조:
+현재 v3.2 구조:
 
 ```text
 reels-inspector/
@@ -843,53 +858,54 @@ reels-inspector/
 ├ STATUS.md
 ├ GRID_BASELINE.md
 ├ CODE_STRUCTURE.md
-├ .gitignore
+├ package.json
 ├ tests/
+├ scripts/
 ├ src/
+│  ├ version.js
 │  ├ main.js
+│  ├ legacy-runtime.js
+│  ├ migration/
+│  │  └ legacy-store-adapter.js
 │  ├ core/
 │  │  ├ app.js
 │  │  └ capability.js
-│  ├ instagram/
-│  │  ├ identity.js
-│  │  └ extractor.js
 │  ├ store/
-│  │  ├ verified-store.js
 │  │  └ settings-store.js
-│  ├ metrics/
-│  │  └ metrics.js
 │  ├ media/
 │  │  ├ media-resolver.js
 │  │  └ download-manager.js
 │  └ ui/
 │     ├ grid.js
-│     ├ reel.js
+│     ├ reel-panel migration 예정
 │     ├ ri-panel.js
+│     ├ toast.js
 │     └ styles.js
 └ ri-retry.user.js
 ```
 
-필요가 생길 때만 extractor/normalizer/download-strategy/panel-tab/comments/analysis 등을 추가 분리한다.
+`reel-panel migration 예정`은 실제 파일명이 아니라 향후 책임 분리 방향을 나타낸다. 빈 파일은 만들지 않는다.
 
-## 18.2 Source of Truth 전환
+필요가 생길 때만 `instagram/identity.js`, `instagram/extractor.js`, `store/verified-store.js`, `metrics/metrics.js`, `media/transport.js`, `ui/reel.js`, panel-tab/comments/analysis 등을 추가한다.
 
-현재 v3.1.6까지는 `ri-retry.user.js`가 실제 실행 원본이다.
+## 18.2 Source of Truth
 
-v3.2 모듈화 이후 이중 원본 기간을 짧게 유지하고 최종적으로:
+현재는 이미 다음 구조로 전환되었다.
 
 ```text
 src/* = 개발 원본
   ↓
-build / check
+build / test / check
   ↓
 ri-retry.user.js = generated deployment artifact
 ```
 
-로 고정한다.
-
-전환 후 `ri-retry.user.js` 직접 수작업 수정은 금지한다.
-
-Tampermonkey에는 계속 `ri-retry.user.js` 하나만 설치한다.
+- root `ri-retry.user.js` 직접 수작업 수정 금지
+- Tampermonkey에는 계속 `ri-retry.user.js` 하나만 설치
+- `legacy-runtime.js`는 migration 임시 canonical source이며 backup이 아님
+- 새 기능을 `legacy-runtime.js`에 추가하지 않음
+- 기존 책임이 새 owner module로 이동하면 legacy 구현을 제거
+- migration 완료 후 `legacy-runtime.js`와 `migration/legacy-store-adapter.js`를 삭제
 
 ## 18.3 Git 파일 관리
 
@@ -918,46 +934,41 @@ Tampermonkey에는 계속 `ri-retry.user.js` 하나만 설치한다.
 
 ## v3.1 — Core/Grid Stabilization
 
-현재 v3.1.6까지 진행.
+v3.1.6 기준선에서 확보한 기능은 v3.2에서도 누적 보존한다.
 
 핵심:
 
-- ContentIdentity
+- ContentIdentity 기반
 - mediaType
 - Verified Store
 - pending request dedupe
 - renderKey
 - React DOM identity
-- live panel
 - event/observer refresh
 - Grid 8 fixed slots
 - cover identity
 - carousel batch 기반
 
-남은 것은 실기기 회귀 확인과 v3.2로 넘어갈 기준 정리다.
-
 ## v3.2 — UI/Foundation
 
 기존의 단순 `Grid 안정화` 범위를 **Grid 안정화 + 전역 UI/다운로드 기반 + 단계적 소스 모듈화**로 확장한다.
 
-순서:
+현재 완료/진행:
 
-1. `CODE_STRUCTURE.md` 기준 최소 Foundation 소스 작성
-2. capability detection
-3. 공용 Settings Store
-4. 공통 Download Manager 기반
-5. 전역 RI 버튼을 모든 Instagram 화면에 표시
-6. 버튼 위치를 우측 하단 safe area로 통일
-7. 공용 RI Panel shell 생성
-8. `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell
-9. 카드 미디어 메뉴에서 저장 폴더 설정 제거
-10. 지정 폴더/기본 Downloads/매번 선택 정책 구현
-11. 영상·썸네일·사진·캐러셀의 저장경로를 완전히 동일한 manager로 통합
-12. 8개 Grid 고정 슬롯 실기기 마감
-13. Video/Reel cover identity 회귀 마감
-14. Carousel ZIP 없는 개별 batch 저장 안정화
-15. regression fixture/실기기 검증
-16. 안정된 기능부터 `src/*` source-of-truth로 단계 전환
+1. `CODE_STRUCTURE.md` 기준 Foundation 소스 작성 — 완료
+2. capability detection — 완료
+3. 공용 Settings Store — 완료
+4. 공통 Download Manager — 완료, 실기기 transport 검증 진행
+5. 전역 RI 버튼 모든 Instagram 화면용 mount — v3.2.0 활성화
+6. 공용 RI Panel shell — v3.2.0 활성화
+7. `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell — 활성화
+8. 카드 미디어 메뉴에서 저장 폴더 설정 제거 — 새 Grid action 경로에서 구현
+9. 지정 폴더/기본 Downloads/매번 선택 정책 — 구현, 실기기 검증 필요
+10. 영상·썸네일·사진·캐러셀 저장경로 공통 manager 통합 — 새 Grid/RI action에서 구현
+11. 8개 Grid 고정 슬롯/cover/no-flicker — 기존 검증 runtime 보존
+12. Carousel ZIP 없는 개별 batch 저장 — 공통 manager로 연결, 실기기 검증 필요
+13. regression/unit/build/check — 자동 gate 구축
+14. Identity/Extractor/Verified Store/Metrics/Media Resolver/Grid/Reel UI — 안정된 책임부터 단계 migration
 
 ## v3.3 — Content Types
 
@@ -1072,16 +1083,17 @@ Tampermonkey에서 검증된 엔진을 정식 확장프로그램 구조로 이�
 2. `STATUS.md` 확인
 3. `CODE_STRUCTURE.md` 확인
 4. 관련 baseline/test 확인
-5. 현재 `ri-retry.user.js`와 관련 `src/*` 확인
+5. 현재 generated `ri-retry.user.js`와 관련 `src/*` 확인
 6. 수정 대상 계층 식별: Identity / Extractor / Store / Metrics / Media / UI
 7. 기존 승인 기능과 회귀 위험 확인
 8. 설계/파일 책임이 바뀌면 문서 먼저 또는 동시에 갱신
 9. 코드 수정
-10. 문법 검사
-11. 회귀 항목 확인
-12. 의미 있는 변경이면 version bump
+10. unit/regression 검사
+11. build/check + generated userscript 문법 검사
+12. 의미 있는 변경이면 `src/version.js` version bump
 13. GitHub 반영
-14. `STATUS.md`에 구현/검증/미해결/다음 단계 기록
+14. generated artifact 확인
+15. `STATUS.md`에 구현/검증/미해결/다음 단계 기록
 
 ## 작업 보고 시 반드시 남길 것
 
