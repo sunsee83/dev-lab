@@ -1,6 +1,6 @@
 # Instagram Content Research Tool — 개발 상태
 
-이 문서는 `PROJECT_PLAN.md`의 실행 현황을 기록합니다. UI 동결 기준은 `GRID_BASELINE.md`, 회귀 기준은 `tests/README.md`도 함께 확인합니다.
+이 문서는 `PROJECT_PLAN.md`의 실행 현황을 기록합니다. Grid UI 세부 기준은 `GRID_BASELINE.md`, 회귀 기준은 `tests/README.md`를 함께 확인합니다.
 
 ## 현재 배포
 
@@ -8,7 +8,8 @@
 - 실행: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
 - 배포 파일: `ri-retry.user.js`
 - 배포 방식: 단일 self-contained userscript
-- 그리드 UI: **Frozen UI + 누적 개선 원칙**
+- 현재 코드 단계: **v3.1 Core/Grid 안정화**
+- 다음 설계 단계: **v3.2 UI/Foundation**
 
 ## 누적 보존 대상
 
@@ -18,6 +19,7 @@
 - 동일 shortcode pending request dedupe
 - 기존 3열 Grid 크기/배치
 - 썸네일 위 하단 2줄 정보영역
+- 8개 지표 독립 슬롯 구조
 - REEL/VIDEO 검증 조회수 및 파생지표
 - PHOTO/CAROUSEL 잘못된 조회수 차단
 - Instagram 기본 media-type 아이콘 유지
@@ -25,157 +27,204 @@
 - 하단 Instagram 배너와 실제 겹치는 카드만 RI 영역 숨김
 - `ri311:*` 캐시 유지
 
-## 실기기에서 확인된 v3.1.5 문제
+## v3.1.6 실기기 확인
 
-1. Video/Reel `썸네일 다운로드`가 실제 영상 cover가 아니라 음악/앨범 이미지로 저장되는 사례가 확인됨.
-2. 8개 지표가 DOM상 span으로 나뉘어 있어도 화면에서는 각자 고정된 x 위치가 충분히 드러나지 않고 왼쪽으로 몰려 보임.
-3. Android Edge에서 `저장 폴더 선택`이 나타나지 않고 기본 다운로드 위치로 바로 저장됨.
-4. Carousel 전체 다운로드는 ZIP이 아니라 원본 이미지들을 개별 파일로 한 번에 저장하는 흐름이 필요함.
+확인된 개선:
 
-## v3.1.6 — Grid media/slot 수정
+- Video/Reel `썸네일 다운로드`가 실제 영상 cover로 정상 저장되는 사례 확인
+- Grid 숫자 깜빡임 제거 상태 유지
 
-### 1. 8개 슬롯 위치를 절대 고정
+현재 확인된 저장 구조 문제:
 
-각 행을 문자열 흐름이나 일반 flex/grid 정렬에 맡기지 않고, 4개 span을 카드 폭의 정해진 구간에 **absolute positioning**으로 고정합니다.
+1. Grid 카드 팝업에서 폴더를 선택하면 그 설정이 해당 카드만의 설정처럼 보이지만 실제로는 이후 영상 다운로드에도 공통으로 사용됨.
+2. 영상은 선택한 폴더에 저장되지만 이미지 다운로드는 기존 기본 Downloads로 빠지는 사례가 있음.
+3. 즉 저장정책이 미디어 종류별로 동일한 경로를 거치지 않고 있어 결과가 일관되지 않음.
+4. 카드별 메뉴에 전역 성격의 저장 위치 설정이 들어가 있어 UI 의미도 맞지 않음.
+
+이 문제는 개별 patch로 계속 보정하지 않고 v3.2에서 **공통 Download Manager + 전역 설정**으로 구조를 정리한다.
+
+## 확정된 전체 UI 역할
+
+```text
+Grid = 빠른 비교/발굴
+Grid ↓ = 선택 콘텐츠 빠른 저장
+RI = 전체 리서치/상세 기능
+설정 = 전역 공용 설정
+```
+
+### 전역 RI 버튼
+
+현재 Reel에서 사용하는 RI 도구 버튼을 모든 Instagram 화면에 표시하는 전역 진입점으로 승격한다.
+
+표시 대상:
+
+- 프로필
+- 검색
+- 탐색
+- Grid
+- Reel
+- 일반 Post 상세
+- Photo / Video / Carousel
+
+기본 위치는 **우측 하단 safe area**이며 Instagram 하단 navigation / `앱 사용` 배너와 겹치면 자동으로 위로 이동한다.
+
+### 공용 RI Panel
+
+탭 shell:
+
+`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`
+
+- 현재 콘텐츠가 있으면 해당 콘텐츠의 상세 조사 정보를 표시
+- `설정`은 콘텐츠와 무관한 전역 설정
+- 패널은 Store 변경을 구독하여 live update
+
+## Grid 기준
+
+### 8개 고정 슬롯
 
 1줄:
 
 `조회수 | 좋아요 | 댓글 | 리포스트`
 
-- 조회수: 0~32%
-- 좋아요: 32~59%
-- 댓글: 59~79%
-- 리포스트: 79~100%
-
 2줄:
 
 `ER | 24h | 계정 대비 | 날짜`
 
-- ER: 0~26%
-- 24h: 26~51%
-- 계정 대비: 51~75%
-- 날짜: 75~100%
+- 각 슬롯은 독립된 고정 x 영역
+- 다른 숫자 길이에 위치가 밀리지 않음
+- 값이 없으면 해당 자리 `-`
+- PHOTO/CAROUSEL은 `▶-`
 
-모든 셀은 가운데 정렬하고 `font-variant-numeric: tabular-nums`를 사용합니다. 다른 슬롯 값의 길이가 바뀌어도 위치는 이동하지 않습니다. 값이 없으면 기존처럼 `-`를 유지합니다.
+### 카드 미디어 메뉴
 
-### 2. 음악 앨범 이미지와 실제 cover 분리
+v3.2에서 카드 메뉴에서는 **저장 위치 설정을 제거**하고 해당 콘텐츠의 액션만 둔다.
 
-v3.1.5의 문제 원인은 현재 카드 안에서 단순히 첫 번째 `img`를 선택할 수 있었던 점입니다. Instagram 카드 안에는 음악/앨범 이미지 같은 작은 보조 이미지도 존재할 수 있습니다.
+REEL / VIDEO:
+- `영상 다운로드`
+- `썸네일 다운로드`
+- `링크 복사`
 
-v3.1.6에서는 Grid cover를 다음 순서로 결정합니다.
+PHOTO:
+- `이미지 다운로드`
+- `링크 복사`
 
-1. 현재 카드와 **넓게 겹치는 큰 `img`**만 후보로 사용
-2. 카드 폭/높이의 약 62% 이상, 카드 면적의 약 38% 이상을 덮는 이미지 요구
-3. `music/audio/album/음원/앨범/프로필` 계열 보조 이미지는 작은 경우 제외
-4. 해당 `img`의 `srcset`이 있으면 가장 큰 후보 사용
-5. DOM에서 확실한 큰 cover가 없으면 현재 media object의 직접 이미지에서 만든 `coverUrl` 사용
-6. 마지막에만 기존 `thumbUrl` fallback
+CAROUSEL:
+- `전체 이미지 다운로드 (N)`
+- `대표 이미지 다운로드`
+- `링크 복사`
 
-Extractor도 임의 nested image를 `thumbUrl`로 채우지 않고, shortcode를 가진 현재 media object의 `image_versions2 / display_resources / display_url` 등 직접 cover만 저장합니다.
+## 공통 Download Manager 설계
 
-### 3. Carousel 전체 이미지 다운로드 확대
+모든 저장 액션은 하나의 manager를 통과한다.
 
-Carousel slide 목록은 다음 두 Instagram 데이터 형태를 모두 지원합니다.
+```text
+Grid / RI Panel
+      ↓
+Media Action
+      ↓
+Download Manager
+      ↓
+전역 저장정책
+```
+
+설정 탭에서 capability에 따라 제공:
+
+- `지정 폴더`
+- `기본 Downloads`
+- `매번 선택`
+
+적용 대상:
+
+- 영상
+- 영상 cover/썸네일
+- 사진
+- 캐러셀 전체 slide
+- 향후 STT/OCR export
+
+중요 규칙:
+
+- 영상만 지정 폴더, 사진만 Downloads처럼 미디어별로 저장정책이 갈라지지 않음
+- 지정 폴더 모드에서 쓰기 실패 시 조용히 기본 Downloads로 fallback하지 않음
+- 실패를 표시하고 사용자가 재시도/기본 다운로드를 명시적으로 선택하게 함
+- 기능 지원 여부는 `Android` 같은 플랫폼명으로 단정하지 않고 실제 API/권한을 runtime에서 검사
+
+## Carousel 전체 다운로드
+
+ZIP은 기본 방식으로 사용하지 않는다.
 
 - `carousel_media[]`
 - `edge_sidecar_to_children.edges[].node`
 
-각 slide에서 가장 큰 이미지 후보를 선택하고 parent shortcode에 순서대로 연결합니다.
+에서 parent shortcode의 slide를 순서대로 구성한다.
 
-Grid 메뉴:
+`전체 이미지 다운로드 (N)` 한 번으로:
 
-- `전체 이미지 다운로드 (N)`
-- `대표 이미지 다운로드`
-- `링크 복사`
+`slide_01 → slide_02 → ... → slide_N`
 
-ZIP은 사용하지 않습니다. `전체 이미지 다운로드` 한 번으로 다음처럼 **개별 파일을 순차 저장**합니다.
+개별 파일을 저장한다.
 
-`Instagram_<shortcode>_slide_01.*`
-`Instagram_<shortcode>_slide_02.*`
-`Instagram_<shortcode>_slide_03.*`
-...
+선택 폴더 쓰기가 가능한 환경에서는 향후 게시물별 하위 폴더로 batch를 묶는 옵션을 고려할 수 있다.
 
-저장 중에는 `1/N`, `2/N` 형태의 진행 toast를 표시합니다. 브라우저가 여러 자동 다운로드 권한을 요구하면 사용자가 해당 사이트의 여러 파일 다운로드를 허용해야 할 수 있습니다.
+## v3.2 — UI/Foundation 실행 순서
 
-### 4. Android Edge 저장 폴더 제한을 UI에 명확히 표시
+1. 전역 RI 버튼을 모든 Instagram 화면에 표시
+2. RI 버튼 위치를 우측 하단 safe area로 통일
+3. 공용 RI Panel shell 생성
+4. `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell
+5. 공용 Settings Store
+6. 공통 Download Manager
+7. Grid 카드 메뉴에서 저장 위치 설정 제거
+8. 지정 폴더 / 기본 Downloads / 매번 선택 정책
+9. 영상·썸네일·사진·Carousel 저장경로 통합
+10. Grid 8개 고정 슬롯 실기기 마감
+11. cover identity 회귀 마감
+12. Carousel 개별 batch 다운로드 안정화
+13. regression test/실기기 검증
 
-현재 Android Edge 실행 환경에서는 `window.showDirectoryPicker`가 노출되지 않아 userscript가 사용자가 지정한 폴더의 write handle을 받을 수 없습니다.
+그 다음 `v3.3 Content Types`에서 공통 Post/media 모델을 완성한다.
 
-따라서 현재 기기에서는:
+## v3.3 이후
 
-- 메뉴에 `저장 위치: 기본 Downloads` 표시
-- 다운로드 시 최초 1회 `Android Edge: 폴더 지정 불가 · 기본 Downloads에 저장` 안내
-- 파일명을 `Instagram_<shortcode>_...` 형태로 통일
+### v3.3 Content Types
 
-웹 페이지/Tampermonkey가 브라우저 권한 없이 Android 파일시스템에 임의로 `Instagram/` 폴더를 생성하고 그 안에 파일을 쓰는 것은 브라우저 sandbox 때문에 할 수 없습니다.
-
-`showDirectoryPicker()`를 제공하는 다른 환경에서는 기존처럼 사용자가 폴더를 선택할 수 있습니다.
-
-## Grid 미디어 메뉴
-
-### REEL / VIDEO
-
-- `영상 다운로드`
-- `썸네일 다운로드`
-- 저장 위치 표시/선택(지원 환경만)
-- `링크 복사`
-
-### PHOTO
-
-- `이미지 다운로드`
-- 저장 위치 표시/선택(지원 환경만)
-- `링크 복사`
-
-### CAROUSEL
-
-- `전체 이미지 다운로드 (N)`
-- `대표 이미지 다운로드`
-- 저장 위치 표시/선택(지원 환경만)
-- `링크 복사`
-
-## 현재 실기기 검증 항목
-
-1. 8개 지표가 각 카드에서 동일한 x 위치에 고정되는지
-2. 조회수/좋아요 숫자 길이가 달라도 댓글/리포스트 위치가 움직이지 않는지
-3. 미확보 값이 해당 자리의 `-`로 유지되는지
-4. Video/Reel 썸네일 다운로드가 음악 앨범 이미지가 아니라 실제 Grid cover인지
-5. 같은 카드에서 반복 다운로드해도 다른 shortcode cover가 섞이지 않는지
-6. Carousel 메뉴의 `(N)`이 실제 slide 수와 맞는지
-7. `전체 이미지 다운로드`가 ZIP 없이 slide 01~N을 각각 저장하는지
-8. Carousel 순서가 Instagram slide 순서와 일치하는지
-9. Android Edge에서는 `저장 위치: 기본 Downloads`가 표시되는지
-10. 다운로드 시 폴더 지정 불가 안내가 한 번 표시되는지
-11. 기존 숫자 깜빡임이 다시 생기지 않는지
-12. 우리 Grid 버튼이 카드당 1개만 유지되는지
-13. Instagram 기본 미디어 아이콘이 그대로인지
-14. 하단 앱 배너와 겹치는 카드만 RI 영역이 숨겨지는지
-
-## 다음 개발 단계
-
-위 Grid 회귀를 실기기에서 확인한 뒤 v3.2 Grid 안정화를 마감합니다.
-
-그 다음 v3.3 Content Types에서 현재 `carouselImages`를 공통 `media[]` 모델로 확장합니다.
-
-- Photo
+- Reel
 - Feed Video
-- Carousel slide media
+- Photo
+- Carousel + slide media
 - Caption
 - Hashtags
 - Mentions
-- Media list
+- collaborators/location
+- 공통 `media[]`
 
-그 이후 v3.4 Research Detail UI → v3.5 Comments 순서로 진행합니다.
+### v3.4 Research Detail UI
+
+- 요약/콘텐츠/미디어 실제 데이터 연결
+- 콘텐츠 타입별 UI
+- 상태표시
+
+### v3.5 Comments
+
+- 댓글/답글
+- thread 보존
+- low-value filter
+- Research Score
+- 참고 댓글 UI
+
+### 이후
+
+- v3.6 Research Features
+- v4.x Analysis Server / STT / OCR / Alignment / AI
+- v5.0 MV3 Extension
 
 ## 작업 규칙
 
-- 좋아진 동작을 기능 복구 때문에 과거 방식으로 되돌리지 않습니다.
-- Grid Frozen UI는 명시적 요청 없이는 크게 재설계하지 않습니다.
-- 8개 지표의 x 위치는 각각 고정합니다.
-- Video/Reel cover는 카드의 큰 본문 이미지와 현재 shortcode media object만 신뢰합니다.
-- 음악/앨범/프로필 보조 이미지를 영상 cover로 사용하지 않습니다.
-- Carousel 전체 이미지는 parent carousel의 slide 구조에서만 구성합니다.
-- ZIP을 기본 다운로드 방식으로 사용하지 않습니다.
-- 검증되지 않은 media URL을 만들지 않습니다.
-- 브라우저 sandbox를 우회해 Android 로컬 폴더를 강제 생성하지 않습니다.
-- hotfix `@require` 체인은 다시 만들지 않습니다.
-- 각 수정 후 `STATUS.md`를 갱신합니다.
+- 기존 설계를 먼저 읽고 새 요구사항을 현재 구조에 통합한다.
+- 바뀐 설계를 반영한다고 관련 없는 기존 설계를 삭제하지 않는다.
+- 실기기에서 좋아졌다고 확인된 동작은 누적 보존한다.
+- Grid Frozen UI를 관련 없는 기능 수정 때문에 되돌리지 않는다.
+- 카드별 메뉴에 전역 설정을 반복 배치하지 않는다.
+- 저장정책은 미디어 종류별로 분기하지 않고 공통 manager에서 처리한다.
+- 검증되지 않은 값을 만들지 않는다.
+- hotfix `@require` 체인은 다시 만들지 않는다.
+- 구조/UI/우선순위가 바뀌면 `PROJECT_PLAN.md`와 관련 문서를 코드보다 먼저 또는 같은 작업에서 갱신한다.
