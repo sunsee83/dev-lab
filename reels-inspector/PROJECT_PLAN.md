@@ -1,39 +1,39 @@
 # Instagram Content Research Tool — 개발 기준 문서
 
 > 이 문서는 프로젝트 개발의 **단일 기준 문서(Single Source of Truth)** 입니다.  
-> 기능을 수정하거나 추가하기 전에 이 문서와 현재 실행 파일을 먼저 확인합니다.  
-> 개발 중 결정이 바뀌면 코드보다 먼저 또는 같은 커밋에서 이 문서를 갱신합니다.
+> 기능을 수정하거나 추가하기 전에 이 문서와 `STATUS.md`, 관련 UI baseline, 현재 실행 파일을 먼저 확인합니다.  
+> 요구사항·구조·UI·우선순위가 바뀌면 기존 설계를 먼저 검토한 뒤 새 결정을 통합하며, 관련 없는 기존 설계를 무턱대고 삭제하지 않습니다.
 
 ## 0. 현재 상태
 
 - 현재 실행 방식: **Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹**
 - 현재 배포 파일: `ri-retry.user.js`
-- 현재 기준 버전: **v3.0.0**
+- 현재 배포 버전: **v3.1.6**
 - 배포 방식: 단일 self-contained userscript
 - 과거 `@require` hotfix 체인과 구형 실행 파일은 제거 완료
-- 다음 개발 목표: **v3.1 Core Stabilization**
-- 현재 그리드 UI는 **동결(Frozen UI)** 상태이며 외형/정보배치는 유지한다.
+- 현재 단계: **v3.1 Core/Grid 안정화 마감 → v3.2 UI/Foundation 준비**
+- Grid는 **Frozen UI + 누적 개선 원칙**을 적용한다.
 
-### 현재 확인된 구조적 문제
+### 이미 확보한 v3.1 개선사항
 
-1. 약 900ms 전체 polling/tick 구조
-2. 동일 shortcode에 대한 중복 요청 가능
-3. 현재 콘텐츠 식별이 일부 휴리스틱에 의존
-4. 값의 source/confidence/status가 없는 단순 Store 병합
-5. 상세 패널이 열릴 당시 데이터 스냅샷만 사용하고 이후 Store 변경을 반영하지 못함
-6. 실제 `mediaType` 모델이 부족함
-7. localStorage 전체 객체 write 빈도가 높음
-8. 회귀 테스트용 fixture가 없음
-
-이 문제를 해결하기 전에는 STT/OCR/AI 같은 대형 기능을 붙이지 않는다.
+- 900ms 전체 polling 제거 및 이벤트/Observer 기반 refresh
+- 동일 shortcode pending request dedupe
+- renderKey 기반 변경값만 갱신
+- React DOM 재사용 시 shortcode 재검증
+- Verified Store의 source/confidence/status/conflict 기반
+- 실제 `PHOTO / VIDEO / CAROUSEL / REEL` mediaType 기반 확대
+- Grid 숫자 깜빡임 제거
+- Grid 8개 지표 슬롯 고정
+- Video/Reel cover와 음악/앨범 artwork 분리 강화
+- Carousel 개별 이미지 일괄 다운로드 기반
 
 ---
 
 # 1. 제품 정의
 
-이 프로젝트는 단순 Reel Downloader나 IG Sorter 복제품이 아니다.
+이 프로젝트는 단순 Reel Downloader나 IG Sorter가 아니다.
 
-**Instagram의 Reel·사진·캐러셀·캡션·태그·댓글·성과 데이터를 수집하고, 좋은 콘텐츠를 발견하고, 원본과 대본을 확보하며, 댓글의 소비자 니즈와 Hook/CTA까지 분석하는 콘텐츠 리서치 시스템**을 목표로 한다.
+**Instagram의 Reel·피드 동영상·사진·캐러셀·캡션·태그·댓글·성과 데이터를 수집하고, 좋은 콘텐츠를 발견하고, 원본과 대본을 확보하며, 댓글의 소비자 니즈와 Hook/CTA까지 분석하는 콘텐츠 리서치 시스템**을 목표로 한다.
 
 핵심 사용자 흐름:
 
@@ -42,13 +42,16 @@
 지원 대상:
 
 - Reel
-- 피드 동영상
-- 사진
-- 캐러셀/카드뉴스
-- 캡션
-- 해시태그/멘션
-- 댓글/답글
-- 프로필/계정 단위 성과 비교
+- Feed Video
+- Photo
+- Carousel / 카드뉴스
+- Caption
+- Hashtags / Mentions
+- Comments / Replies
+- Profile / Account 단위 성과 비교
+- Media download
+- 향후 STT / OCR / AI 분석
+- 향후 콘텐츠 소재 저장/라이브러리
 
 ---
 
@@ -76,12 +79,13 @@ STT / OCR / AI 파이프라인
 - 캡션/태그/멘션 수집
 - 댓글/답글 수집
 - 미디어 주소 확보
-- 그리드 오버레이
+- Grid 비교 UI
 - Reel 핵심지표 표시
-- 상세 리서치 패널
+- 전역 RI 버튼과 공용 리서치 패널
+- 공용 설정
+- 공통 Download Manager
 - 정렬/필터
-- 다운로드
-- 로컬 스냅샷 저장
+- 로컬 snapshot/history
 - 분석 서버 요청/결과 표시
 
 ## 2.2 분석 서버
@@ -98,12 +102,14 @@ STT / OCR / AI 파이프라인
 - STT/OCR 시간축 정렬
 - 댓글 대량 전처리
 
-서버는 비동기 Job 구조를 사용한다.
+비동기 Job 구조:
 
 ```text
 POST /analysis → jobId
 GET /analysis/{jobId} → queued / processing / completed / failed
 ```
+
+브라우저가 분석 서버에 Instagram 로그인 쿠키를 전달하는 구조를 기본으로 사용하지 않는다.
 
 ## 2.3 AI
 
@@ -113,8 +119,8 @@ AI는 원본 영상 전체를 무조건 받지 않는다.
 
 - STT + timestamp
 - OCR + timestamp + 좌표
-- 정렬된 동일 문장 후보
-- 중요 프레임
+- deterministic matching 결과
+- 중요 frame
 - 선별된 댓글
 
 출력:
@@ -149,19 +155,21 @@ Verified Store
    ↓
 Metrics Engine
    ↓
-UI
+UI / Download Manager / Analysis Request
 ```
 
 ## 절대 규칙
 
-1. UI가 Instagram DOM을 제각각 직접 읽지 않는다.
+1. UI마다 Instagram DOM을 제각각 읽지 않는다.
 2. Instagram을 읽는 책임은 Identity/Extractor 계층에 둔다.
-3. 모든 UI는 하나의 Store만 읽는다.
-4. 현재 콘텐츠가 확정되지 않으면 다른 지표를 병합하지 않는다.
+3. Grid, Reel Overlay, RI Panel, Media Action은 하나의 Store를 공유한다.
+4. 현재 콘텐츠가 충분히 식별되지 않으면 다른 미디어의 값과 병합하지 않는다.
 5. 값이 확인되지 않으면 추측하거나 `0`으로 만들지 않는다.
 6. 값이 이전과 같으면 DOM을 다시 렌더하지 않는다.
 7. 동일 shortcode 중복 fetch를 막는다.
 8. 하나의 기능을 고치기 위해 별도 hotfix `@require` 체인을 만들지 않는다.
+9. 다운로드 위치 정책은 미디어별로 따로 구현하지 않고 공통 Download Manager에서 결정한다.
+10. 지정 폴더 저장이 실패했는데 조용히 다른 폴더로 저장하여 영상/사진 위치가 섞이지 않게 한다.
 
 ---
 
@@ -192,7 +200,7 @@ ContentIdentity
 
 URL의 `/reel/`, `/p/`는 보조 근거일 뿐 최종 mediaType 자체가 아니다.
 
-현재 콘텐츠 식별 상태:
+Identity 상태:
 
 - `DETECTED`
 - `IDENTIFYING`
@@ -201,7 +209,7 @@ URL의 `/reel/`, `/p/`는 보조 근거일 뿐 최종 mediaType 자체가 아니
 - `READY`
 - `FAILED`
 
-`READY`가 아니면 검증되지 않은 분석 수치를 확정값처럼 표시하지 않는다.
+검증되지 않은 분석값을 `READY`인 확정값처럼 표시하지 않는다.
 
 ---
 
@@ -228,7 +236,7 @@ status:
 - `unavailable`
 - `conflict`
 
-source 예:
+source:
 
 - `network`
 - `dom`
@@ -237,6 +245,11 @@ source 예:
 - `derived`
 
 낮은 신뢰도의 새 값이 높은 신뢰도의 검증값을 무조건 덮어쓰지 못하게 한다.
+
+UI 상태 표현은 화면 목적에 따라 구분한다.
+
+- Grid: 마지막 검증값 또는 `-`
+- 상세 패널: `확인 중 / - / 사용 불가 / 검증 중`을 구분 가능
 
 ---
 
@@ -266,13 +279,15 @@ Post
 │  └ publishedAt
 │
 ├ media[]
+│  ├ mediaId
 │  ├ type
 │  ├ url
 │  ├ thumbnail
 │  ├ width
 │  ├ height
 │  ├ duration
-│  └ slideIndex
+│  ├ slideIndex
+│  └ resolvedAt
 │
 └ analysis
    ├ er
@@ -284,8 +299,10 @@ Post
 미디어 CDN URL은 영구 ID로 쓰지 않는다.
 
 - 영구 식별: `mediaId`, `shortcode`
-- 임시 접근 경로: `videoUrl`, `imageUrl`
+- 임시 접근 경로: `videoUrl`, `imageUrl`, `thumbnail`
 - URL 확보 시각: `resolvedAt`
+
+Carousel은 최종적으로 임시 `carouselImages`가 아니라 공통 `media[]`의 slide 구조로 통합한다.
 
 ---
 
@@ -295,80 +312,308 @@ Post
 
 `(좋아요 + 댓글 + 리포스트) / 조회수 × 100`
 
-조회수가 없는 사진/캐러셀에는 조회수 기반 ER을 만들지 않는다.
+가중 ER을 사용하지 않는다. 조회수가 없는 Photo/Carousel에는 조회수 기반 ER을 만들지 않는다.
 
 ## 24h 증가율
 
-현재 조회수와 약 24시간 전 실제 저장된 snapshot을 비교한다.
+현재 조회수와 실제 저장된 약 24시간 전 snapshot을 비교한다.
 
-- 비교 snapshot이 없으면 숨김
-- 임의 추정 금지
+- 비교 허용 범위는 대략 18~32시간
+- snapshot이 없으면 숫자를 만들지 않는다.
 
 ## 계정 대비 Outlier
 
-동일 계정 최근 약 20개 콘텐츠의 조회수 **중앙값** 대비 현재 콘텐츠 조회수 배수.
+동일 계정 최근 약 20개 콘텐츠의 조회수 중앙값 대비 현재 콘텐츠 조회수 배수.
 
-- 비교 콘텐츠 최소 5개
-- 부족하면 숨김
+- 비교 콘텐츠 최소 약 5개
+- 부족하면 숫자를 만들지 않는다.
 
-비공개/확보 불가 지표를 임의 생성하지 않는다.
+## 만들지 않는 비공개 지표
 
----
+확보되지 않는 다음 값은 추정하지 않는다.
 
-# 8. 현재 그리드 UI — 동결 영역
-
-v3.1 Core 수정 중에도 아래 **외형과 사용방식은 유지한다.**
-
-## 1줄
-
-`조회수 / 좋아요 / 댓글 / 리포스트`
-
-예:
-
-```text
-▶805.8만 ♥1.9만 ●157 ↻955
-```
-
-## 2줄
-
-`ER / 24h 증가율 / 계정 대비 배수 / 게시일`
-
-예:
-
-```text
-0.29% +5.5% ×4.2 8/21
-```
-
-유지사항:
-
-- 썸네일 위 오버레이
-- 3열 모바일 그리드 유지
-- 별도의 큰 흰색/회색 정보바 금지
-- 이미지/썸네일 액션 유지
-- 순수 영상 액션 유지
-- 사진/카드뉴스에는 검증되지 않은 조회수 미표시
-- 정보가 없으면 해당 항목만 숨김
-
-v3.1에서 변경할 것은 **데이터 공급 구조와 렌더 방식뿐**이다.
-
-### Grid regression 기준
-
-다음 조건을 만족해야 그리드 변경을 완료로 본다.
-
-- 기존 배치 유지
-- 숫자 깜빡임 없음
-- 같은 shortcode 중복 요청 없음
-- React가 카드 DOM을 재사용해도 shortcode가 섞이지 않음
-- 값이 변경되지 않으면 DOM render 없음
-- `/p/` 사진/카드뉴스에 잘못된 조회수 없음
+- saves
+- reach
+- impressions
+- average watch time
+- completion/dropoff
+- profile visits
+- follow conversion
 
 ---
 
-# 9. Reel 화면 UI
+# 8. 전체 UI 역할 체계
 
-Instagram 기본 좋아요/댓글/리포스트 UI는 제거하거나 중복하지 않는다.
+UI 역할을 다음 네 가지로 고정한다.
 
-화면에 직접 추가하는 분석값:
+```text
+Grid = 빠른 비교/발굴
+Grid ↓ = 선택 콘텐츠 빠른 저장
+RI = 전체 리서치/상세 기능
+설정 = 전역 공용 설정
+```
+
+화면별 구조:
+
+| 화면 | 자동 정보 | 직접 액션 |
+|---|---|---|
+| 프로필/검색/탐색 Grid | 8개 고정 성과 슬롯 | 카드 미디어 버튼 + 전역 RI |
+| Reel | 핵심 5개 파생지표 | 전역 RI |
+| Photo/Video/Carousel 상세 | Instagram 기본 화면 | 전역 RI |
+| RI Panel | 상세 조사 정보 | 탭/다운로드/설정 |
+
+---
+
+# 9. Grid Frozen UI
+
+`GRID_BASELINE.md`가 세부 회귀 기준이다. 다음 원칙은 PROJECT_PLAN에서도 유지한다.
+
+## 9.1 3열과 정보영역
+
+- Instagram 원래 3열 Grid 폭/높이를 유지한다.
+- 별도 흰색/회색 정보바를 카드 밖에 만들지 않는다.
+- 썸네일 하단의 기존 오버레이/그라데이션 영역을 사용한다.
+- 숫자 깜빡임 제거 구조를 유지한다.
+
+## 9.2 8개 독립 슬롯
+
+1줄:
+
+`조회수 | 좋아요 | 댓글 | 리포스트`
+
+2줄:
+
+`ER | 24h | 계정 대비 | 게시일`
+
+각 항목은 독립된 고정 x 영역을 사용하여 다른 숫자의 길이에 밀리지 않는다.
+
+현재 기준 영역:
+
+1줄:
+- 조회수 `0~32%`
+- 좋아요 `32~59%`
+- 댓글 `59~79%`
+- 리포스트 `79~100%`
+
+2줄:
+- ER `0~26%`
+- 24h `26~51%`
+- 계정 대비 `51~75%`
+- 날짜 `75~100%`
+
+규칙:
+
+- 값이 없으면 슬롯 자체를 없애지 않고 `-`
+- REEL/VIDEO의 검증된 조회수만 숫자 표시
+- PHOTO/CAROUSEL은 `▶-`
+- 모든 슬롯은 자신의 영역에서 가운데 정렬
+- tabular numeric 사용
+
+## 9.3 Grid 카드 액션
+
+우리 액션은 카드당 **미디어 저장 메뉴 버튼 1개**만 둔다.
+
+Instagram이 이미 media type을 표시하므로 우리 플레이 버튼은 만들지 않는다.
+
+REEL / VIDEO:
+- `영상 다운로드`
+- `썸네일 다운로드`
+- `링크 복사`
+
+PHOTO:
+- `이미지 다운로드`
+- `링크 복사`
+
+CAROUSEL:
+- `전체 이미지 다운로드 (N)`
+- `대표 이미지 다운로드`
+- `링크 복사`
+
+**저장 위치 설정은 카드 메뉴에 두지 않는다.** 카드 메뉴는 무엇을 저장할지만 선택한다.
+
+---
+
+# 10. Video/Reel Cover Identity
+
+Video/Reel 썸네일은 카드 내부의 첫 번째 이미지나 음악 artwork를 사용하지 않는다.
+
+우선순위:
+
+1. 현재 shortcode와 연결된 media object
+2. `image_versions2.candidates / display_resources / display_url / thumbnail_src` 등 직접 cover 후보
+3. 현재 Grid 카드와 넓게 겹치는 큰 본문 이미지와 대조
+4. 해당 `srcset`의 큰 후보
+5. 마지막에만 검증된 legacy thumbnail fallback
+
+제외 대상:
+
+- music/audio artwork
+- album cover
+- avatar/profile image
+- 다른 nested shortcode 이미지
+
+해상도보다 먼저 **현재 콘텐츠 identity와 실제 cover 일치**를 보장한다.
+
+---
+
+# 11. Carousel 전체 미디어
+
+Carousel slide는 parent media identity에 종속된다.
+
+지원 구조:
+
+- `carousel_media[]`
+- `edge_sidecar_to_children.edges[].node`
+
+규칙:
+
+- slide 순서 유지
+- 각 slide에서 가장 큰 원본 image candidate 선택
+- 다른 shortcode/nested image 혼입 금지
+- URL 중복 제거
+- 아직 검증된 목록이 없으면 `전체 이미지 준비중`
+- ZIP은 기본 방식으로 사용하지 않는다.
+
+`전체 이미지 다운로드 (N)` 한 번으로 개별 파일을 순서대로 저장한다.
+
+```text
+Instagram_<shortcode>_slide_01.*
+Instagram_<shortcode>_slide_02.*
+Instagram_<shortcode>_slide_03.*
+...
+```
+
+선택 폴더 쓰기가 가능한 환경에서는 향후 Carousel batch를 해당 폴더 안의 게시물별 하위 폴더로 묶는 옵션을 추가할 수 있다. ZIP보다 개별 원본 접근성을 우선한다.
+
+Carousel 안의 video child도 최종 `media[]` 모델에서는 원본 video로 별도 처리한다.
+
+---
+
+# 12. 전역 RI 버튼
+
+현재 Reel에서 사용 중인 리서치 도구 아이콘을 **전역 RI 버튼**으로 승격한다.
+
+## 표시 범위
+
+- 프로필
+- 검색
+- 탐색
+- Grid
+- Reel
+- 일반 Post 상세
+- Photo
+- Video
+- Carousel
+
+## 위치
+
+- 화면 우측 하단 안전영역의 고정 위치를 기본으로 한다.
+- Instagram 하단 navigation, `앱 사용/Open app/Use app` 배너 등과 겹치면 자동으로 위로 이동한다.
+- Reel에서 Instagram `...` 위치를 따라다니는 전용 배치 방식은 전역화 단계에서 제거한다.
+
+## 역할
+
+- 앱 전체 리서치 패널 진입
+- 현재 콘텐츠 상세 조사
+- 전역 설정 접근
+- 향후 분석 작업 상태 접근
+
+Grid 카드 미디어 버튼과 역할을 분리한다.
+
+---
+
+# 13. 공용 RI Panel
+
+전역 RI 버튼을 누르면 하나의 공용 패널을 연다.
+
+최종 탭 구조:
+
+`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`
+
+## 요약
+
+- username / mediaType / date
+- views
+- likes
+- comments
+- reposts
+- ER
+- 24h
+- account relative/outlier
+
+## 콘텐츠
+
+REEL / VIDEO:
+- Caption
+- Hashtags / Mentions
+- STT
+- OCR
+- corrected transcript
+
+PHOTO:
+- Caption
+- Hashtags / Mentions
+- image OCR
+
+CAROUSEL:
+- Caption
+- Hashtags / Mentions
+- slide별 OCR
+- 카드뉴스 구조
+
+## 댓글
+
+- useful comments
+- questions
+- purchase intent
+- reviews
+- complaints/problems
+- counterarguments
+- tips
+- content ideas
+
+## 분석
+
+- Hook
+- fixed title
+- CTA
+- emphasis
+- numbers/prices
+- content structure
+- speech rate 등
+
+## 미디어
+
+REEL / VIDEO:
+- video
+- actual cover
+- duration / resolution
+- video download
+- cover download
+
+PHOTO:
+- original image
+- resolution
+- download
+
+CAROUSEL:
+- slide 1..N
+- individual download
+- whole batch download
+
+## 설정
+
+전역 저장 정책과 향후 공용 옵션을 관리한다.
+
+패널은 Store 변경을 구독하고, 열린 상태에서도 새 데이터가 도착하면 필요한 부분만 갱신한다.
+
+---
+
+# 14. Reel 화면 UI
+
+Instagram 기본 좋아요/댓글/리포스트/공유 UI를 제거하거나 중복하지 않는다.
+
+영상 위에 직접 추가하는 값은 파생 핵심지표로 제한한다.
 
 ```text
 ▶ 42.9만
@@ -382,83 +627,81 @@ ER 0.55%
 
 - 배경 박스/블러 없음
 - 작은 흰색/회색 글자 + 그림자/외곽선
-- 캡션을 가리지 않음
+- 캡션과 Instagram 기본 액션을 가리지 않음
 - 값이 없는 줄은 숨김
-- Grid에서 눌러 들어간 일반 `게시물` 상세에는 반드시 표시할 필요 없음
-
-리서치 아이콘은 Instagram `...` 근처의 접근 가능한 위치에 둔다.
-
----
-
-# 10. 상세 리서치 패널
-
-최종 탭 구조:
-
-`요약 | 콘텐츠 | 댓글 | 분석 | 미디어`
-
-## 요약
-
-- 조회수
-- 좋아요
-- 댓글
-- 리포스트
-- ER
-- 24h
-- 계정 대비 Outlier
-- 게시일
-
-## 콘텐츠
-
-Reel/Video:
-
-- STT
-- OCR
-- 교정 대본
-
-Photo:
-
-- 이미지 OCR
-- 캡션
-
-Carousel:
-
-- 슬라이드별 OCR
-- 카드뉴스 구조
-
-## 댓글
-
-- 참고 가치 높은 댓글
-- 질문
-- 구매 의도
-- 후기
-- 불만
-- 반론
-- 팁
-- 콘텐츠 아이디어
-
-## 분석
-
-- Hook
-- CTA
-- 강조어
-- 숫자/가격
-- 콘텐츠 구조
-- 말하기 속도 등
-
-## 미디어
-
-- 순수 영상
-- 영상 다운로드
-- 이미지/슬라이드
-- 썸네일
-- 링크 복사
-- 길이/해상도
-
-패널은 Store 변경을 구독하여, 열려 있는 상태에서도 새 데이터가 들어오면 필요한 행만 갱신한다.
+- 일반 Post 상세에서는 immersive Reel overlay가 필수는 아님
+- 리서치 진입점은 별도 Reel 전용 버튼이 아니라 **전역 RI 버튼**을 사용한다.
 
 ---
 
-# 11. 댓글 수집/선별 설계
+# 15. 공통 Download Manager
+
+모든 다운로드는 하나의 Download Manager를 통과한다.
+
+```text
+Grid / RI Panel
+      ↓
+Media Action
+      ↓
+Download Manager
+      ↓
+저장 정책
+      ↓
+지정 폴더 / 기본 Downloads / 매번 선택
+```
+
+## 15.1 공용 저장 정책
+
+설정 탭에서 다음 모드를 제공한다. 실제 노출 여부는 브라우저 capability로 판단한다.
+
+- `지정 폴더`
+- `기본 Downloads`
+- `매번 선택`
+
+이 설정은 다음 모든 파일에 동일하게 적용한다.
+
+- video
+- video cover / thumbnail
+- photo
+- carousel slides
+- 향후 STT/OCR export
+
+## 15.2 지정 폴더
+
+브라우저가 directory write handle을 제공할 때 사용한다.
+
+- 한 번 선택한 폴더를 공용 저장대상으로 사용
+- 가능하면 handle metadata를 IndexedDB에 저장하고 다음 실행에서 permission을 재확인
+- permission이 만료되면 `저장 폴더 재연결 필요` 표시
+- 영상만 지정 폴더, 사진만 Downloads처럼 미디어 종류별로 다른 정책을 사용하지 않는다.
+
+지정 폴더 저장이 실패하면 **조용히 기본 Downloads로 보내지 않는다.** 실패 이유를 사용자에게 표시하고 재시도/기본 다운로드 선택을 명시적으로 요구한다.
+
+## 15.3 기본 Downloads
+
+브라우저/OS 기본 다운로드 위치를 사용한다.
+
+- 임의 로컬 폴더를 강제 생성하지 않는다.
+- 파일명은 `Instagram_<shortcode>_...` 규칙을 사용한다.
+
+## 15.4 매번 선택
+
+브라우저가 지원할 때만 제공한다.
+
+- 단일 파일: 저장 액션 시 위치 선택
+- Carousel batch: batch 시작 시 한 번 폴더를 선택하고 1..N 전체를 그 위치에 저장
+
+지원하지 않는 환경에서는 기능을 허위로 표시하지 않고 이유를 설명한다.
+
+## 15.5 capability 판단
+
+`Android이기 때문에 안 됨`처럼 플랫폼명만으로 하드코딩하지 않는다.
+
+실행 시 실제 API 제공 여부와 권한 상태를 검사한다.
+
+---
+
+# 16. 댓글 수집/선별 설계
 
 댓글은 전부 AI에 넘기지 않는다.
 
@@ -496,43 +739,52 @@ Comment
 - research.reason
 ```
 
-낮은 가치 예:
+저가치 필터 예:
 
-- 이모지 only
+- emoji only
 - `ㅋㅋㅋ` 같은 단순 반응
-- 계정 태그 only
-- 반복/복붙
-- 광고성 댓글
+- mention only
+- duplicate/copypaste
+- spam/ads
 
-높은 가치 예:
+높은 가치:
 
-- 실제 사용 후기
-- 구매 이유/구매 의도
 - 질문
+- 상세 실제 경험
+- 구매 의도
+- 제품/가격/장소 언급
 - 불만/문제점
 - 반론/대안
-- 구체적인 팁
-- 가격/제품/장소 언급
-- 반복되는 사용자 니즈
-- 다음 콘텐츠 아이디어가 될 만한 내용
+- practical tips
+- highly liked/replied
+- 반복되는 needs/questions
+- 콘텐츠 아이디어
 
-답글 thread는 보존한다. 질문과 작성자 답변을 따로 떼어 분석하지 않는다.
+AI category:
+
+- question
+- purchase intent
+- positive review
+- negative review
+- complaint/problem
+- counterargument
+- tip
+- additional info
+- content idea
+
+답글 thread는 보존한다. 질문과 작성자 답변을 따로 떼지 않는다.
 
 ---
 
-# 12. STT/OCR/AI 파이프라인
+# 17. STT/OCR/AI 파이프라인
 
 ## STT
 
-문장만이 아니라 timestamp를 저장한다.
-
-가능하면 이후 word-level timestamp 지원.
+문장뿐 아니라 timestamp를 저장한다. 이후 가능하면 word-level timestamp를 지원한다.
 
 ## OCR
 
-화면 하단 자막만 보지 않고 전체 화면을 대상으로 한다.
-
-OCR 레코드:
+화면 하단 자막만이 아니라 전체 화면을 대상으로 한다.
 
 ```text
 text
@@ -545,146 +797,148 @@ height
 confidence
 ```
 
-프레임마다 같은 문장을 중복 저장하지 않는다.
-
-병합 기준:
+중복 병합 기준:
 
 - 문자열 유사도
 - 위치 유사도
 - 시간 연속성
 
-최종적으로는 저밀도 프레임 탐색 → 텍스트/화면 변화 구간 고밀도 분석 구조로 발전시킨다.
+최종적으로 저밀도 frame scan → 변화구간 고밀도 분석 구조로 발전시킨다.
 
 ## STT/OCR 정렬
 
 AI 전에 deterministic matching을 한다.
 
-- 시간 겹침
-- 문자열 유사도
-- 신뢰도
+- time overlap
+- string similarity
+- confidence
 
-을 이용해 동일 문장 후보를 만든다.
+AI는 최종 교정과 의미 분류를 담당한다.
 
-AI는 최종 교정 및 의미 분류를 담당한다.
+발화 transcript와 화면에만 존재하는 Hook/fixed title은 구분한다.
 
 ---
 
-# 13. 개발 소스/배포 파일 구조
+# 18. 개발 소스/배포 구조
 
-## 현재 단계 — Tampermonkey MVP
-
-개발 소스는 점차 분리하되 배포는 계속 한 파일로 한다.
+## 현재 Tampermonkey MVP
 
 ```text
 reels-inspector/
-├─ README.md
-├─ PROJECT_PLAN.md
-├─ src/                 # 단계적으로 추가
-│  ├─ core/
-│  ├─ instagram/
-│  ├─ data/
-│  ├─ metrics/
-│  ├─ comments/
-│  ├─ media/
-│  └─ ui/
-└─ ri-retry.user.js     # 최종 배포 파일
+├ README.md
+├ PROJECT_PLAN.md
+├ STATUS.md
+├ GRID_BASELINE.md
+├ tests/
+├ src/                 # 단계적으로 추가
+│  ├ core/
+│  ├ instagram/
+│  ├ data/
+│  ├ metrics/
+│  ├ comments/
+│  ├ media/
+│  └ ui/
+└ ri-retry.user.js
 ```
+
+목표 build 흐름:
 
 `src/* → build → ri-retry.user.js`
 
-Tampermonkey에는 `ri-retry.user.js` 하나만 설치한다.
+Tampermonkey에는 최종 single userscript만 설치한다.
 
-## 향후 MV3 확장프로그램
+## 향후 MV3
 
-브라우저 엔진이 안정된 뒤 이식한다.
-
-```text
-extension/
-├─ manifest.json
-├─ src/
-│  ├─ content.js
-│  ├─ page-hook.js
-│  ├─ service-worker.js
-│  └─ ...
-└─ dist/
-```
-
-MV3에서는 page MAIN-world hook과 content script bridge를 분리한다. service worker의 메모리 상태를 영구 상태로 가정하지 않는다.
+- content script와 MAIN-world page hook 분리
+- 필요 시 bridge 사용
+- service worker memory를 영구 상태로 가정하지 않음
+- remote runtime JS 금지, bundle 사용
+- Instagram CDN URL은 임시 접근경로로 취급
+- Instagram login cookie를 분석 서버로 보내지 않음
 
 ---
 
-# 14. 버전별 개발 로드맵
+# 19. 버전별 개발 로드맵
 
-## v3.1 — Core Stabilization
+## v3.1 — Core/Grid Stabilization
 
-목표: **새 기능 추가 금지. 데이터 엔진 안정화.**
+현재 v3.1.6까지 진행.
 
-작업:
+핵심:
 
-- ContentIdentity 확립
-- 실제 mediaType 모델
+- ContentIdentity
+- mediaType
 - Verified Store
-- provenance/source/confidence/status
-- 동일 shortcode pending request dedupe
-- renderKey 기반 변경된 값만 렌더
-- React DOM 재사용 시 identity 재검증
-- Store change event
-- 상세 패널 Store 연동
-- 900ms 전체 polling 축소/Observer 이벤트화
-- localStorage write debounce
-- 테스트 fixture 도입
+- pending request dedupe
+- renderKey
+- React DOM identity
+- live panel
+- event/observer refresh
+- Grid 8 fixed slots
+- cover identity
+- carousel batch 기반
 
-완료 기준:
+남은 것은 실기기 회귀 확인과 v3.2로 넘어갈 기준 정리다.
 
-- 다른 게시물 데이터 혼입 재현 없음
-- 현재 그리드 디자인 그대로 유지
-- 그리드 숫자 깜빡임 없음
-- 상세창이 데이터 도착 후 자동 갱신
+## v3.2 — UI/Foundation
 
-## v3.2 — Grid 안정화
+기존의 단순 `Grid 안정화` 범위를 **Grid 안정화 + 전역 UI/다운로드 기반**으로 확장한다.
 
-- 프로필/검색 그리드 회귀검증
-- 정확한 공개 지표
-- 스크롤/DOM 재사용 안정화
-- 향후 정렬 기능의 기반 준비
+순서:
+
+1. 전역 RI 버튼을 모든 Instagram 화면에 표시
+2. 버튼 위치를 우측 하단 safe area로 통일
+3. 공용 RI Panel shell 생성
+4. `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell
+5. 공용 Settings Store
+6. 공통 Download Manager
+7. 카드 미디어 메뉴에서 저장 폴더 설정 제거
+8. 지정 폴더/기본 Downloads/매번 선택 정책 구현
+9. 영상·썸네일·사진·캐러셀의 저장경로를 완전히 동일한 manager로 통합
+10. 8개 Grid 고정 슬롯 실기기 마감
+11. Video/Reel cover identity 회귀 마감
+12. Carousel ZIP 없는 개별 batch 저장 안정화
+13. regression fixture/실기기 검증
 
 ## v3.3 — Content Types
 
 - Reel
 - Feed Video
 - Photo
-- Carousel
+- Carousel + slide media
 - Caption
 - Hashtags
 - Mentions
-- Media list
+- collaborators/location
+- 공통 `media[]`
 
 ## v3.4 — Research Detail UI
 
-- 요약/콘텐츠/미디어 기본 탭
-- 상태 표시
-- 다운로드/복사
-- 콘텐츠별 정보 표현
+- 요약/콘텐츠/미디어 실제 데이터 연결
+- 상세 상태표시
+- 콘텐츠 타입별 UI
+- download/copy 완성
 
 ## v3.5 — Comments
 
 - 댓글/답글 수집
-- 중복/저가치 제거
+- thread 보존
+- duplicate/low-value filter
 - Research Score
 - 참고 댓글 UI
 
 ## v3.6 — Research Features
 
 - 조회수/ER/24h/Outlier/최신 정렬
-- 현재 로드된 범위 명시
+- 현재 load 범위 명시
 - 소재 저장
 - 태그/메모
 - 계정 최근 콘텐츠 비교
 
 ## v4.0 — Analysis Server
 
-- FastAPI
-- media upload
+- Python + FastAPI
+- media upload/stream
 - async jobs
 - job status
 
@@ -694,9 +948,9 @@ MV3에서는 page MAIN-world hook과 content script bridge를 분리한다. serv
 
 ## v4.2 — OCR
 
-- 전체화면 OCR
-- 좌표/시간
-- 중복 병합
+- full-screen OCR
+- coordinates/time
+- duplicate merge
 
 ## v4.3 — Alignment
 
@@ -704,46 +958,69 @@ MV3에서는 page MAIN-world hook과 content script bridge를 분리한다. serv
 
 ## v4.4 — AI Research
 
-- 교정 대본
+- corrected transcript
 - Hook
 - CTA
-- 강조어
-- 콘텐츠 구조
-- 댓글 니즈/아이디어
+- emphasis
+- structure
+- comments needs/ideas
 
 ## v5.0 — MV3 Extension
 
-- Tampermonkey에서 검증된 엔진을 정식 확장프로그램 구조로 이식
+Tampermonkey에서 검증된 엔진을 정식 확장프로그램 구조로 이식한다.
 
 ---
 
-# 15. 개발 중 금지사항
+# 20. 설계 변경 관리 원칙
+
+이 프로젝트의 계획은 고정 문서가 아니라 **현재 결정을 반영하는 기준 문서**다.
+
+요구사항이나 설계가 바뀔 때는 다음을 지킨다.
+
+1. 기존 `PROJECT_PLAN.md`, `STATUS.md`, 관련 baseline/test를 먼저 읽는다.
+2. 새 요구사항이 기존 제품 목표·데이터 구조·UI 역할과 충돌하는지 확인한다.
+3. 기존 설계를 통째로 삭제하거나 과거 버전으로 되돌리지 않는다.
+4. 유지할 결정과 바뀔 결정을 구분해서 현재 구조에 통합한다.
+5. 기존 결정이 더 이상 유효하지 않으면 해당 문구를 새 결정으로 교체하고 `STATUS.md`에 변경 이유를 남긴다.
+6. 구조/UI/우선순위가 바뀌면 코드보다 먼저 또는 같은 작업에서 문서를 갱신한다.
+7. 코드가 설계문서보다 앞서 장기간 표류하지 않게 한다.
+8. 실기기에서 좋아졌다고 확인된 동작은 다음 설계 변경에서도 누적 보존한다.
+
+---
+
+# 21. 개발 중 금지사항
 
 - 검증되지 않은 지표를 임의 숫자로 표시하지 않는다.
-- 저장/도달/노출/평균 시청시간 등 공개되지 않은 값을 추정해 넣지 않는다.
+- 공개되지 않은 지표를 추정해 넣지 않는다.
 - Reel UI를 고치면서 Instagram 기본 액션 버튼을 삭제하지 않는다.
-- 그리드 UI를 임의로 재설계하지 않는다.
+- Grid Frozen UI를 관련 없는 기능 수정 때문에 재설계하지 않는다.
+- 카드 메뉴에 전역 설정을 반복 배치하지 않는다.
+- 미디어 종류별로 서로 다른 저장 위치 정책을 만들지 않는다.
+- 지정 폴더 저장 실패 시 사용자에게 알리지 않고 다른 폴더로 조용히 저장하지 않는다.
 - 하나의 버그를 막기 위해 새 hotfix userscript를 계속 `@require`하지 않는다.
-- UI마다 별도 데이터 파서를 만들지 않는다.
-- 서버에 Instagram 로그인 쿠키를 전달하는 구조를 기본 설계로 삼지 않는다.
+- UI마다 별도 데이터 parser를 만들지 않는다.
+- 서버에 Instagram login cookie를 전달하는 구조를 기본 설계로 삼지 않는다.
 - AI를 deterministic extraction/정렬보다 앞에 두지 않는다.
 
 ---
 
-# 16. 작업 절차
+# 22. 작업 절차
 
-앞으로 코드 작업은 다음 순서를 따른다.
+코드 작업은 다음 순서를 따른다.
 
 1. `PROJECT_PLAN.md` 확인
-2. 현재 `ri-retry.user.js` 확인
-3. 수정 대상 계층 식별: Identity / Extractor / Store / Metrics / UI
-4. 그리드 동결영역 영향 여부 확인
-5. 코드 수정
-6. 문법 검사
-7. 회귀 항목 확인
-8. 버전 업데이트
-9. GitHub 반영
-10. 결정/구조가 바뀌었다면 `PROJECT_PLAN.md` 함께 갱신
+2. `STATUS.md` 확인
+3. 관련 baseline/test 확인
+4. 현재 `ri-retry.user.js` 확인
+5. 수정 대상 계층 식별: Identity / Extractor / Store / Metrics / Media / UI
+6. 기존 승인 기능과 회귀 위험 확인
+7. 설계가 바뀌면 문서 먼저 또는 동시에 갱신
+8. 코드 수정
+9. 문법 검사
+10. 회귀 항목 확인
+11. 의미 있는 변경이면 version bump
+12. GitHub 반영
+13. `STATUS.md`에 구현/검증/미해결/다음 단계 기록
 
 ## 작업 보고 시 반드시 남길 것
 
