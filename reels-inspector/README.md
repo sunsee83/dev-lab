@@ -9,7 +9,8 @@ Instagram 모바일 웹에서 콘텐츠를 빠르게 조사하기 위한 Tamperm
 1. `PROJECT_PLAN.md` — 제품 구조, 데이터 모델, 전체 UI, 다운로드 구조, 개발 로드맵의 단일 기준
 2. `STATUS.md` — 현재 배포 버전, 실기기 확인사항, 다음 구현 순서
 3. `GRID_BASELINE.md` — Grid Frozen UI 세부 기준
-4. `tests/README.md` — Core/Grid 회귀검증 기준
+4. `CODE_STRUCTURE.md` — 실제 코드 파일 분류, 모듈 책임, 의존성, build/migration 기준
+5. `tests/README.md` — Core/Grid/UI/Foundation 회귀검증 기준
 
 요구사항·구조·UI·우선순위가 바뀌면 기존 설계를 먼저 참고한 뒤 새 결정을 현재 구조에 통합하고 관련 문서를 갱신합니다. 관련 없는 기존 설계를 통째로 삭제하거나 과거 방식으로 되돌리지 않습니다.
 
@@ -93,16 +94,39 @@ Grid 카드 메뉴에는 저장 위치 설정을 두지 않습니다.
 
 실제 브라우저 API/permission을 확인해 가능한 옵션만 노출합니다.
 
+## 코드 작성 구조
+
+현재 `ri-retry.user.js`는 실기기 동작을 보존하기 위해 그대로 유지하면서 신규 v3.2 Foundation부터 `src/` 모듈로 작성합니다.
+
+핵심 계층:
+
+```text
+src/
+├ core/        # capability/event/route 공통 기반
+├ instagram/   # identity/extractor/normalizer
+├ store/       # Verified Store/Settings/Snapshot/Persistence
+├ metrics/     # ER/24h/account-relative 순수 계산
+├ media/       # resolver/cover/carousel/Download Manager
+├ ui/          # global RI/Grid/Reel/Panel
+├ comments/    # 댓글 연구 로직
+└ analysis/    # 향후 분석 서버 client/job
+```
+
+세부 파일 책임과 의존성, monolith → module 전환 순서는 `CODE_STRUCTURE.md`를 기준으로 합니다.
+
+v3.2에서 먼저 분리할 코드는 **capability / Settings Store / Download Manager / 전역 RI button / RI Panel shell / settings tab**입니다. 기존 Grid 데이터엔진과 cover/network/store는 첫 단계에서 대규모 재작성하지 않습니다.
+
 ## 다음 구현 — v3.2 UI/Foundation
 
-1. 전역 RI 버튼
-2. 공용 RI Panel shell
-3. 설정 탭 / Settings Store
-4. 공통 Download Manager
-5. 카드 메뉴에서 폴더 설정 제거
-6. 영상·썸네일·사진·Carousel 저장정책 통합
-7. Grid 8슬롯/cover/Carousel 회귀 마감
-8. 실기기 검증
+1. 신규 Foundation 소스 모듈 생성
+2. 전역 RI 버튼
+3. 공용 RI Panel shell
+4. 설정 탭 / Settings Store
+5. 공통 Download Manager
+6. 카드 메뉴에서 폴더 설정 제거
+7. 영상·썸네일·사진·Carousel 저장정책 통합
+8. Grid 8슬롯/cover/Carousel 회귀 마감
+9. 실기기 검증
 
 이후 `v3.3 Content Types → v3.4 Research Detail UI → v3.5 Comments → v3.6 Research Features → v4.x STT/OCR/AI → v5.0 MV3` 순서로 진행합니다.
 
@@ -114,4 +138,5 @@ Grid 카드 메뉴에는 저장 위치 설정을 두지 않습니다.
 - 같은 값이면 DOM을 다시 그리지 않습니다.
 - Grid Frozen UI는 관련 없는 기능 때문에 되돌리지 않습니다.
 - 실기기에서 좋아진 동작은 누적 보존합니다.
-- 설계 변경 시 `PROJECT_PLAN.md`와 관련 문서를 코드보다 먼저 또는 같은 작업에서 갱신합니다.
+- 실제 개발 원본을 모듈화한 뒤에도 Tampermonkey 배포는 self-contained `ri-retry.user.js` 하나로 유지합니다.
+- 설계 변경 시 `PROJECT_PLAN.md`, `CODE_STRUCTURE.md`와 관련 문서를 코드보다 먼저 또는 같은 작업에서 갱신합니다.
