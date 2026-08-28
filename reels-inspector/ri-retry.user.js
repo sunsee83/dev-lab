@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.1.6
+// @version      3.2.0
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,9 +10,12 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.1.6
+// Build version: 3.2.0
 
 (() => {
+  // src/version.js
+  var VERSION = "3.2.0";
+
   // src/core/app.js
   var EVENTS = Object.freeze({
     ROUTE_CHANGED: "route:changed",
@@ -569,18 +572,725 @@
     return { ok: false, result: { ok: false, code, destinationMode, folderName, message, error } };
   }
 
+  // src/migration/legacy-store-adapter.js
+  var CACHE_KEY = "ri311:items:v1";
+  function createLegacyStoreAdapter({ env = globalThis } = {}) {
+    function readItems() {
+      try {
+        const raw = env.localStorage?.getItem(CACHE_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    function getItem(shortcode) {
+      if (!shortcode) return null;
+      return readItems()[shortcode] || null;
+    }
+    function getPost(shortcode) {
+      const item = getItem(shortcode);
+      if (!item) return shortcode ? { shortcode } : null;
+      const value = (key) => fieldValue(item, key);
+      return {
+        shortcode,
+        mediaId: value("mediaId") || "",
+        ownerId: value("ownerId") || "",
+        username: value("owner") || "",
+        mediaType: String(value("mediaType") || "").toUpperCase(),
+        productType: value("productType") || "",
+        canonicalUrl: value("canonicalUrl") || item.pageUrl || "",
+        views: value("views"),
+        likes: value("likes"),
+        comments: value("comments"),
+        reposts: value("reposts"),
+        date: value("date") || "",
+        videoUrl: value("videoUrl") || "",
+        coverUrl: value("coverUrl") || "",
+        thumbUrl: value("thumbUrl") || "",
+        carouselImages: normalizeImages(value("carouselImages"))
+      };
+    }
+    function getCurrentIdentity(url = env.location?.href || "") {
+      const shortcode = codeFromUrl(url);
+      if (!shortcode) return null;
+      const post = getPost(shortcode) || { shortcode };
+      return {
+        shortcode,
+        mediaId: post.mediaId || "",
+        ownerId: post.ownerId || "",
+        username: post.username || "",
+        mediaType: post.mediaType || inferTypeFromUrl(url),
+        productType: post.productType || "",
+        canonicalUrl: post.canonicalUrl || stripQuery(url),
+        parentMediaId: "",
+        childMediaId: "",
+        slideIndex: null,
+        state: post.mediaType || post.mediaId ? "IDENTIFIED" : "DETECTED"
+      };
+    }
+    return { getItem, getPost, getCurrentIdentity, codeFromUrl };
+  }
+  function codeFromUrl(url) {
+    const match = String(url || "").match(/\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/);
+    return match ? match[1] : "";
+  }
+  function fieldValue(item, key) {
+    const field = item?.fields?.[key];
+    if (field && (field.status === "verified" || field.status === "conflict")) return field.value;
+    return item?.[key] ?? null;
+  }
+  function normalizeImages(value) {
+    return Array.isArray(value) ? value.filter((url) => /^https?:/i.test(String(url || ""))) : [];
+  }
+  function inferTypeFromUrl(url) {
+    return /\/(?:reel|reels)\//.test(String(url || "")) ? "REEL" : "";
+  }
+  function stripQuery(url) {
+    try {
+      const parsed = new URL(String(url || ""));
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.href;
+    } catch {
+      return String(url || "").split("?")[0].split("#")[0];
+    }
+  }
+
+  // src/media/media-resolver.js
+  function resolveGridCardMedia({ anchor, post, shortcode } = {}) {
+    const type = effectiveType(anchor, post);
+    const imageUrl = bestDomImageUrl(anchor) || post?.coverUrl || post?.thumbUrl || "";
+    const videoUrl = /^https?:/i.test(String(post?.videoUrl || "")) ? post.videoUrl : "";
+    const carouselImages = Array.isArray(post?.carouselImages) ? post.carouselImages.filter(Boolean) : [];
+    const href = String(anchor?.href || "");
+    return {
+      shortcode: shortcode || post?.shortcode || "",
+      type,
+      imageUrl,
+      videoUrl,
+      carouselImages,
+      pageUrl: stripQuery2(href) || post?.canonicalUrl || ""
+    };
+  }
+  function extensionFromUrl(url, fallback = "") {
+    const clean = String(url || "").split("?")[0];
+    const match = clean.match(/\.([A-Za-z0-9]{2,5})$/);
+    return match ? `.${match[1].toLowerCase()}` : fallback;
+  }
+  function effectiveType(anchor, post) {
+    const stored = String(post?.mediaType || "").toUpperCase();
+    if (["REEL", "VIDEO", "PHOTO", "CAROUSEL"].includes(stored)) return stored;
+    const href = String(anchor?.href || "");
+    if (/\/(?:reel|reels)\//.test(href)) return "REEL";
+    if (anchor?.querySelector?.("video")) return "VIDEO";
+    return /\/p\//.test(href) ? "PHOTO" : "";
+  }
+  function bestDomImageUrl(anchor) {
+    if (!anchor?.querySelectorAll) return "";
+    const ar = anchor.getBoundingClientRect();
+    const anchorArea = Math.max(1, ar.width * ar.height);
+    let best = "";
+    let bestScore = -1;
+    for (const img of anchor.querySelectorAll("img")) {
+      const rect = img.getBoundingClientRect();
+      const overlapWidth = Math.max(0, Math.min(ar.right, rect.right) - Math.max(ar.left, rect.left));
+      const overlapHeight = Math.max(0, Math.min(ar.bottom, rect.bottom) - Math.max(ar.top, rect.top));
+      const overlap = overlapWidth * overlapHeight;
+      if (!overlap) continue;
+      const coverage = overlap / anchorArea;
+      if (rect.width < ar.width * 0.62 || rect.height < ar.height * 0.62 || coverage < 0.38) continue;
+      const label = [img.alt || "", img.getAttribute?.("aria-label") || "", img.getAttribute?.("title") || ""].join(" ").toLowerCase();
+      if (/music|audio|album|avatar|profile|음악|음원|오디오|앨범|프로필/.test(label) && coverage < 0.8) continue;
+      const url = bestSrcFromImg(img);
+      if (!url) continue;
+      let score = coverage * 1e6 + overlap;
+      if (rect.width >= ar.width * 0.9 && rect.height >= ar.height * 0.9) score += 1e6;
+      if (score > bestScore) {
+        bestScore = score;
+        best = url;
+      }
+    }
+    return best;
+  }
+  function bestSrcFromImg(img) {
+    const srcset = img?.getAttribute?.("srcset") || "";
+    let best = "";
+    let bestWidth = -1;
+    if (srcset) {
+      for (const part of srcset.split(",")) {
+        const match = part.trim().match(/^(.*)\s+(\d+(?:\.\d+)?)(w|x)$/);
+        if (!match) continue;
+        let score = Number(match[2]);
+        if (match[3] === "x") score *= 1e4;
+        if (score > bestWidth) {
+          bestWidth = score;
+          best = match[1].trim();
+        }
+      }
+    }
+    return best || img?.currentSrc || img?.src || "";
+  }
+  function stripQuery2(url) {
+    return String(url || "").split("?")[0].split("#")[0];
+  }
+
+  // src/ui/toast.js
+  var TOAST_ID = "ri32-toast";
+  var timer = 0;
+  function showToast(doc, text, duration = 2400) {
+    if (!doc?.documentElement || !text) return;
+    const old = doc.getElementById(TOAST_ID);
+    if (old) old.remove();
+    if (timer) clearTimeout(timer);
+    const toast = doc.createElement("div");
+    toast.id = TOAST_ID;
+    toast.textContent = String(text);
+    doc.documentElement.appendChild(toast);
+    timer = setTimeout(() => {
+      timer = 0;
+      toast.remove();
+    }, duration);
+  }
+  function showResult(doc, result2) {
+    if (!result2 || result2.code === "cancelled") return;
+    showToast(doc, result2.message || (result2.ok ? "완료했습니다." : "작업을 완료하지 못했습니다."));
+  }
+
+  // src/ui/grid.js
+  var MENU_ID = "ri32-grid-menu";
+  function mountGridActions({ app: app2, adapter, downloads: downloads2, capabilities: capabilities2, doc = globalThis.document, env = globalThis } = {}) {
+    if (!doc?.documentElement || !adapter || !downloads2) throw new Error("Grid actions require document, adapter and Download Manager");
+    let destroyed = false;
+    doc.addEventListener("pointerdown", onPointerDown, true);
+    doc.addEventListener("click", onClick, true);
+    env.addEventListener?.("scroll", closeMenu, true);
+    env.addEventListener?.("resize", closeMenu, true);
+    function onPointerDown(event) {
+      const mediaButton = event.target?.closest?.(".ri3-grid-media");
+      if (mediaButton) {
+        event.stopImmediatePropagation();
+        return;
+      }
+      const menu = doc.getElementById(MENU_ID);
+      if (menu && !menu.contains(event.target)) closeMenu();
+    }
+    function onClick(event) {
+      const mediaButton = event.target?.closest?.(".ri3-grid-media");
+      if (!mediaButton) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const anchor = mediaButton.closest('a[href*="/reel/"],a[href*="/reels/"],a[href*="/p/"]');
+      if (!anchor) return;
+      openMenu(anchor, mediaButton);
+    }
+    function openMenu(anchor, trigger) {
+      const shortcode = anchor.dataset.ri315Code || adapter.codeFromUrl(anchor.href);
+      if (!shortcode) return;
+      const existing = doc.getElementById(MENU_ID);
+      if (existing?.dataset.code === shortcode) {
+        closeMenu();
+        return;
+      }
+      closeMenu();
+      doc.getElementById("ri3-grid-menu")?.remove();
+      const post = adapter.getPost(shortcode) || { shortcode };
+      const media = resolveGridCardMedia({ anchor, post, shortcode });
+      const menu = doc.createElement("div");
+      menu.id = MENU_ID;
+      menu.dataset.code = shortcode;
+      menu.setAttribute("role", "menu");
+      if (media.type === "REEL" || media.type === "VIDEO") {
+        addButton(menu, media.videoUrl ? "영상 다운로드" : "영상 준비중", !!media.videoUrl, () => downloadSingle({
+          kind: "video",
+          shortcode,
+          url: media.videoUrl,
+          filename: `Instagram_${shortcode}_video${extensionFromUrl(media.videoUrl, ".mp4")}`
+        }));
+        addButton(menu, media.imageUrl ? "썸네일 다운로드" : "썸네일 준비중", !!media.imageUrl, () => downloadSingle({
+          kind: "cover",
+          shortcode,
+          url: media.imageUrl,
+          filename: `Instagram_${shortcode}_thumb${extensionFromUrl(media.imageUrl, ".jpg")}`
+        }));
+      } else if (media.type === "CAROUSEL") {
+        const count = media.carouselImages.length;
+        addButton(menu, count ? `전체 이미지 다운로드 (${count})` : "전체 이미지 준비중", count > 0, () => downloadCarousel(shortcode, media.carouselImages));
+        addButton(menu, media.imageUrl ? "대표 이미지 다운로드" : "대표 이미지 준비중", !!media.imageUrl, () => downloadSingle({
+          kind: "photo",
+          shortcode,
+          url: media.imageUrl,
+          filename: `Instagram_${shortcode}_cover${extensionFromUrl(media.imageUrl, ".jpg")}`
+        }));
+      } else {
+        addButton(menu, media.imageUrl ? "이미지 다운로드" : "이미지 준비중", !!media.imageUrl, () => downloadSingle({
+          kind: "photo",
+          shortcode,
+          url: media.imageUrl,
+          filename: `Instagram_${shortcode}_image${extensionFromUrl(media.imageUrl, ".jpg")}`
+        }));
+      }
+      addButton(menu, "링크 복사", !!media.pageUrl, async () => {
+        const ok = await copyText(media.pageUrl);
+        showToast(doc, ok ? "링크를 복사했습니다." : "링크 복사에 실패했습니다.");
+      });
+      doc.documentElement.appendChild(menu);
+      positionMenu(menu, trigger);
+    }
+    function addButton(menu, label, enabled, action) {
+      const button = doc.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.disabled = !enabled;
+      if (enabled) button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        closeMenu();
+        try {
+          await action();
+        } catch (error) {
+          console.warn("[RI] grid action failed", error);
+          showToast(doc, "작업을 완료하지 못했습니다.");
+        }
+      });
+      menu.appendChild(button);
+    }
+    async function downloadSingle(request) {
+      showToast(doc, "저장 준비 중…");
+      const result2 = await downloads2.download(request);
+      showResult(doc, result2);
+      return result2;
+    }
+    async function downloadCarousel(shortcode, images) {
+      const requests = images.map((url, index) => ({
+        kind: "carousel-slide",
+        shortcode,
+        url,
+        slideIndex: index + 1,
+        filename: `Instagram_${shortcode}_slide_${String(index + 1).padStart(2, "0")}${extensionFromUrl(url, ".jpg")}`
+      }));
+      showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
+      const result2 = await downloads2.downloadBatch(requests);
+      showResult(doc, result2);
+      return result2;
+    }
+    async function copyText(text) {
+      if (!text) return false;
+      if (capabilities2?.clipboard && env.navigator?.clipboard?.writeText) {
+        try {
+          await env.navigator.clipboard.writeText(text);
+          return true;
+        } catch {
+        }
+      }
+      try {
+        const textarea = doc.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        doc.body?.appendChild(textarea);
+        textarea.select();
+        const ok = doc.execCommand?.("copy") !== false;
+        textarea.remove();
+        return ok;
+      } catch {
+        return false;
+      }
+    }
+    function positionMenu(menu, trigger) {
+      const rect = trigger.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const width = env.innerWidth || doc.documentElement.clientWidth;
+      const height = env.innerHeight || doc.documentElement.clientHeight;
+      const left = Math.max(6, Math.min(width - menuRect.width - 6, rect.left));
+      let top = rect.bottom + 6;
+      if (top + menuRect.height > height - 8) top = Math.max(8, rect.top - menuRect.height - 6);
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
+    }
+    function closeMenu() {
+      doc.getElementById(MENU_ID)?.remove();
+    }
+    function destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      closeMenu();
+      doc.removeEventListener("pointerdown", onPointerDown, true);
+      doc.removeEventListener("click", onClick, true);
+      env.removeEventListener?.("scroll", closeMenu, true);
+      env.removeEventListener?.("resize", closeMenu, true);
+    }
+    if (app2?.adapters) app2.adapters.gridActions = { closeMenu };
+    return { closeMenu, destroy };
+  }
+
+  // src/ui/styles.js
+  var STYLE_ID = "ri32-style";
+  function injectStyles(doc = globalThis.document) {
+    if (!doc?.documentElement || doc.getElementById(STYLE_ID)) return;
+    const style = doc.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = CSS;
+    (doc.head || doc.documentElement).appendChild(style);
+  }
+  var CSS = `
+#ri3-tool,#ri3-panel{display:none!important}
+#ri32-tool{
+  position:fixed;right:12px;bottom:max(88px,calc(env(safe-area-inset-bottom) + 78px));z-index:2147483605;
+  width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.18);border-radius:50%;
+  background:rgba(12,12,12,.72);color:#fff;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.32);-webkit-tap-highlight-color:transparent
+}
+#ri32-tool[aria-expanded="true"]{background:rgba(38,38,38,.96)}
+#ri32-panel{
+  position:fixed;right:8px;bottom:max(132px,calc(env(safe-area-inset-bottom) + 122px));z-index:2147483646;
+  width:min(70vw,270px);max-height:min(64vh,540px);overflow:hidden;border:1px solid rgba(255,255,255,.13);
+  border-radius:15px;background:rgba(16,16,16,.94);color:#fff;box-shadow:0 12px 34px rgba(0,0,0,.40);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif
+}
+.ri32-head{min-height:42px;display:flex;align-items:center;gap:7px;padding:0 8px 0 11px;border-bottom:1px solid rgba(255,255,255,.08)}
+.ri32-head strong{flex:1;font-size:12px}.ri32-version{font-size:8px;opacity:.48}
+.ri32-close{width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:#fff;font-size:19px}
+.ri32-tabs{display:flex;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid rgba(255,255,255,.07)}
+.ri32-tabs::-webkit-scrollbar{display:none}
+.ri32-tab{flex:0 0 auto;height:35px;padding:0 9px;border:0;border-bottom:2px solid transparent;background:transparent;color:rgba(255,255,255,.58);font:650 10px/1 sans-serif}
+.ri32-tab[aria-selected="true"]{color:#fff;border-bottom-color:#fff}
+.ri32-body{max-height:calc(min(64vh,540px) - 78px);overflow-y:auto;padding:10px}
+.ri32-empty{min-height:78px;display:grid;place-items:center;color:rgba(255,255,255,.52);font-size:10px;line-height:1.45;text-align:center}
+.ri32-section+.ri32-section{margin-top:13px}.ri32-section-title{margin-bottom:7px;font-size:10.5px;font-weight:750}
+.ri32-options{display:grid;gap:6px}.ri32-option{min-height:38px;display:flex;align-items:center;gap:8px;padding:0 9px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.035);color:#fff;text-align:left;font-size:10px}
+.ri32-option[aria-pressed="true"]{border-color:rgba(255,255,255,.42);background:rgba(255,255,255,.09)}.ri32-option:disabled{opacity:.38}
+.ri32-dot{width:9px;height:9px;border:1px solid rgba(255,255,255,.5);border-radius:50%}.ri32-option[aria-pressed="true"] .ri32-dot{background:#fff}
+.ri32-setting-row{display:flex;align-items:center;gap:8px;min-height:32px;font-size:10px}.ri32-setting-row span:first-child{flex:1;opacity:.62}.ri32-setting-row strong{font-size:10px;text-align:right}
+.ri32-action{min-height:34px;padding:0 10px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.06);color:#fff;font-size:10px}
+.ri32-media-action{width:100%;margin-top:6px;text-align:left}.ri32-note{margin-top:7px;color:rgba(255,255,255,.46);font-size:9px;line-height:1.45}
+#ri32-grid-menu{position:fixed;z-index:2147483646;min-width:150px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+#ri32-grid-menu button{height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#fff;text-align:left;font:650 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap}
+#ri32-grid-menu button:active{background:rgba(255,255,255,.12)}#ri32-grid-menu button:disabled{opacity:.38}
+#ri32-toast{position:fixed;left:50%;bottom:max(134px,calc(env(safe-area-inset-bottom) + 124px));transform:translateX(-50%);z-index:2147483647;max-width:82vw;padding:8px 12px;border-radius:16px;background:rgba(20,20,20,.94);color:#fff;font:650 11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;white-space:normal}
+`;
+
+  // src/ui/ri-panel.js
+  var TABS = [
+    ["summary", "요약"],
+    ["content", "콘텐츠"],
+    ["comments", "댓글"],
+    ["analysis", "분석"],
+    ["media", "미디어"],
+    ["settings", "설정"]
+  ];
+  function mountRiPanel({ app: app2, settings: settings2, capabilities: capabilities2, downloads: downloads2, adapter, version = "", doc = globalThis.document, env = globalThis } = {}) {
+    if (!doc?.documentElement || !settings2) throw new Error("RI Panel requires document and Settings Store");
+    injectStyles(doc);
+    let open = false;
+    let activeTab = "summary";
+    let settingsState = settings2.getState();
+    let destroyed = false;
+    let button = doc.getElementById("ri32-tool");
+    let panel = doc.getElementById("ri32-panel");
+    doc.getElementById("ri3-panel")?.remove();
+    if (!button) {
+      button = doc.createElement("button");
+      button.id = "ri32-tool";
+      button.type = "button";
+      button.setAttribute("aria-label", "리서치 도구");
+      button.setAttribute("aria-expanded", "false");
+      button.innerHTML = researchIcon();
+      doc.documentElement.appendChild(button);
+    }
+    const unsubscribeSettings = settings2.subscribe((next) => {
+      settingsState = next;
+      if (open && activeTab === "settings") renderBody();
+    });
+    button.addEventListener("click", toggle);
+    function toggle() {
+      if (open) closePanel();
+      else openPanel();
+    }
+    function openPanel() {
+      if (destroyed || open) return;
+      open = true;
+      syncCurrentIdentity();
+      button.setAttribute("aria-expanded", "true");
+      ensurePanel();
+      renderTabs();
+      renderBody();
+    }
+    function closePanel() {
+      if (!open) return;
+      open = false;
+      button.setAttribute("aria-expanded", "false");
+      panel?.remove();
+      panel = null;
+    }
+    function ensurePanel() {
+      panel = doc.getElementById("ri32-panel");
+      if (panel) return;
+      panel = doc.createElement("aside");
+      panel.id = "ri32-panel";
+      panel.innerHTML = [
+        '<div class="ri32-head">',
+        "<strong>Instagram Research</strong>",
+        `<span class="ri32-version">v${escapeHtml(version || app2?.version || "")}</span>`,
+        '<button type="button" class="ri32-close" aria-label="닫기">×</button>',
+        "</div>",
+        '<div class="ri32-tabs" role="tablist"></div>',
+        '<div class="ri32-body"></div>'
+      ].join("");
+      panel.querySelector(".ri32-close").addEventListener("click", closePanel);
+      doc.documentElement.appendChild(panel);
+    }
+    function renderTabs() {
+      const tabs = panel?.querySelector(".ri32-tabs");
+      if (!tabs) return;
+      tabs.replaceChildren();
+      for (const [key, label] of TABS) {
+        const tab = doc.createElement("button");
+        tab.type = "button";
+        tab.className = "ri32-tab";
+        tab.dataset.tab = key;
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-selected", String(activeTab === key));
+        tab.textContent = label;
+        tab.addEventListener("click", () => {
+          if (activeTab === key) return;
+          activeTab = key;
+          syncCurrentIdentity();
+          renderTabs();
+          renderBody();
+        });
+        tabs.appendChild(tab);
+      }
+    }
+    function renderBody() {
+      const body = panel?.querySelector(".ri32-body");
+      if (!body) return;
+      body.replaceChildren();
+      if (activeTab === "settings") return renderSettings(body);
+      const post = currentPost();
+      if (activeTab === "summary") return renderSummary(body, post);
+      if (activeTab === "media") return renderMedia(body, post);
+      renderPlaceholder(body, post);
+    }
+    function renderSummary(body, post) {
+      if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.");
+      const section = createSection(body, "현재 콘텐츠");
+      addRow(section, "Shortcode", post.shortcode);
+      addRow(section, "유형", post.mediaType || "확인 중");
+      addRow(section, "조회수", countLabel(post.views));
+      addRow(section, "좋아요", countLabel(post.likes));
+      addRow(section, "댓글", countLabel(post.comments));
+      addRow(section, "리포스트", countLabel(post.reposts));
+      addRow(section, "게시일", post.date || "—");
+      const note = doc.createElement("div");
+      note.className = "ri32-note";
+      note.textContent = "현재는 legacy Verified Store의 검증값을 읽습니다. ER · 24h · 계정 대비는 Metrics migration에서 같은 Store 기준으로 연결합니다.";
+      section.appendChild(note);
+    }
+    function renderMedia(body, post) {
+      if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.");
+      const section = createSection(body, "미디어");
+      const type = String(post.mediaType || "").toUpperCase();
+      if ((type === "REEL" || type === "VIDEO") && post.videoUrl) {
+        addAction(section, "영상 다운로드", () => save({
+          kind: "video",
+          shortcode: post.shortcode,
+          url: post.videoUrl,
+          filename: `Instagram_${post.shortcode}_video${extensionFromUrl(post.videoUrl, ".mp4")}`
+        }));
+      }
+      if ((type === "REEL" || type === "VIDEO") && (post.coverUrl || post.thumbUrl)) {
+        const url = post.coverUrl || post.thumbUrl;
+        addAction(section, "썸네일 다운로드", () => save({
+          kind: "cover",
+          shortcode: post.shortcode,
+          url,
+          filename: `Instagram_${post.shortcode}_thumb${extensionFromUrl(url, ".jpg")}`
+        }));
+      }
+      if (type === "PHOTO" && (post.coverUrl || post.thumbUrl)) {
+        const url = post.coverUrl || post.thumbUrl;
+        addAction(section, "이미지 다운로드", () => save({
+          kind: "photo",
+          shortcode: post.shortcode,
+          url,
+          filename: `Instagram_${post.shortcode}_image${extensionFromUrl(url, ".jpg")}`
+        }));
+      }
+      if (type === "CAROUSEL" && post.carouselImages?.length) {
+        addAction(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
+      }
+      addAction(section, "링크 복사", () => copyCurrentLink(post));
+    }
+    function renderPlaceholder(body, post) {
+      const label = tabLabel(activeTab);
+      renderEmpty(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`);
+    }
+    function renderSettings(body) {
+      const section = createSection(body, "저장 방식");
+      const options = doc.createElement("div");
+      options.className = "ri32-options";
+      addModeOption(options, "directory", "지정 폴더", !!capabilities2?.directoryPicker);
+      addModeOption(options, "default", "기본 Downloads", true);
+      addModeOption(options, "prompt", "매번 선택", !!(capabilities2?.saveFilePicker || capabilities2?.directoryPicker));
+      section.appendChild(options);
+      const folder = createSection(body, "저장 폴더");
+      addRow(folder, "현재 폴더", settingsState.directoryName || "선택 안 됨");
+      addRow(folder, "권한", permissionLabel(settingsState.directoryPermission));
+      const action = doc.createElement("button");
+      action.type = "button";
+      action.className = "ri32-action";
+      action.disabled = !capabilities2?.directoryPicker;
+      action.textContent = settingsState.directoryHandle ? "폴더 변경" : "폴더 선택";
+      action.addEventListener("click", async () => {
+        action.disabled = true;
+        const result2 = await settings2.selectDirectory();
+        settingsState = settings2.getState();
+        renderBody();
+        if (result2.ok) showToast(doc, `저장 폴더: ${result2.folderName || "선택 완료"}`);
+        else if (result2.code !== "cancelled") showToast(doc, result2.message || "폴더를 선택하지 못했습니다.");
+      });
+      folder.appendChild(action);
+      const note = doc.createElement("div");
+      note.className = "ri32-note";
+      note.textContent = "영상 · 썸네일 · 사진 · 캐러셀 전체에 같은 저장 정책을 적용합니다. 지정 폴더 저장 실패 시 기본 Downloads로 몰래 전환하지 않습니다.";
+      folder.appendChild(note);
+    }
+    function addModeOption(parent, mode, label, enabled) {
+      const option = doc.createElement("button");
+      option.type = "button";
+      option.className = "ri32-option";
+      option.disabled = !enabled;
+      option.setAttribute("aria-pressed", String(settingsState.downloadMode === mode));
+      option.innerHTML = '<span class="ri32-dot"></span><span></span>';
+      option.lastElementChild.textContent = label;
+      option.addEventListener("click", async () => {
+        if (mode === "directory" && !settingsState.directoryHandle) {
+          const result2 = await settings2.selectDirectory();
+          if (!result2.ok && result2.code !== "cancelled") showToast(doc, result2.message || "폴더를 선택하지 못했습니다.");
+          return;
+        }
+        settings2.setDownloadMode(mode);
+        showToast(doc, `저장 방식: ${label}`);
+      });
+      parent.appendChild(option);
+    }
+    async function save(request) {
+      if (!downloads2) return;
+      showToast(doc, "저장 준비 중…");
+      showResult(doc, await downloads2.download(request));
+    }
+    async function saveBatch(post) {
+      const requests = post.carouselImages.map((url, index) => ({
+        kind: "carousel-slide",
+        shortcode: post.shortcode,
+        url,
+        slideIndex: index + 1,
+        filename: `Instagram_${post.shortcode}_slide_${String(index + 1).padStart(2, "0")}${extensionFromUrl(url, ".jpg")}`
+      }));
+      showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
+      showResult(doc, await downloads2.downloadBatch(requests));
+    }
+    async function copyCurrentLink(post) {
+      const text = post.canonicalUrl || `https://www.instagram.com/${post.mediaType === "REEL" ? "reel" : "p"}/${post.shortcode}/`;
+      try {
+        if (capabilities2?.clipboard && env.navigator?.clipboard?.writeText) {
+          await env.navigator.clipboard.writeText(text);
+          return showToast(doc, "링크를 복사했습니다.");
+        }
+      } catch {
+      }
+      showToast(doc, "이 환경에서는 링크 복사를 완료하지 못했습니다.");
+    }
+    function syncCurrentIdentity() {
+      const identity = adapter?.getCurrentIdentity?.() || null;
+      app2?.setRoute?.({ href: env.location?.href || "", pathname: env.location?.pathname || "" });
+      app2?.setCurrentIdentity?.(identity);
+      return identity;
+    }
+    function currentPost() {
+      const identity = syncCurrentIdentity() || app2?.getCurrentIdentity?.();
+      return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
+    }
+    function createSection(body, title) {
+      const section = doc.createElement("section");
+      section.className = "ri32-section";
+      const heading = doc.createElement("div");
+      heading.className = "ri32-section-title";
+      heading.textContent = title;
+      section.appendChild(heading);
+      body.appendChild(section);
+      return section;
+    }
+    function addRow(parent, label, value) {
+      const row = doc.createElement("div");
+      row.className = "ri32-setting-row";
+      const left = doc.createElement("span");
+      const right = doc.createElement("strong");
+      left.textContent = label;
+      right.textContent = value ?? "—";
+      row.append(left, right);
+      parent.appendChild(row);
+    }
+    function addAction(parent, label, action) {
+      const button2 = doc.createElement("button");
+      button2.type = "button";
+      button2.className = "ri32-action ri32-media-action";
+      button2.textContent = label;
+      button2.addEventListener("click", () => void action());
+      parent.appendChild(button2);
+    }
+    function renderEmpty(body, text) {
+      const empty = doc.createElement("div");
+      empty.className = "ri32-empty";
+      empty.textContent = text;
+      body.appendChild(empty);
+    }
+    function destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      unsubscribeSettings();
+      button?.removeEventListener("click", toggle);
+      panel?.remove();
+      button?.remove();
+      panel = null;
+      button = null;
+    }
+    return { open: openPanel, close: closePanel, destroy, getState: () => ({ open, activeTab }) };
+  }
+  function tabLabel(key) {
+    return TABS.find(([tab]) => tab === key)?.[1] || key;
+  }
+  function permissionLabel(permission) {
+    if (permission === "granted") return "허용됨";
+    if (permission === "prompt") return "확인 필요";
+    if (permission === "denied") return "거부됨";
+    return "사용 불가";
+  }
+  function countLabel(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return "—";
+    return new Intl.NumberFormat("ko-KR").format(number);
+  }
+  function researchIcon() {
+    return '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V13M9 19V9M14 19V5"/><circle cx="17.5" cy="14.5" r="3.5"/><path d="M20 17l2 2"/></svg>';
+  }
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+  }
+
   // src/legacy-runtime.js
   (function() {
     "use strict";
-    var VERSION = "3.1.6";
+    var VERSION2 = "3.1.6";
     var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
-    var CACHE_KEY = "ri311:items:v1";
+    var CACHE_KEY2 = "ri311:items:v1";
     var SNAP_KEY = "ri311:snap:v1";
     var POST_KEY = "ri311:posts:v1";
     var SOURCE_RANK = { legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 };
     var METRIC_FIELDS = { views: 1, likes: 1, comments: 1, reposts: 1 };
     var VIEW_KEYS = ["play_count", "ig_play_count", "video_play_count", "video_view_count", "view_count", "clips_play_count", "reel_view_count", "media_view_count", "views", "plays"];
-    var items = readStore(CACHE_KEY, {});
+    var items = readStore(CACHE_KEY2, {});
     var videoMap = /* @__PURE__ */ Object.create(null);
     var posterMap = /* @__PURE__ */ Object.create(null);
     var pending = /* @__PURE__ */ Object.create(null);
@@ -615,10 +1325,10 @@
       if (storeWriteTimer) return;
       storeWriteTimer = setTimeout(function() {
         storeWriteTimer = 0;
-        writeStore(CACHE_KEY, items);
+        writeStore(CACHE_KEY2, items);
       }, 300);
     }
-    function codeFromUrl(url) {
+    function codeFromUrl2(url) {
       var m = String(url || "").match(/\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/);
       return m ? m[1] : "";
     }
@@ -679,7 +1389,7 @@
     function sourceRank(source) {
       return SOURCE_RANK[source] || 0;
     }
-    function fieldValue(item, key) {
+    function fieldValue2(item, key) {
       var f = item && item.fields && item.fields[key];
       if (f && (f.status === "verified" || f.status === "conflict")) return f.value;
       return item && item[key] != null ? item[key] : null;
@@ -743,18 +1453,18 @@
       item.seen = Date.now();
       item.identity = {
         shortcode: code,
-        mediaId: fieldValue(item, "mediaId") || "",
-        ownerId: fieldValue(item, "ownerId") || "",
-        username: fieldValue(item, "owner") || "",
-        mediaType: fieldValue(item, "mediaType") || "",
-        productType: fieldValue(item, "productType") || "",
-        canonicalUrl: fieldValue(item, "canonicalUrl") || item.pageUrl || "",
-        state: fieldValue(item, "mediaType") && fieldValue(item, "owner") ? "IDENTIFIED" : "IDENTIFYING"
+        mediaId: fieldValue2(item, "mediaId") || "",
+        ownerId: fieldValue2(item, "ownerId") || "",
+        username: fieldValue2(item, "owner") || "",
+        mediaType: fieldValue2(item, "mediaType") || "",
+        productType: fieldValue2(item, "productType") || "",
+        canonicalUrl: fieldValue2(item, "canonicalUrl") || item.pageUrl || "",
+        state: fieldValue2(item, "mediaType") && fieldValue2(item, "owner") ? "IDENTIFIED" : "IDENTIFYING"
       };
       items[code] = item;
       if (changed) {
         scheduleStoreWrite();
-        recordSnapshot(code, fieldValue(item, "views"));
+        recordSnapshot(code, fieldValue2(item, "views"));
         recordPost(item);
         scheduleRefresh();
       }
@@ -794,8 +1504,8 @@
     function recordPost(item) {
       var owner, views, store, keys;
       if (!item || !item.code) return;
-      owner = String(fieldValue(item, "owner") || "").toLowerCase();
-      views = Number(fieldValue(item, "views"));
+      owner = String(fieldValue2(item, "owner") || "").toLowerCase();
+      views = Number(fieldValue2(item, "views"));
       if (!owner || !views) return;
       store = readStore(POST_KEY, {});
       store[item.code] = { code: item.code, owner, views, t: Date.now() };
@@ -1058,7 +1768,7 @@
       }
     }
     function parsePermalink(html, url) {
-      var code = codeFromUrl(url), patch = { pageUrl: url, canonicalUrl: url }, doc, meta, desc = "", m, n, hasVideo = false;
+      var code = codeFromUrl2(url), patch = { pageUrl: url, canonicalUrl: url }, doc, meta, desc = "", m, n, hasVideo = false;
       try {
         doc = new DOMParser().parseFromString(html, "text/html");
         meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
@@ -1092,7 +1802,7 @@
       return patch;
     }
     function enqueue(url, callback) {
-      var code = codeFromUrl(url);
+      var code = codeFromUrl2(url);
       if (!code) return;
       if (items[code] && Date.now() - Number(items[code].fetched || 0) < 3e5) {
         if (callback) callback(items[code]);
@@ -1177,7 +1887,7 @@
       a.click();
       a.remove();
     }
-    function showToast(text) {
+    function showToast2(text) {
       var old = document.getElementById("ri3-toast");
       if (old) old.remove();
       var toast = document.createElement("div");
@@ -1205,7 +1915,7 @@
         return Promise.resolve(false);
       }
     }
-    function extensionFromUrl(url, fallback) {
+    function extensionFromUrl2(url, fallback) {
       var clean = String(url || "").split("?")[0];
       var m = clean.match(/\.([A-Za-z0-9]{2,5})$/);
       return m ? "." + m[1].toLowerCase() : fallback;
@@ -1235,7 +1945,7 @@
         }).then(function() {
           return true;
         }).catch(function() {
-          showToast("선택 폴더 저장 실패 · 기본 다운로드로 전환");
+          showToast2("선택 폴더 저장 실패 · 기본 다운로드로 전환");
           return directDownload(url, filename);
         });
       }
@@ -1261,12 +1971,12 @@
     }
     function chooseDownloadDirectory() {
       if (!supportsDirectoryPicker()) {
-        showToast("이 브라우저는 저장 폴더 선택을 지원하지 않습니다");
+        showToast2("이 브라우저는 저장 폴더 선택을 지원하지 않습니다");
         return Promise.resolve(false);
       }
       return window.showDirectoryPicker({ mode: "readwrite" }).then(function(handle) {
         downloadDirectoryHandle = handle;
-        showToast("선택한 폴더로 저장합니다");
+        showToast2("선택한 폴더로 저장합니다");
         return true;
       }).catch(function() {
         return false;
@@ -1278,7 +1988,7 @@
       list.forEach(function(url, index) {
         chain = chain.then(function() {
           var n = String(index + 1).padStart(2, "0");
-          return downloadMedia(url, "Instagram_" + code + "_slide_" + n + extensionFromUrl(url, ".jpg"));
+          return downloadMedia(url, "Instagram_" + code + "_slide_" + n + extensionFromUrl2(url, ".jpg"));
         }).then(function() {
           return new Promise(function(resolve) {
             setTimeout(resolve, 180);
@@ -1322,7 +2032,7 @@
       return "";
     }
     function effectiveCardType(anchor, data) {
-      var stored = String(fieldValue(data, "mediaType") || "").toUpperCase();
+      var stored = String(fieldValue2(data, "mediaType") || "").toUpperCase();
       var domType = cardDomType(anchor);
       if (stored === "REEL" || stored === "VIDEO" || stored === "PHOTO" || stored === "CAROUSEL") return stored;
       if (isReelUrl(anchor && anchor.href)) return "REEL";
@@ -1333,7 +2043,7 @@
       var type = effectiveCardType(anchor, data);
       return type === "REEL" || type === "VIDEO";
     }
-    function bestDomImageUrl(anchor) {
+    function bestDomImageUrl2(anchor) {
       var img = anchor && anchor.querySelector ? anchor.querySelector("img") : null;
       var srcset, best = "", bestWidth = -1;
       if (!img) return "";
@@ -1353,7 +2063,7 @@
       return best || img.currentSrc || img.src || "";
     }
     function cardImageUrl(anchor, data) {
-      return bestDomImageUrl(anchor) || fieldValue(data, "thumbUrl") || "";
+      return bestDomImageUrl2(anchor) || fieldValue2(data, "thumbUrl") || "";
     }
     function closeGridMenu() {
       var menu = document.getElementById("ri3-grid-menu");
@@ -1383,8 +2093,8 @@
       var type = effectiveCardType(anchor, data);
       var videoCard = type === "REEL" || type === "VIDEO";
       var imageUrl = cardImageUrl(anchor, data);
-      var videoUrl = fieldValue(data, "videoUrl") || "";
-      var carouselImages = fieldValue(data, "carouselImages");
+      var videoUrl = fieldValue2(data, "videoUrl") || "";
+      var carouselImages = fieldValue2(data, "carouselImages");
       var pageUrl = (anchor.href || "").split("?")[0] || "https://www.instagram.com/" + (videoCard ? "reel/" : "p/") + code + "/";
       var trigger = anchor.querySelector(".ri3-grid-media");
       var rect = trigger ? trigger.getBoundingClientRect() : anchor.getBoundingClientRect();
@@ -1394,21 +2104,21 @@
       menu.setAttribute("role", "menu");
       if (videoCard) {
         addGridMenuButton(menu, videoUrl ? "영상 다운로드" : "영상 준비중", !!videoUrl, function() {
-          downloadMedia(videoUrl, "Instagram_" + code + "_video" + extensionFromUrl(videoUrl, ".mp4"));
+          downloadMedia(videoUrl, "Instagram_" + code + "_video" + extensionFromUrl2(videoUrl, ".mp4"));
         });
         addGridMenuButton(menu, "썸네일 다운로드", !!imageUrl, function() {
-          downloadMedia(imageUrl, "Instagram_" + code + "_thumb" + extensionFromUrl(imageUrl, ".jpg"));
+          downloadMedia(imageUrl, "Instagram_" + code + "_thumb" + extensionFromUrl2(imageUrl, ".jpg"));
         });
       } else if (type === "CAROUSEL") {
         addGridMenuButton(menu, Array.isArray(carouselImages) && carouselImages.length ? "전체 이미지 다운로드 (" + carouselImages.length + ")" : "전체 이미지 준비중", Array.isArray(carouselImages) && carouselImages.length > 0, function() {
           downloadCarousel(carouselImages, code);
         });
         addGridMenuButton(menu, "대표 이미지 다운로드", !!imageUrl, function() {
-          downloadMedia(imageUrl, "Instagram_" + code + "_cover" + extensionFromUrl(imageUrl, ".jpg"));
+          downloadMedia(imageUrl, "Instagram_" + code + "_cover" + extensionFromUrl2(imageUrl, ".jpg"));
         });
       } else {
         addGridMenuButton(menu, "이미지 다운로드", !!imageUrl, function() {
-          downloadMedia(imageUrl, "Instagram_" + code + "_image" + extensionFromUrl(imageUrl, ".jpg"));
+          downloadMedia(imageUrl, "Instagram_" + code + "_image" + extensionFromUrl2(imageUrl, ".jpg"));
         });
       }
       if (supportsDirectoryPicker()) {
@@ -1471,16 +2181,16 @@
     function renderGridCard(anchor, data) {
       var row1 = anchor.querySelector(".ri3-grid-row1");
       var row2 = anchor.querySelector(".ri3-grid-row2");
-      var views = fieldValue(data, "views");
-      var likes = fieldValue(data, "likes");
-      var comments = fieldValue(data, "comments");
-      var reposts = fieldValue(data, "reposts");
-      var date = fieldValue(data, "date");
+      var views = fieldValue2(data, "views");
+      var likes = fieldValue2(data, "likes");
+      var comments = fieldValue2(data, "comments");
+      var reposts = fieldValue2(data, "reposts");
+      var date = fieldValue2(data, "date");
       var videoCard = isVideoCard(anchor, data);
       var type = effectiveCardType(anchor, data);
       var er = videoCard ? engagement(views, likes, comments, reposts) : null;
       var growth = videoCard && views ? growth24h(data.code, views) : null;
-      var multiple = videoCard && views ? accountMultiple(data.code, fieldValue(data, "owner"), views) : null;
+      var multiple = videoCard && views ? accountMultiple(data.code, fieldValue2(data, "owner"), views) : null;
       var line1, line2, key, actions, safe;
       if (!row1 || !row2) return;
       line1 = [
@@ -1513,7 +2223,7 @@
       for (i = 0; i < anchors.length; i++) {
         anchor = anchors[i];
         if (!visible(anchor) && !gridSafe(anchor)) continue;
-        code = codeFromUrl(anchor.href);
+        code = codeFromUrl2(anchor.href);
         if (!code) continue;
         ensureGridCard(anchor, code);
         data = items[code] || { code, fields: {} };
@@ -1522,7 +2232,7 @@
           url = anchor.href.split("?")[0];
           enqueue(url, /* @__PURE__ */ (function(target, expectedCode) {
             return function(d) {
-              if (codeFromUrl(target.href) !== expectedCode) return;
+              if (codeFromUrl2(target.href) !== expectedCode) return;
               renderGridCard(target, d || { code: expectedCode, fields: {} });
             };
           })(anchor, code));
@@ -1606,15 +2316,15 @@
       if (!video) return null;
       r = video.getBoundingClientRect();
       if (Math.min(innerHeight, r.bottom) - Math.max(0, r.top) < innerHeight * 0.55) return null;
-      if (isReelUrl(location.href)) code = codeFromUrl(location.href);
+      if (isReelUrl(location.href)) code = codeFromUrl2(location.href);
       if (!code) code = mappedCode(video);
       metrics = nativeMetrics();
       owner = visibleUsername();
       if (!code) {
         keys = Object.keys(items);
         keys.forEach(function(key) {
-          var d = items[key], score = 0, likes = fieldValue(d, "likes"), comments = fieldValue(d, "comments");
-          if (owner && fieldValue(d, "owner") === owner) score += 10;
+          var d = items[key], score = 0, likes = fieldValue2(d, "likes"), comments = fieldValue2(d, "comments");
+          if (owner && fieldValue2(d, "owner") === owner) score += 10;
           if (metrics.likes != null && likes != null && Math.abs(metrics.likes - likes) <= Math.max(2, metrics.likes * 0.04)) score += 8;
           if (metrics.comments != null && comments != null && Math.abs(metrics.comments - comments) <= Math.max(2, metrics.comments * 0.04)) score += 8;
           if (score >= 18) candidates.push({ code: key, score });
@@ -1648,15 +2358,15 @@
         return;
       }
       data = items[ctx.code] || {};
-      views = fieldValue(data, "views");
+      views = fieldValue2(data, "views");
       er = engagement(views, ctx.native.likes, ctx.native.comments, ctx.native.reposts);
       growth = views ? growth24h(ctx.code, views) : null;
-      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue(data, "owner"), views) : null;
+      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue2(data, "owner"), views) : null;
       if (views) lines.push("▶ " + fmt(views));
       if (er != null) lines.push("ER " + fmtPercent(er));
       if (growth != null) lines.push("24h " + (growth >= 0 ? "+" : "") + fmtPercent(growth));
       if (multiple != null) lines.push(fmtMultiple(multiple));
-      if (fieldValue(data, "date")) lines.push(String(fieldValue(data, "date")).slice(5).replace("-", "/"));
+      if (fieldValue2(data, "date")) lines.push(String(fieldValue2(data, "date")).slice(5).replace("-", "/"));
       key = lines.join("|");
       if (box.dataset.ri315Render !== key) {
         box.innerHTML = "";
@@ -1725,10 +2435,10 @@
       if (!panel || !ctx) return;
       body = panel.querySelector(".ri3-panel-body");
       data = ctx.code ? items[ctx.code] || {} : {};
-      views = fieldValue(data, "views");
+      views = fieldValue2(data, "views");
       er = engagement(views, ctx.native.likes, ctx.native.comments, ctx.native.reposts);
       growth = views ? growth24h(ctx.code, views) : null;
-      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue(data, "owner"), views) : null;
+      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue2(data, "owner"), views) : null;
       if (ctx.video && isFinite(ctx.video.duration) && ctx.video.duration > 0) media = ctx.video.duration.toFixed(1) + "초";
       if (ctx.video && ctx.video.videoWidth && ctx.video.videoHeight) media += (media ? " · " : "") + ctx.video.videoWidth + "×" + ctx.video.videoHeight;
       body.innerHTML = "";
@@ -1740,7 +2450,7 @@
       panelRow(body, "ER", er != null ? fmtPercent(er) : "—");
       panelRow(body, "24h", growth != null ? (growth >= 0 ? "+" : "") + fmtPercent(growth) : "—");
       panelRow(body, "계정 대비", multiple != null ? fmtMultiple(multiple) : "—");
-      panelRow(body, "게시일", fieldValue(data, "date") ? String(fieldValue(data, "date")).slice(5).replace("-", "/") : "—");
+      panelRow(body, "게시일", fieldValue2(data, "date") ? String(fieldValue2(data, "date")).slice(5).replace("-", "/") : "—");
       panelRow(body, "영상", media || "—");
     }
     function openPanel(ctx) {
@@ -1751,21 +2461,21 @@
       panelContext = ctx;
       panel = document.createElement("aside");
       panel.id = "ri3-panel";
-      panel.innerHTML = '<div class="ri3-panel-head"><b>리서치 상세</b><span>v' + VERSION + '</span></div><div class="ri3-panel-body"></div><div class="ri3-panel-actions"></div><button class="ri3-panel-close">× 닫기</button>';
+      panel.innerHTML = '<div class="ri3-panel-head"><b>리서치 상세</b><span>v' + VERSION2 + '</span></div><div class="ri3-panel-body"></div><div class="ri3-panel-actions"></div><button class="ri3-panel-close">× 닫기</button>';
       document.documentElement.appendChild(panel);
       actions = panel.querySelector(".ri3-panel-actions");
       entries = [
         ["순수 영상", function() {
           var latest = reelContext() || panelContext;
           var data = latest && latest.code ? items[latest.code] || {} : {};
-          var url = latest && latest.video && (latest.video.currentSrc || latest.video.src) || fieldValue(data, "videoUrl") || "";
-          if (/^blob:/i.test(url)) url = fieldValue(data, "videoUrl") || "";
+          var url = latest && latest.video && (latest.video.currentSrc || latest.video.src) || fieldValue2(data, "videoUrl") || "";
+          if (/^blob:/i.test(url)) url = fieldValue2(data, "videoUrl") || "";
           openUrl(url);
         }],
         ["썸네일", function() {
           var latest = reelContext() || panelContext;
           var data = latest && latest.code ? items[latest.code] || {} : {};
-          openUrl(fieldValue(data, "thumbUrl") || latest && latest.video && latest.video.poster || "");
+          openUrl(fieldValue2(data, "thumbUrl") || latest && latest.video && latest.video.poster || "");
         }],
         ["링크 복사", function() {
           var latest = reelContext() || panelContext;
@@ -1942,18 +2652,18 @@
       item.seen = Date.now();
       item.identity = {
         shortcode: code,
-        mediaId: fieldValue(item, "mediaId") || "",
-        ownerId: fieldValue(item, "ownerId") || "",
-        username: fieldValue(item, "owner") || "",
-        mediaType: fieldValue(item, "mediaType") || "",
-        productType: fieldValue(item, "productType") || "",
-        canonicalUrl: fieldValue(item, "canonicalUrl") || item.pageUrl || "",
-        state: fieldValue(item, "mediaType") && fieldValue(item, "owner") ? "IDENTIFIED" : "IDENTIFYING"
+        mediaId: fieldValue2(item, "mediaId") || "",
+        ownerId: fieldValue2(item, "ownerId") || "",
+        username: fieldValue2(item, "owner") || "",
+        mediaType: fieldValue2(item, "mediaType") || "",
+        productType: fieldValue2(item, "productType") || "",
+        canonicalUrl: fieldValue2(item, "canonicalUrl") || item.pageUrl || "",
+        state: fieldValue2(item, "mediaType") && fieldValue2(item, "owner") ? "IDENTIFIED" : "IDENTIFYING"
       };
       items[code] = item;
       if (changed) {
         scheduleStoreWrite();
-        recordSnapshot(code, fieldValue(item, "views"));
+        recordSnapshot(code, fieldValue2(item, "views"));
         recordPost(item);
         scheduleRefresh();
       }
@@ -2008,7 +2718,7 @@
       saveItem(code, patch, source || "embedded", source === "network" ? "high" : "medium");
     };
     parsePermalink = function(html, url) {
-      var code = codeFromUrl(url), patch = { pageUrl: url, canonicalUrl: url }, doc, meta, desc = "", m, n, hasVideo = false;
+      var code = codeFromUrl2(url), patch = { pageUrl: url, canonicalUrl: url }, doc, meta, desc = "", m, n, hasVideo = false;
       try {
         doc = new DOMParser().parseFromString(html, "text/html");
         meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
@@ -2073,7 +2783,7 @@
       }
       return best || img && (img.currentSrc || img.src) || "";
     };
-    bestDomImageUrl = function(anchor) {
+    bestDomImageUrl2 = function(anchor) {
       var imgs, ar, anchorArea, best = "", bestScore = -1, i, img, r, iw, ih, overlap, coverage, label, score, url;
       if (!anchor || !anchor.querySelectorAll) return "";
       ar = anchor.getBoundingClientRect();
@@ -2102,12 +2812,12 @@
       return best;
     };
     cardImageUrl = function(anchor, data) {
-      return bestDomImageUrl(anchor) || fieldValue(data, "coverUrl") || fieldValue(data, "thumbUrl") || "";
+      return bestDomImageUrl2(anchor) || fieldValue2(data, "coverUrl") || fieldValue2(data, "thumbUrl") || "";
     };
     downloadMedia = function(url, filename) {
       if (!supportsDirectoryPicker() && !downloadLocationNoticeShown316) {
         downloadLocationNoticeShown316 = true;
-        showToast("Android Edge: 폴더 지정 불가 · 기본 Downloads에 저장");
+        showToast2("Android Edge: 폴더 지정 불가 · 기본 Downloads에 저장");
       }
       return downloadMedia315(url, filename);
     };
@@ -2115,15 +2825,15 @@
       var list = Array.isArray(images) ? images.filter(Boolean) : [];
       var chain = Promise.resolve();
       if (!list.length) {
-        showToast("캐러셀 이미지가 아직 확보되지 않았습니다");
+        showToast2("캐러셀 이미지가 아직 확보되지 않았습니다");
         return chain;
       }
-      showToast("캐러셀 " + list.length + "장 저장 시작");
+      showToast2("캐러셀 " + list.length + "장 저장 시작");
       list.forEach(function(url, index) {
         chain = chain.then(function() {
           var n = String(index + 1).padStart(2, "0");
-          showToast("캐러셀 " + (index + 1) + "/" + list.length + " 저장 중");
-          return downloadMedia(url, "Instagram_" + code + "_slide_" + n + extensionFromUrl(url, ".jpg"));
+          showToast2("캐러셀 " + (index + 1) + "/" + list.length + " 저장 중");
+          return downloadMedia(url, "Instagram_" + code + "_slide_" + n + extensionFromUrl2(url, ".jpg"));
         }).then(function() {
           return new Promise(function(resolve) {
             setTimeout(resolve, 420);
@@ -2131,7 +2841,7 @@
         });
       });
       return chain.then(function() {
-        showToast("캐러셀 " + list.length + "장 저장 요청 완료");
+        showToast2("캐러셀 " + list.length + "장 저장 요청 완료");
       });
     };
     supportsDirectoryPicker = function() {
@@ -2139,12 +2849,12 @@
     };
     chooseDownloadDirectory = function() {
       if (!supportsDirectoryPicker()) {
-        showToast("Android Edge에서는 폴더 선택 API를 사용할 수 없습니다");
+        showToast2("Android Edge에서는 폴더 선택 API를 사용할 수 없습니다");
         return Promise.resolve(false);
       }
       return window.showDirectoryPicker({ mode: "readwrite" }).then(function(handle) {
         downloadDirectoryHandle = handle;
-        showToast("선택한 폴더로 저장합니다");
+        showToast2("선택한 폴더로 저장합니다");
         return true;
       }).catch(function() {
         return false;
@@ -2161,8 +2871,8 @@
       var type = effectiveCardType(anchor, data);
       var videoCard = type === "REEL" || type === "VIDEO";
       var imageUrl = cardImageUrl(anchor, data);
-      var videoUrl = fieldValue(data, "videoUrl") || "";
-      var carouselImages = fieldValue(data, "carouselImages");
+      var videoUrl = fieldValue2(data, "videoUrl") || "";
+      var carouselImages = fieldValue2(data, "carouselImages");
       var pageUrl = (anchor.href || "").split("?")[0] || "https://www.instagram.com/" + (videoCard ? "reel/" : "p/") + code + "/";
       var trigger = anchor.querySelector(".ri3-grid-media");
       var rect = trigger ? trigger.getBoundingClientRect() : anchor.getBoundingClientRect();
@@ -2172,21 +2882,21 @@
       menu.setAttribute("role", "menu");
       if (videoCard) {
         addGridMenuButton(menu, videoUrl ? "영상 다운로드" : "영상 준비중", !!videoUrl, function() {
-          downloadMedia(videoUrl, "Instagram_" + code + "_video" + extensionFromUrl(videoUrl, ".mp4"));
+          downloadMedia(videoUrl, "Instagram_" + code + "_video" + extensionFromUrl2(videoUrl, ".mp4"));
         });
         addGridMenuButton(menu, imageUrl ? "썸네일 다운로드" : "썸네일 준비중", !!imageUrl, function() {
-          downloadMedia(imageUrl, "Instagram_" + code + "_thumb" + extensionFromUrl(imageUrl, ".jpg"));
+          downloadMedia(imageUrl, "Instagram_" + code + "_thumb" + extensionFromUrl2(imageUrl, ".jpg"));
         });
       } else if (type === "CAROUSEL") {
         addGridMenuButton(menu, Array.isArray(carouselImages) && carouselImages.length ? "전체 이미지 다운로드 (" + carouselImages.length + ")" : "전체 이미지 준비중", Array.isArray(carouselImages) && carouselImages.length > 0, function() {
           downloadCarousel(carouselImages, code);
         });
         addGridMenuButton(menu, "대표 이미지 다운로드", !!imageUrl, function() {
-          downloadMedia(imageUrl, "Instagram_" + code + "_cover" + extensionFromUrl(imageUrl, ".jpg"));
+          downloadMedia(imageUrl, "Instagram_" + code + "_cover" + extensionFromUrl2(imageUrl, ".jpg"));
         });
       } else {
         addGridMenuButton(menu, "이미지 다운로드", !!imageUrl, function() {
-          downloadMedia(imageUrl, "Instagram_" + code + "_image" + extensionFromUrl(imageUrl, ".jpg"));
+          downloadMedia(imageUrl, "Instagram_" + code + "_image" + extensionFromUrl2(imageUrl, ".jpg"));
         });
       }
       if (supportsDirectoryPicker()) addGridMenuButton(menu, downloadDirectoryHandle ? "저장 폴더 변경" : "저장 폴더 선택", true, chooseDownloadDirectory);
@@ -2226,7 +2936,7 @@
   })();
 
   // src/main.js
-  var app = createApp();
+  var app = createApp({ version: VERSION });
   var capabilities = detectCapabilities(globalThis);
   var settings = createSettingsStore({
     env: globalThis,
@@ -2243,7 +2953,24 @@
       app.emit(EVENTS.DOWNLOAD_CHANGED, state);
     }
   });
+  var legacyStore = createLegacyStoreAdapter({ env: globalThis });
   app.services = { capabilities, settings, downloads };
+  app.adapters.legacyStore = legacyStore;
+  app.setRoute({ href: location.href, pathname: location.pathname });
+  app.setCurrentIdentity(legacyStore.getCurrentIdentity());
+  var grid = mountGridActions({ app, adapter: legacyStore, downloads, capabilities, doc: document, env: globalThis });
+  var riPanel = mountRiPanel({
+    app,
+    settings,
+    capabilities,
+    downloads,
+    adapter: legacyStore,
+    version: VERSION,
+    doc: document,
+    env: globalThis
+  });
+  app.adapters.grid = grid;
+  app.adapters.riPanel = riPanel;
   void settings.init().catch((error) => {
     console.warn("[RI] settings initialization failed", error);
   });
