@@ -1,0 +1,52 @@
+name: Reels Inspector Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'reels-inspector/src/**'
+      - 'reels-inspector/scripts/**'
+      - 'reels-inspector/package.json'
+      - '.github/workflows/reels-inspector-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install build dependency
+        working-directory: reels-inspector
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Build userscript
+        working-directory: reels-inspector
+        run: npm run build
+
+      - name: Architecture and syntax checks
+        working-directory: reels-inspector
+        run: npm run check && node --check ri-retry.user.js
+
+      - name: Commit generated userscript
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          if git diff --quiet -- reels-inspector/ri-retry.user.js; then
+            echo 'Generated userscript is already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reels-inspector/ri-retry.user.js
+          git commit -m 'build(reels-inspector): generate userscript'
+          git push
