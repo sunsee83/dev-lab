@@ -2,6 +2,7 @@ import { build } from 'esbuild';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { VERSION } from '../src/version.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -11,10 +12,8 @@ const outputPath = path.join(root, 'ri-retry.user.js');
 const legacySource = await readFile(legacyPath, 'utf8');
 const metaMatch = legacySource.match(/^\/\/ ==UserScript==[\s\S]*?^\/\/ ==\/UserScript==/m);
 if (!metaMatch) throw new Error('Userscript metadata block not found in src/legacy-runtime.js');
-
-const versionMatch = metaMatch[0].match(/^\/\/ @version\s+([^\s]+)\s*$/m);
-if (!versionMatch) throw new Error('Userscript @version not found');
-const version = versionMatch[1];
+if (!VERSION) throw new Error('VERSION is empty');
+const metadata = metaMatch[0].replace(/^\/\/ @version\s+[^\s]+\s*$/m, `// @version      ${VERSION}`);
 
 const result = await build({
   absWorkingDir: root,
@@ -37,9 +36,9 @@ const bundle = result.outputFiles[0].text.trimStart();
 const generatedHeader = [
   '// GENERATED FILE — DO NOT EDIT DIRECTLY.',
   '// Source: reels-inspector/src/*',
-  `// Build version: ${version}`
+  `// Build version: ${VERSION}`
 ].join('\n');
 
-const output = `${metaMatch[0]}\n${generatedHeader}\n\n${bundle.endsWith('\n') ? bundle : bundle + '\n'}`;
+const output = `${metadata}\n${generatedHeader}\n\n${bundle.endsWith('\n') ? bundle : bundle + '\n'}`;
 await writeFile(outputPath, output, 'utf8');
-console.log(`Built ri-retry.user.js v${version}`);
+console.log(`Built ri-retry.user.js v${VERSION}`);

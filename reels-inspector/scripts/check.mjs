@@ -132,20 +132,22 @@ function visit(file, stack = []) {
 }
 for (const file of graph.keys()) visit(file);
 
-const legacyPath = path.join(srcRoot, 'legacy-runtime.js');
 const generatedPath = path.join(root, 'ri-retry.user.js');
 const statusPath = path.join(root, 'STATUS.md');
-const legacy = await readFile(legacyPath, 'utf8');
+const versionPath = path.join(srcRoot, 'version.js');
 const generated = await readFile(generatedPath, 'utf8');
 const statusText = await readFile(statusPath, 'utf8');
-const legacyVersion = legacy.match(/^\/\/ @version\s+([^\s]+)\s*$/m)?.[1];
+const versionText = await readFile(versionPath, 'utf8');
+const sourceVersion = versionText.match(/VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1];
 const generatedVersion = generated.match(/^\/\/ @version\s+([^\s]+)\s*$/m)?.[1];
+const generatedBuildVersion = generated.match(/^\/\/ Build version:\s*([^\s]+)\s*$/m)?.[1];
 const statusVersion = statusText.match(/버전:\s*\*\*v([^*]+)\*\*/)?.[1];
 
-if (!legacyVersion) errors.push('src/legacy-runtime.js: missing @version');
+if (!sourceVersion) errors.push('src/version.js: missing VERSION');
 if (!generatedVersion) errors.push('ri-retry.user.js: missing @version');
 if (!generated.includes('// GENERATED FILE — DO NOT EDIT DIRECTLY.')) errors.push('ri-retry.user.js: generated warning missing; run npm run build');
-if (legacyVersion && generatedVersion && legacyVersion !== generatedVersion) errors.push(`version mismatch: legacy=${legacyVersion}, generated=${generatedVersion}`);
+if (sourceVersion && generatedVersion && sourceVersion !== generatedVersion) errors.push(`version mismatch: source=${sourceVersion}, generated=${generatedVersion}`);
+if (sourceVersion && generatedBuildVersion && sourceVersion !== generatedBuildVersion) errors.push(`build header mismatch: source=${sourceVersion}, build=${generatedBuildVersion}`);
 if (generatedVersion && statusVersion && generatedVersion !== statusVersion) errors.push(`version mismatch: generated=${generatedVersion}, STATUS=${statusVersion}`);
 if (/^\/\/ @require\s+/m.test(generated)) errors.push('ri-retry.user.js: runtime @require is forbidden');
 

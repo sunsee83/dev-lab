@@ -1,71 +1,35 @@
 # Instagram Content Research Tool — 개발 상태
 
-이 문서는 `PROJECT_PLAN.md`의 실행 현황을 기록합니다. Grid UI 세부 기준은 `GRID_BASELINE.md`, 실제 코드 분류/의존성/런타임 구조 기준은 `CODE_STRUCTURE.md`, 회귀 기준은 `tests/README.md`를 함께 확인합니다.
+이 문서는 `PROJECT_PLAN.md`의 실행 현황을 기록합니다. Grid UI 세부 기준은 `GRID_BASELINE.md`, 코드 ownership/build/migration 기준은 `CODE_STRUCTURE.md`, 회귀 기준은 `tests/README.md`를 함께 확인합니다.
 
 ## 현재 배포
 
-- 버전: **v3.1.6**
-- 실행: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
+- 버전: **v3.2.0**
+- 실행 대상: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
 - 배포 파일: `ri-retry.user.js`
 - 배포 방식: 단일 self-contained userscript
-- 현재 개발 단계: **v3.2 UI/Foundation 기반 구현 중**
-- 현재 사용자-visible UI/다운로드 동작: **legacy v3.1.6 유지**
+- 개발 원본: `src/*`
+- 현재 단계: **v3.2 UI/Foundation + Download migration 진행 중**
 
-`ri-retry.user.js`는 이제 수작업 원본이 아니라 `src/*`에서 생성되는 **generated deployment artifact**입니다.
+`ri-retry.user.js`는 generated artifact이며 직접 수정하지 않습니다.
 
-## 이번 구조 전환에서 실제 완료된 것
+## v3.2.0에서 실제 활성화한 구조
 
-### Phase 1 — Source of Truth 전환 완료
+### Source of Truth / Build
 
-완료 항목:
-
-1. 기존 v3.1.6 실행 원본을 `src/legacy-runtime.js`로 옮김
-2. `src/main.js`를 build entry로 생성
-3. `package.json` + esbuild 기반 `scripts/build.mjs` 생성
-4. `scripts/check.mjs` 생성
-5. `.github/workflows/reels-inspector-build.yml` 생성
-6. `ri-retry.user.js`를 generated artifact로 전환
-7. generated userscript에 직접 수정 금지 header 추가
-
-현재 generated header:
+현재 흐름:
 
 ```text
-// GENERATED FILE — DO NOT EDIT DIRECTLY.
-// Source: reels-inspector/src/*
-// Build version: 3.1.6
-```
-
-현재 source 흐름:
-
-```text
-src/main.js
-   ├ core/app.js
-   ├ core/capability.js
-   ├ store/settings-store.js
-   ├ media/download-manager.js
-   └ legacy-runtime.js
-          ↓
-        esbuild
-          ↓
+src/*
+  ↓
+esbuild
+  ↓
 ri-retry.user.js
 ```
 
-`src/legacy-runtime.js`는 backup 파일이 아닙니다. 현재 검증된 v3.1.6 runtime을 단계적으로 새 owner module로 이동하기 위한 **임시 canonical migration source**입니다.
-
-규칙:
-
-- 신규 기능을 `legacy-runtime.js`에 계속 추가하지 않음
-- 기존 기능을 새 owner로 이동하면 legacy의 원래 구현 제거
-- root `ri-retry.user.js` 직접 수정 금지
-- migration 완료 후 `legacy-runtime.js` 삭제
-
-### Build / Test / Check 자동화 완료
-
-GitHub Actions에서 다음 단계가 실제 실행됩니다.
+자동 검증 순서:
 
 ```text
-npm install
-  ↓
 npm test
   ↓
 npm run build
@@ -73,210 +37,141 @@ npm run build
 npm run check
   ↓
 node --check ri-retry.user.js
-  ↓
-변경된 generated userscript만 자동 commit
 ```
 
-현재 자동 검증 결과:
+버전의 단일 원본은 `src/version.js`입니다. Build가 legacy metadata의 다른 userscript 항목은 유지하되 `@version`은 `src/version.js` 값으로 생성합니다.
 
-- source-of-truth 전환 workflow: **success**
-- Foundation owner 추가 workflow: **success**
-- RI Panel shell source 추가 workflow: **success**
-- dormant Foundation wiring + unit gate workflow: **success**
-- unit tests 성공
-- build 성공
-- architecture check 성공
-- generated userscript `node --check` 성공
-
-중요: 이는 **unit/build/문법/구조 검사 통과**를 의미합니다. Android Edge 실기기에서 source-of-truth 전환 후 기존 v3.1.6 동작 parity가 확인됐다는 뜻은 아닙니다. 실기기 동작은 별도로 확인해야 합니다.
-
-### Phase 2 — Foundation owner 구현 + dormant wiring 완료
-
-현재 구현된 owner module:
+### 현재 runtime 조립
 
 ```text
-src/core/app.js
-src/core/capability.js
-src/store/settings-store.js
-src/media/download-manager.js
-src/ui/ri-panel.js
-src/ui/styles.js
+main.js
+  ├ version.js
+  ├ core/app.js
+  ├ core/capability.js
+  ├ store/settings-store.js
+  ├ media/download-manager.js
+  ├ migration/legacy-store-adapter.js
+  ├ media/media-resolver.js
+  ├ ui/grid.js
+  ├ ui/ri-panel.js
+  ├ ui/toast.js
+  ├ ui/styles.js
+  └ legacy-runtime.js
 ```
 
-`src/main.js`는 현재 다음을 실제 생성합니다.
+`legacy-runtime.js`는 backup이 아니라 migration 동안만 유지하는 기존 검증 runtime입니다. 신규 기능은 legacy에 추가하지 않고 새 owner module에서 구현합니다.
+
+## v3.2.0 사용자-visible 변경
+
+### 1. 전역 RI 버튼 활성화
+
+기존 Reel 전용 RI 버튼은 새 공용 스타일에서 숨기고, 동일 연구 아이콘의 **전역 RI 버튼 1개**를 모든 Instagram 화면에 표시합니다.
+
+대상:
+
+- 프로필
+- 검색/탐색
+- Grid
+- Reel
+- 일반 Post 상세
+- Photo / Video / Carousel 상세
+
+기본 위치는 우측 하단 safe-area 위입니다. 실제 Android Edge에서 Instagram 하단 navigation/배너/오른쪽 Reel rail과 충돌 여부는 실기기 확인이 필요합니다.
+
+### 2. 공용 RI Panel 활성화
+
+탭:
+
+`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`
+
+현재 연결 상태:
+
+- `요약`: 현재 URL shortcode를 migration adapter로 식별하고 legacy Verified Store의 조회수/좋아요/댓글/리포스트/게시일을 읽음
+- `미디어`: 확보된 video/cover/photo/carousel URL을 공통 Download Manager로 전달
+- `설정`: 공용 저장정책 실제 runtime과 연결
+- `콘텐츠 / 댓글 / 분석`: shell만 유지하며 이후 단계에서 연결
+
+Panel은 기존 Reel 상세 패널보다 작게 유지하여 영상 가림을 줄였습니다. 실기기에서 크기/위치 적합성은 아직 미확인입니다.
+
+### 3. Grid 카드 저장 메뉴를 새 경로로 전환
+
+Grid의 기존 카드당 단일 미디어 버튼은 그대로 유지합니다. 버튼 click을 `ui/grid.js`가 capture하여 legacy 저장 메뉴 대신 새 메뉴를 엽니다.
+
+새 메뉴에는 저장 위치 설정을 넣지 않습니다.
+
+REEL / VIDEO:
+
+- 영상 다운로드
+- 썸네일 다운로드
+- 링크 복사
+
+PHOTO:
+
+- 이미지 다운로드
+- 링크 복사
+
+CAROUSEL:
+
+- 전체 이미지 다운로드 (N)
+- 대표 이미지 다운로드
+- 링크 복사
+
+즉 역할은 다음으로 분리됩니다.
 
 ```text
-AppContext
-Capabilities
-Settings Store
-Download Manager
+Grid 카드 버튼 = 현재 콘텐츠 빠른 저장
+전역 RI 버튼 = 리서치 + 공용 설정
 ```
 
-Settings Store도 `init()`까지 실행합니다.
+### 4. 공통 저장정책 실제 연결
 
-다만 **새 RI Panel은 의도적으로 아직 mount하지 않았습니다.** 이유는 현재 legacy Grid 다운로드가 새 Download Manager로 전환되기 전에 설정 UI를 먼저 노출하면, 사용자가 보는 저장설정과 실제 저장경로가 서로 달라질 수 있기 때문입니다.
+모든 새 Grid/RI 미디어 액션은 `media/download-manager.js`를 통과합니다.
 
-즉 현재 단계는:
+지원 mode:
 
-```text
-새 Foundation service = runtime에 생성/초기화됨
-새 RI Panel source = 구현됨, 아직 dormant
-legacy Grid/Reel UI = 기존 동작 유지
-legacy download path = 아직 유지
-```
+- `default` = 기본 Downloads
+- `directory` = 지정 폴더
+- `prompt` = 매번 선택
 
-입니다.
+Settings Store가 전역 mode와 directory handle/permission을 소유합니다.
 
-## Foundation owner 실제 책임
+중요 규칙:
 
-### `core/app.js`
+- 영상/썸네일/사진/캐러셀이 동일 저장정책을 사용
+- 지정 폴더 실패 시 기본 Downloads로 조용히 fallback하지 않음
+- 실패는 `DownloadResult`로 반환하고 toast에 표시
+- Carousel batch는 destination을 한 번 결정하여 전체 slide에 재사용
+- 플랫폼 문자열이 아니라 실제 API/permission을 확인
 
-AppContext와 공용 event/lifecycle 소유자.
+## Migration adapter
 
-공식 event:
+`migration/legacy-store-adapter.js`는 현재 `ri311:items:v1` cache를 읽어 새 UI/Download 계층에 필요한 최소 snapshot만 제공합니다.
 
-```text
-route:changed
-identity:changed
-store:changed
-settings:changed
-download:changed
-```
+제공 정보:
 
-포함:
+- shortcode / mediaId / owner
+- mediaType / productType / canonicalUrl
+- views / likes / comments / reposts / date
+- videoUrl / coverUrl / thumbUrl / carouselImages
 
-- subscribe / unsubscribe
-- event emit
-- current route reference
-- current identity reference
-- frame 단위 `scheduleRender()` dedupe
-- subsystem/service 연결점
+이 adapter는 영구 architecture가 아닙니다. Verified Store migration이 완료되면 제거합니다.
 
-여기에 Instagram parsing, metric 계산, 다운로드 구현을 넣지 않습니다.
+## Media Resolver migration 시작
 
-### `core/capability.js`
+`media/media-resolver.js`가 새 Grid 저장 경로에서 미디어 선택을 소유하기 시작했습니다.
 
-플랫폼명 대신 실제 runtime API로 지원 여부를 판단합니다.
+Video/Reel cover 선택 시 현재 승인된 규칙을 보존합니다.
 
-현재 probe:
+- 카드와 크게 겹치는 본문 image 우선
+- music/audio/album/avatar/profile 계열 작은 이미지 제외
+- `srcset`에서 큰 후보 우선
+- legacy Store의 `coverUrl` / `thumbUrl` fallback
 
-- directory picker
-- save file picker
-- File System Access
-- IndexedDB
-- clipboard
-- anchor download
-
-FileSystem handle permission query/request도 이 owner에서 처리합니다.
-
-### `store/settings-store.js`
-
-전역 저장설정의 단일 owner입니다.
-
-현재 상태 모델:
-
-```text
-downloadMode: default | directory | prompt
-directoryName
-directoryHandle
-directoryPermission
-schemaVersion
-```
-
-현재 구현:
-
-- 일반 설정값 localStorage persistence
-- directory handle은 가능하면 IndexedDB structured clone
-- handle permission 복원/재확인
-- 지정 폴더 선택/해제
-- subscribe/unsubscribe
-
-영상/사진/Carousel별 저장 위치 state는 만들지 않습니다.
-
-### `media/download-manager.js`
-
-모든 다운로드가 최종적으로 통과할 단일 owner입니다.
-
-입력 개념:
-
-```text
-DownloadRequest
-- kind
-- shortcode
-- url
-- filename
-- mimeHint
-- slideIndex
-```
-
-출력 개념:
-
-```text
-DownloadResult
-- ok
-- code
-- destinationMode
-- folderName
-- filename
-- message
-- error
-```
-
-현재 구현:
-
-- default Downloads
-- designated directory
-- prompt/save picker
-- single download
-- batch download
-- filename 정리
-- destination resolution
-- URL → Blob transport 경계
-- directory/file writer
-- 구조화된 실패 결과
-
-Carousel `downloadBatch()`는 destination을 한 번만 결정하고 전체 slide에 동일 destination을 사용하도록 구현했습니다.
-
-지정 폴더 저장 실패 시 **자동으로 default Downloads로 조용히 fallback하지 않습니다.**
-
-### `ui/ri-panel.js`
-
-공용 RI UI shell source 구현 완료.
-
-포함:
-
-- 전역 RI 버튼
-- `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell
-- open/close
-- Settings Store subscribe
-- 저장 방식 UI
-- 현재 폴더/권한 표시
-- 폴더 선택/변경
-
-아직 runtime에 mount하지 않았으므로 현재 사용자 화면에는 나타나지 않습니다.
-
-### `ui/styles.js`
-
-새 RI 전역 버튼/패널/설정 UI 스타일의 단일 owner입니다.
-
-## Unit test gate
-
-`tests/unit/foundation.test.mjs`를 추가했습니다.
-
-현재 확인 항목:
-
-1. AppContext event publish/unsubscribe
-2. 같은 render key frame dedupe
-3. capability가 플랫폼명이 아니라 runtime API로 판단되는지
-4. Settings Store의 공용 download mode persistence
-5. 지정 폴더 write 실패 시 browser default로 무단 fallback하지 않는지
-6. Carousel prompt batch가 폴더 선택을 한 번만 하고 모든 slide에 재사용하는지
-
-GitHub Actions는 이제 `tests/**` 변경에도 실행되고 `npm test` 실패 시 build/deploy 단계로 진행하지 않습니다.
+현재 legacy 내부에도 같은 계열의 resolver가 남아 있지만 새 Grid 저장 경로에서는 `media/media-resolver.js`가 사용됩니다. 이후 Grid migration이 끝나면 legacy의 중복 구현을 제거합니다.
 
 ## 누적 보존 대상
 
-다음은 구조 전환 중에도 유지해야 합니다.
+다음은 v3.2 구조 전환 때문에 되돌리면 안 됩니다.
 
 - 숫자 깜빡임 제거
 - MutationObserver / History / scroll / media event 기반 갱신
@@ -284,301 +179,102 @@ GitHub Actions는 이제 `tests/**` 변경에도 실행되고 `npm test` 실패 
 - 동일 shortcode pending request dedupe
 - 기존 3열 Grid 크기/배치
 - 썸네일 위 하단 2줄 정보영역
-- 8개 지표 독립 슬롯 구조
+- 8개 지표 독립 슬롯
 - REEL/VIDEO 검증 조회수 및 파생지표
 - PHOTO/CAROUSEL 잘못된 조회수 차단
 - Instagram 기본 media-type 아이콘 유지
-- 우리 Grid 액션은 카드당 단일 버튼
-- 하단 Instagram 배너와 실제 겹치는 카드만 RI 영역 숨김
-- `ri311:*` 캐시 유지
-- 실제 Video/Reel cover 저장 개선
-- Carousel parent slide 구조 지원 및 ZIP 없는 개별 저장 기반
+- 카드당 우리 액션 버튼 1개
+- 하단 Instagram 배너와 실제 겹치는 카드만 RI 정보영역 숨김
+- `ri311:*` cache 유지
+- Video/Reel 실제 cover 저장 개선
+- Carousel parent slide 구조 지원
+- ZIP 없이 개별 slide 저장
 
-## v3.1.6 실기기에서 확인된 것
+## v3.1.6까지 실기기에서 확인된 사실
 
-확인된 개선:
+확인됨:
 
-- Video/Reel `썸네일 다운로드`가 실제 영상 cover로 정상 저장되는 사례 확인
-- Grid 숫자 깜빡임 제거 상태 유지
-- 사용 환경에서 영상 다운로드 시 폴더 선택이 실제 동작하는 사례 확인
+- Video/Reel `썸네일 다운로드`가 실제 영상 cover로 정상 저장되는 사례
+- Grid 숫자 깜빡임 제거 상태
+- 사용 환경에서 영상 다운로드의 폴더 선택이 실제 동작하는 사례
 
-현재 확인된 저장 구조 문제:
+기존 문제:
 
-1. Grid 카드 팝업에서 폴더를 선택하면 해당 카드 설정처럼 보이지만 실제로는 이후 영상에도 전역 적용됨.
-2. 영상은 선택한 폴더에 저장되지만 이미지가 기본 Downloads로 빠지는 사례가 있음.
-3. 현재 legacy 저장경로가 미디어 종류별로 동일 manager를 통과하지 않음.
-4. 카드별 메뉴에 전역 성격의 저장 위치 설정이 들어가 있어 UI 의미가 맞지 않음.
+- 카드 메뉴의 폴더 설정이 실제로는 전역인데 카드별 설정처럼 보였음
+- 영상은 선택 폴더, 이미지는 기본 Downloads로 갈라지는 사례가 있었음
 
-이 문제는 v3.2에서 새 `Settings Store + Download Manager`를 legacy Grid media action과 연결하면서 해결합니다.
+v3.2.0은 이 문제를 새 Settings Store + Download Manager + 공용 RI 설정으로 구조적으로 교체한 첫 배포입니다.
 
-## 확정된 전체 UI 역할
+## 아직 실기기 확인이 필요한 v3.2.0 항목
 
-```text
-Grid = 빠른 비교/발굴
-Grid ↓ = 선택 콘텐츠 빠른 저장
-RI = 전체 리서치/상세 기능
-설정 = 전역 공용 설정
-```
+다음은 코드/CI 통과와 별개로 Android Edge에서 확인이 필요합니다.
 
-### 전역 RI 버튼
+1. 전역 RI 버튼이 Grid/Reel/Post 상세에서 정확히 1개만 보이는지
+2. 버튼이 Instagram navigation/배너/Reel rail을 가리지 않는지
+3. RI Panel 크기와 닫기 접근성이 적절한지
+4. Grid 카드 메뉴에서 `저장 폴더 선택/변경` 항목이 사라졌는지
+5. RI `설정`에서 지정 폴더를 선택하면 이후 다른 영상에도 공통 적용되는지
+6. 지정 폴더 mode에서 사진/썸네일 fetch가 CDN CORS 때문에 실패하는지
+7. 실패할 경우 기본 Downloads로 몰래 떨어지지 않고 오류가 표시되는지
+8. `매번 선택` mode가 실제 지원 API에 맞게 동작하는지
+9. Carousel 전체 다운로드가 한 destination에 개별 파일로 저장되는지
+10. 기존 Grid 8-slot/cover/no-flicker가 그대로인지
 
-현재 Reel에서 사용하는 RI 도구 버튼을 모든 Instagram 화면의 전역 진입점으로 승격합니다.
+특히 **사진/썸네일의 지정 폴더 저장**은 cross-origin Blob 획득이 브라우저 정책에 따라 실패할 수 있습니다. 실제 실패가 확인되면 UI를 다시 건드리지 않고 `media` transport 경계만 교체하며 Tampermonkey privileged transport 도입 여부를 검토합니다.
 
-대상:
+## 다음 작업 순서
 
-- 프로필
-- 검색
-- 탐색
-- Grid
-- Reel
-- 일반 Post 상세
-- Photo / Video / Carousel
+### Phase 3 계속 — 실기기 회귀 + transport
 
-기본 위치는 우측 하단 safe area이며 Instagram 하단 navigation / `앱 사용` 배너와 충돌 시 위로 이동합니다.
+1. v3.2.0 Grid/RI/저장정책 실기기 확인
+2. 지정 폴더 image/cover fetch 결과 확인
+3. 필요 시 `media/transport.js` 분리
+4. 필요할 때만 Tampermonkey cross-origin transport를 안전하게 도입
+5. Carousel batch 실기기 확인
 
-### 공용 RI Panel
+### Phase 4 — UI/Data 연결
 
-최종 탭 shell:
+6. 전역 RI 버튼 safe-area 충돌 보정
+7. 요약에 Metrics Engine의 ER/24h/계정 대비 연결
+8. Reel 상세 identity/native metrics 정확도 개선
+9. 기존 Reel 전용 UI 잔여 구현 제거
 
-`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`
+### Phase 5 — Data Engine migration
 
-- 현재 콘텐츠가 있으면 해당 콘텐츠 상세 정보 표시
-- `설정`은 콘텐츠와 무관한 전역 설정
-- Store 변경 시 필요한 값만 live update
+10. Identity
+11. Extractor
+12. Verified Store
+13. Metrics
+14. Media Resolver
+15. Grid/Reel UI
 
-## Grid 기준
-
-### 8개 고정 슬롯
-
-1줄:
-
-`조회수 | 좋아요 | 댓글 | 리포스트`
-
-2줄:
-
-`ER | 24h | 계정 대비 | 날짜`
-
-- 각 슬롯은 독립 고정 x 영역
-- 다른 숫자 길이에 밀리지 않음
-- 값이 없으면 `-`
-- PHOTO/CAROUSEL은 `▶-`
-
-### 카드 미디어 메뉴 목표
-
-REEL / VIDEO:
-- `영상 다운로드`
-- `썸네일 다운로드`
-- `링크 복사`
-
-PHOTO:
-- `이미지 다운로드`
-- `링크 복사`
-
-CAROUSEL:
-- `전체 이미지 다운로드 (N)`
-- `대표 이미지 다운로드`
-- `링크 복사`
-
-**저장 위치/폴더 설정은 카드 메뉴에서 제거**하고 전역 RI 설정으로 이동합니다.
-
-## 공통 Download Manager 목표 흐름
-
-```text
-Grid / RI Panel
-      ↓
-Media Action
-      ↓
-Download Manager
-      ↓
-Settings Store
-      ↓
-capability / permission
-      ↓
-transport
-      ↓
-writer
-```
-
-지원 정책:
-
-- 지정 폴더
-- 기본 Downloads
-- 매번 선택
-
-적용 대상:
-
-- 영상
-- 영상 cover/썸네일
-- 사진
-- 캐러셀 전체 slide
-- 향후 STT/OCR export
-
-중요 규칙:
-
-- 저장정책은 미디어 타입별로 갈라지지 않음
-- 지정 폴더 실패 시 무단 fallback 금지
-- 실패는 구조화된 `DownloadResult`로 UI에 전달
-- capability는 플랫폼 문자열이 아니라 API/permission 기반
-- Carousel batch는 목적지를 한 번만 결정
-- transport 방식이 바뀌어도 Grid/Panel UI는 수정하지 않음
-
-## Carousel 전체 다운로드
-
-ZIP은 기본 방식으로 사용하지 않습니다.
-
-지원 구조:
-
-- `carousel_media[]`
-- `edge_sidecar_to_children.edges[].node`
-
-목표:
-
-```text
-slide_01 → slide_02 → ... → slide_N
-```
-
-을 동일 destination에 개별 파일로 저장합니다.
-
-## 코드 구조 원칙
-
-### Single Owner
-
-```text
-route/event/lifecycle      → core/app.js
-capability/permission      → core/capability.js
-전역 저장설정             → store/settings-store.js
-다운로드/목적지/write      → media/download-manager.js
-전역 RI UI                → ui/ri-panel.js
-공용 CSS                  → ui/styles.js
-```
-
-Identity / Extractor / Verified Store / Metrics / Media Resolver / Grid / Reel은 현재 검증된 legacy runtime을 우선 보존하고 회귀검증을 붙여 단계적으로 이동합니다.
-
-### 중복 방지
-
-- 다른 모듈이 같은 책임이 필요하면 새 구현 대신 owner API 사용
-- helper는 한 파일 private로 시작
-- 두 번째 사용처가 생길 때 owner API 승격 여부 검토
-- 복사 후 old/new 구현 동시 유지 금지
-- 신규 `src/*`에서 override stack 금지
-- 의미 없는 `utils.js`, `helpers.js` 금지
-
-### 파일 크기 기준
-
-```text
-0~250줄      정상
-250~350줄    책임 혼합 검토
-350~500줄    분리 후보
-500줄 초과   단일책임 근거 없으면 분리
-```
-
-`legacy-runtime.js`만 migration 기간 예외입니다.
-
-### 자동 구조 검사
-
-현재 `scripts/check.mjs`가 실제 검사하는 항목:
-
-- source/script syntax
-- 금지 backup/hotfix 계열 파일명
-- UI에서 storage/File System API 직접 사용
-- UI에서 network/media transport 직접 구현
-- metrics에서 DOM 접근
-- store → ui import
-- 순환 import
-- source 파일 350/500줄 기준
-- 여러 source에 반복되는 긴 block 후보
-- generated warning 존재 여부
-- userscript/STATUS version 일치
-- runtime `@require` 금지
-
-## v3.2 다음 실행 순서
-
-### 현재 안전 체크포인트
-
-Phase 1과 Foundation owner 구축/자동검사는 완료했습니다. 새 RI UI/새 다운로드 정책을 사용자에게 노출하기 전에 **현재 generated v3.1.6이 Android Edge에서 기존 승인 기능을 그대로 유지하는지 parity 확인**이 필요합니다.
-
-이 확인 전에는 가장 회귀 위험이 높은 legacy data engine을 건드리지 않습니다.
-
-### Phase 3 — Legacy adapter + 저장경로 통합
-
-다음 구현 순서:
-
-1. `legacy-runtime.js`를 ES module adapter 형태로 전환해 필요한 최소 API만 공개
-2. arbitrary global 대신 `main.js`가 adapter를 직접 주입받는 구조 사용
-3. legacy single media download를 Download Manager에 연결
-4. legacy Carousel batch를 `downloadBatch()`에 연결
-5. Grid 카드 메뉴의 폴더 설정을 제거
-6. 새 RI Settings UI를 실제 mount
-7. 기존 Reel 전용 RI 버튼과 새 전역 RI 버튼의 중복을 제거
-8. video / cover / photo / carousel 동일 저장정책 적용
-9. 이미지 cross-origin transport가 designated directory에서 실패하는지 실기기 확인
-10. 필요할 때만 `media/transport.js`와 Tampermonkey privileged transport 검토
-11. 지정 폴더 / 기본 Downloads / 매번 선택 실기기 확인
-12. Carousel batch 동일 destination 확인
-
-### Phase 4 — 전역 UI/상세 연결
-
-- 기존 Reel detail 데이터를 공용 RI Panel `요약/미디어`에 adapter로 연결
-- 전역 RI 버튼을 Grid/Reel/Post 상세 전체에서 하나만 유지
-- safe-area / 하단 배너 겹침 확인
-
-### Phase 5 — Data engine migration
-
-Identity → Extractor → Verified Store → Metrics → Media Resolver → Grid/Reel UI 순으로 하나씩 이동합니다.
-
-한 단계가 회귀/실기기 확인되기 전에 다음 위험 계층을 동시에 대규모 이동하지 않습니다.
+순으로 하나씩 이동합니다.
 
 ### Phase 6 — Legacy 제거
 
-- legacy 구현이 새 owner로 모두 이동된 뒤 `src/legacy-runtime.js` 삭제
-- migration adapter 제거
-- `src/*`만 최종 개발 구조로 유지
+새 owner로 모두 이동한 뒤:
 
-## v3.3 이후
+- `src/legacy-runtime.js` 삭제
+- `migration/legacy-store-adapter.js` 삭제
+- legacy CSS/UI/다운로드 중복 제거
 
-### v3.3 Content Types
+## 장기 로드맵
 
-- Reel
-- Feed Video
-- Photo
-- Carousel + slide media
-- Caption
-- Hashtags
-- Mentions
-- collaborators/location
-- 공통 `media[]`
-
-### v3.4 Research Detail UI
-
-- 요약/콘텐츠/미디어 실제 데이터 연결
-- 콘텐츠 타입별 UI
-- 상태표시
-
-### v3.5 Comments
-
-- 댓글/답글
-- thread 보존
-- low-value filter
-- Research Score
-- 참고 댓글 UI
-
-### 이후
-
+- v3.3 Content Types
+- v3.4 Research Detail UI
+- v3.5 Comments
 - v3.6 Research Features
 - v4.x Analysis Server / STT / OCR / Alignment / AI
 - v5.0 MV3 Extension
 
 ## 작업 규칙
 
-- 기존 설계를 먼저 읽고 새 요구사항을 현재 구조에 통합한다.
-- 바뀐 설계를 반영한다고 관련 없는 기존 설계를 삭제하지 않는다.
-- 실기기에서 좋아졌다고 확인된 동작은 누적 보존한다.
-- Grid Frozen UI를 관련 없는 기능 수정 때문에 되돌리지 않는다.
-- 카드별 메뉴에 전역 설정을 반복 배치하지 않는다.
-- 저장정책은 미디어 종류별로 분기하지 않고 공통 manager에서 처리한다.
-- 실제 코드 ownership/API/event/migration 규칙은 `CODE_STRUCTURE.md`를 따른다.
-- 테스트 fixture는 인증정보와 개인 raw dump를 제거한 sanitized data만 사용한다.
-- 검증되지 않은 값을 만들지 않는다.
-- hotfix `@require` 체인은 다시 만들지 않는다.
-- 새 `src/*`에 override layer를 누적하지 않는다.
-- 구조/UI/우선순위/파일 책임이 바뀌면 `PROJECT_PLAN.md`, `CODE_STRUCTURE.md`와 관련 문서를 코드보다 먼저 또는 같은 작업에서 갱신한다.
+- 기존 설계를 먼저 읽고 새 요구사항을 현재 구조에 통합합니다.
+- 바뀐 요구만 추가하고 관련 없는 승인 개선을 되돌리지 않습니다.
+- root generated userscript를 직접 수정하지 않습니다.
+- 신규 기능을 `legacy-runtime.js`에 추가하지 않습니다.
+- UI에서 저장정책/persistence/Blob fetch를 독자 구현하지 않습니다.
+- 카드별 메뉴에 전역 설정을 다시 넣지 않습니다.
+- 검증되지 않은 지표를 추측하지 않습니다.
+- hotfix `@require` 체인을 만들지 않습니다.
+- 실기기 확인 전에는 Android Edge에서 고쳐졌다고 단정하지 않습니다.

@@ -1,5 +1,6 @@
-import { EVENTS } from '../core/app.js';
 import { injectStyles } from './styles.js';
+import { showResult, showToast } from './toast.js';
+import { extensionFromUrl } from '../media/media-resolver.js';
 
 const TABS = [
   ['summary', '요약'],
@@ -10,7 +11,7 @@ const TABS = [
   ['settings', '설정']
 ];
 
-export function mountRiPanel({ app, settings, capabilities, version = '', doc = globalThis.document } = {}) {
+export function mountRiPanel({ app, settings, capabilities, downloads, adapter, version = '', doc = globalThis.document, env = globalThis } = {}) {
   if (!doc?.documentElement || !settings) throw new Error('RI Panel requires document and Settings Store');
   injectStyles(doc);
 
@@ -20,6 +21,8 @@ export function mountRiPanel({ app, settings, capabilities, version = '', doc = 
   let destroyed = false;
   let button = doc.getElementById('ri32-tool');
   let panel = doc.getElementById('ri32-panel');
+
+  doc.getElementById('ri3-panel')?.remove();
 
   if (!button) {
     button = doc.createElement('button');
@@ -46,6 +49,7 @@ export function mountRiPanel({ app, settings, capabilities, version = '', doc = 
   function openPanel() {
     if (destroyed || open) return;
     open = true;
+    syncCurrentIdentity();
     button.setAttribute('aria-expanded', 'true');
     ensurePanel();
     renderTabs();
@@ -56,7 +60,7 @@ export function mountRiPanel({ app, settings, capabilities, version = '', doc = 
     if (!open) return;
     open = false;
     button.setAttribute('aria-expanded', 'false');
-    if (panel) panel.remove();
+    panel?.remove();
     panel = null;
   }
 
@@ -93,6 +97,7 @@ export function mountRiPanel({ app, settings, capabilities, version = '', doc = 
       tab.addEventListener('click', () => {
         if (activeTab === key) return;
         activeTab = key;
+        syncCurrentIdentity();
         renderTabs();
         renderBody();
       });
@@ -105,43 +110,79 @@ export function mountRiPanel({ app, settings, capabilities, version = '', doc = 
     if (!body) return;
     body.replaceChildren();
 
-    if (activeTab === 'settings') {
-      renderSettings(body);
-      return;
-    }
+    if (activeTab === 'settings') return renderSettings(body);
+    const post = currentPost();
+    if (activeTab === 'summary') return renderSummary(body, post);
+    if (activeTab === 'media') return renderMedia(body, post);
+    renderPlaceholder(body, post);
+  }
 
-    const identity = app?.getCurrentIdentity?.();
-    const empty = doc.createElement('div');
-    empty.className = 'ri32-empty';
-    empty.textContent = identity?.shortcode
-      ? `${identity.shortcode} · ${tabLabel(activeTab)} 연결 준비 중`
-      : `${tabLabel(activeTab)} · 현재 콘텐츠 연결 준비 중`;
-    body.appendChild(empty);
+  function renderSummary(body, post) {
+    if (!post?.shortcode) return renderEmpty(body, '현재 콘텐츠가 선택되지 않았습니다.');
+    const section = createSection(body, '현재 콘텐츠');
+    addRow(section, 'Shortcode', post.shortcode);
+    addRow(section, '유형', post.mediaType || '확인 중');
+    addRow(section, '조회수', countLabel(post.views));
+    addRow(section, '좋아요', countLabel(post.likes));
+    addRow(section, '댓글', countLabel(post.comments));
+    addRow(section, '리포스트', countLabel(post.reposts));
+    addRow(section, '게시일', post.date || '—');
+    const note = doc.createElement('div');
+    note.className = 'ri32-note';
+    note.textContent = '현재는 legacy Verified Store의 검증값을 읽습니다. ER · 24h · 계정 대비는 Metrics migration에서 같은 Store 기준으로 연결합니다.';
+    section.appendChild(note);
+  }
+
+  function renderMedia(body, post) {
+    if (!post?.shortcode) return renderEmpty(body, '현재 콘텐츠가 선택되지 않았습니다.');
+    const section = createSection(body, '미디어');
+    const type = String(post.mediaType || '').toUpperCase();
+    if ((type === 'REEL' || type === 'VIDEO') && post.videoUrl) {
+      addAction(section, '영상 다운로드', () => save({
+        kind: 'video', shortcode: post.shortcode, url: post.videoUrl,
+        filename: `Instagram_${post.shortcode}_video${extensionFromUrl(post.videoUrl, '.mp4')}`
+      }));
+    }
+    if ((type === 'REEL' || type === 'VIDEO') && (post.coverUrl || post.thumbUrl)) {
+      const url = post.coverUrl || post.thumbUrl;
+      addAction(section, '썸네일 다운로드', () => save({
+        kind: 'cover', shortcode: post.shortcode, url,
+        filename: `Instagram_${post.shortcode}_thumb${extensionFromUrl(url, '.jpg')}`
+      }));
+    }
+    if (type === 'PHOTO' && (post.coverUrl || post.thumbUrl)) {
+      const url = post.coverUrl || post.thumbUrl;
+      addAction(section, '이미지 다운로드', () => save({
+        kind: 'photo', shortcode: post.shortcode, url,
+        filename: `Instagram_${post.shortcode}_image${extensionFromUrl(url, '.jpg')}`
+      }));
+    }
+    if (type === 'CAROUSEL' && post.carouselImages?.length) {
+      addAction(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
+    }
+    addAction(section, '링크 복사', () => copyCurrentLink(post));
+  }
+
+  function renderPlaceholder(body, post) {
+    const label = tabLabel(activeTab);
+    renderEmpty(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`);
   }
 
   function renderSettings(body) {
-    const section = doc.createElement('section');
-    section.className = 'ri32-section';
-    section.innerHTML = '<div class="ri32-section-title">저장 방식</div><div class="ri32-options"></div>';
-    const options = section.querySelector('.ri32-options');
-
+    const section = createSection(body, '저장 방식');
+    const options = doc.createElement('div');
+    options.className = 'ri32-options';
     addModeOption(options, 'directory', '지정 폴더', !!capabilities?.directoryPicker);
     addModeOption(options, 'default', '기본 Downloads', true);
     addModeOption(options, 'prompt', '매번 선택', !!(capabilities?.saveFilePicker || capabilities?.directoryPicker));
-    body.appendChild(section);
+    section.appendChild(options);
 
-    const folder = doc.createElement('section');
-    folder.className = 'ri32-section';
-    folder.innerHTML = [
-      '<div class="ri32-section-title">저장 폴더</div>',
-      '<div class="ri32-setting-row"><span>현재 폴더</span><strong></strong></div>',
-      '<div class="ri32-setting-row"><span>권한</span><strong></strong></div>',
-      '<button type="button" class="ri32-action"></button>',
-      '<div class="ri32-note">영상 · 썸네일 · 사진 · 캐러셀 전체에 같은 저장 정책을 적용합니다.</div>'
-    ].join('');
-    folder.querySelectorAll('strong')[0].textContent = settingsState.directoryName || '선택 안 됨';
-    folder.querySelectorAll('strong')[1].textContent = permissionLabel(settingsState.directoryPermission);
-    const action = folder.querySelector('.ri32-action');
+    const folder = createSection(body, '저장 폴더');
+    addRow(folder, '현재 폴더', settingsState.directoryName || '선택 안 됨');
+    addRow(folder, '권한', permissionLabel(settingsState.directoryPermission));
+    const action = doc.createElement('button');
+    action.type = 'button';
+    action.className = 'ri32-action';
     action.disabled = !capabilities?.directoryPicker;
     action.textContent = settingsState.directoryHandle ? '폴더 변경' : '폴더 선택';
     action.addEventListener('click', async () => {
@@ -149,9 +190,14 @@ export function mountRiPanel({ app, settings, capabilities, version = '', doc = 
       const result = await settings.selectDirectory();
       settingsState = settings.getState();
       renderBody();
-      if (!result.ok && result.code !== 'cancelled') app?.emit?.(EVENTS.SETTINGS_CHANGED, { error: result });
+      if (result.ok) showToast(doc, `저장 폴더: ${result.folderName || '선택 완료'}`);
+      else if (result.code !== 'cancelled') showToast(doc, result.message || '폴더를 선택하지 못했습니다.');
     });
-    body.appendChild(folder);
+    folder.appendChild(action);
+    const note = doc.createElement('div');
+    note.className = 'ri32-note';
+    note.textContent = '영상 · 썸네일 · 사진 · 캐러셀 전체에 같은 저장 정책을 적용합니다. 지정 폴더 저장 실패 시 기본 Downloads로 몰래 전환하지 않습니다.';
+    folder.appendChild(note);
   }
 
   function addModeOption(parent, mode, label, enabled) {
@@ -162,14 +208,95 @@ export function mountRiPanel({ app, settings, capabilities, version = '', doc = 
     option.setAttribute('aria-pressed', String(settingsState.downloadMode === mode));
     option.innerHTML = '<span class="ri32-dot"></span><span></span>';
     option.lastElementChild.textContent = label;
-    option.addEventListener('click', () => {
+    option.addEventListener('click', async () => {
       if (mode === 'directory' && !settingsState.directoryHandle) {
-        void settings.selectDirectory();
+        const result = await settings.selectDirectory();
+        if (!result.ok && result.code !== 'cancelled') showToast(doc, result.message || '폴더를 선택하지 못했습니다.');
         return;
       }
       settings.setDownloadMode(mode);
+      showToast(doc, `저장 방식: ${label}`);
     });
     parent.appendChild(option);
+  }
+
+  async function save(request) {
+    if (!downloads) return;
+    showToast(doc, '저장 준비 중…');
+    showResult(doc, await downloads.download(request));
+  }
+
+  async function saveBatch(post) {
+    const requests = post.carouselImages.map((url, index) => ({
+      kind: 'carousel-slide',
+      shortcode: post.shortcode,
+      url,
+      slideIndex: index + 1,
+      filename: `Instagram_${post.shortcode}_slide_${String(index + 1).padStart(2, '0')}${extensionFromUrl(url, '.jpg')}`
+    }));
+    showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
+    showResult(doc, await downloads.downloadBatch(requests));
+  }
+
+  async function copyCurrentLink(post) {
+    const text = post.canonicalUrl || `https://www.instagram.com/${post.mediaType === 'REEL' ? 'reel' : 'p'}/${post.shortcode}/`;
+    try {
+      if (capabilities?.clipboard && env.navigator?.clipboard?.writeText) {
+        await env.navigator.clipboard.writeText(text);
+        return showToast(doc, '링크를 복사했습니다.');
+      }
+    } catch {}
+    showToast(doc, '이 환경에서는 링크 복사를 완료하지 못했습니다.');
+  }
+
+  function syncCurrentIdentity() {
+    const identity = adapter?.getCurrentIdentity?.() || null;
+    app?.setRoute?.({ href: env.location?.href || '', pathname: env.location?.pathname || '' });
+    app?.setCurrentIdentity?.(identity);
+    return identity;
+  }
+
+  function currentPost() {
+    const identity = syncCurrentIdentity() || app?.getCurrentIdentity?.();
+    return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
+  }
+
+  function createSection(body, title) {
+    const section = doc.createElement('section');
+    section.className = 'ri32-section';
+    const heading = doc.createElement('div');
+    heading.className = 'ri32-section-title';
+    heading.textContent = title;
+    section.appendChild(heading);
+    body.appendChild(section);
+    return section;
+  }
+
+  function addRow(parent, label, value) {
+    const row = doc.createElement('div');
+    row.className = 'ri32-setting-row';
+    const left = doc.createElement('span');
+    const right = doc.createElement('strong');
+    left.textContent = label;
+    right.textContent = value ?? '—';
+    row.append(left, right);
+    parent.appendChild(row);
+  }
+
+  function addAction(parent, label, action) {
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.className = 'ri32-action ri32-media-action';
+    button.textContent = label;
+    button.addEventListener('click', () => void action());
+    parent.appendChild(button);
+  }
+
+  function renderEmpty(body, text) {
+    const empty = doc.createElement('div');
+    empty.className = 'ri32-empty';
+    empty.textContent = text;
+    body.appendChild(empty);
   }
 
   function destroy() {
@@ -183,12 +310,7 @@ export function mountRiPanel({ app, settings, capabilities, version = '', doc = 
     button = null;
   }
 
-  return {
-    open: openPanel,
-    close: closePanel,
-    destroy,
-    getState: () => ({ open, activeTab })
-  };
+  return { open: openPanel, close: closePanel, destroy, getState: () => ({ open, activeTab }) };
 }
 
 function tabLabel(key) {
@@ -200,6 +322,12 @@ function permissionLabel(permission) {
   if (permission === 'prompt') return '확인 필요';
   if (permission === 'denied') return '거부됨';
   return '사용 불가';
+}
+
+function countLabel(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return '—';
+  return new Intl.NumberFormat('ko-KR').format(number);
 }
 
 function researchIcon() {
