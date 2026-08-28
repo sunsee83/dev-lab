@@ -13,6 +13,562 @@
 // Build version: 3.1.6
 
 (() => {
+  // src/core/app.js
+  var EVENTS = Object.freeze({
+    ROUTE_CHANGED: "route:changed",
+    IDENTITY_CHANGED: "identity:changed",
+    STORE_CHANGED: "store:changed",
+    SETTINGS_CHANGED: "settings:changed",
+    DOWNLOAD_CHANGED: "download:changed"
+  });
+  function createApp({ version = "" } = {}) {
+    const listeners = /* @__PURE__ */ new Map();
+    const renderQueue = /* @__PURE__ */ new Map();
+    let frameId = 0;
+    let destroyed = false;
+    let route = { href: "", pathname: "" };
+    let currentIdentity = null;
+    const app2 = {
+      version,
+      services: /* @__PURE__ */ Object.create(null),
+      adapters: /* @__PURE__ */ Object.create(null),
+      on(eventName, listener) {
+        if (destroyed || typeof listener !== "function") return () => {
+        };
+        const bucket = listeners.get(eventName) || /* @__PURE__ */ new Set();
+        bucket.add(listener);
+        listeners.set(eventName, bucket);
+        return () => {
+          bucket.delete(listener);
+          if (!bucket.size) listeners.delete(eventName);
+        };
+      },
+      emit(eventName, payload) {
+        if (destroyed) return;
+        const bucket = listeners.get(eventName);
+        if (!bucket) return;
+        for (const listener of [...bucket]) {
+          try {
+            listener(payload);
+          } catch (error) {
+            console.warn("[RI] event listener failed", eventName, error);
+          }
+        }
+      },
+      scheduleRender(key, callback) {
+        if (destroyed || !key || typeof callback !== "function") return;
+        renderQueue.set(key, callback);
+        if (frameId) return;
+        const raf = globalThis.requestAnimationFrame || ((fn) => setTimeout(fn, 16));
+        frameId = raf(() => {
+          frameId = 0;
+          const jobs = [...renderQueue.values()];
+          renderQueue.clear();
+          for (const job of jobs) {
+            try {
+              job();
+            } catch (error) {
+              console.warn("[RI] render job failed", error);
+            }
+          }
+        });
+      },
+      setRoute(nextRoute) {
+        const next = {
+          href: String(nextRoute?.href || ""),
+          pathname: String(nextRoute?.pathname || "")
+        };
+        if (next.href === route.href && next.pathname === route.pathname) return false;
+        const previous = route;
+        route = next;
+        app2.emit(EVENTS.ROUTE_CHANGED, { previous, current: { ...route } });
+        return true;
+      },
+      getRoute() {
+        return { ...route };
+      },
+      setCurrentIdentity(identity) {
+        const previousKey = identityKey(currentIdentity);
+        const nextKey = identityKey(identity);
+        currentIdentity = identity || null;
+        if (previousKey === nextKey) return false;
+        app2.emit(EVENTS.IDENTITY_CHANGED, { current: currentIdentity });
+        return true;
+      },
+      getCurrentIdentity() {
+        return currentIdentity;
+      },
+      destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        listeners.clear();
+        renderQueue.clear();
+        if (frameId && globalThis.cancelAnimationFrame) globalThis.cancelAnimationFrame(frameId);
+        frameId = 0;
+        currentIdentity = null;
+        app2.services = /* @__PURE__ */ Object.create(null);
+        app2.adapters = /* @__PURE__ */ Object.create(null);
+      }
+    };
+    return app2;
+  }
+  function identityKey(identity) {
+    if (!identity) return "";
+    return [
+      identity.shortcode || "",
+      identity.mediaId || "",
+      identity.childMediaId || "",
+      identity.slideIndex ?? ""
+    ].join("|");
+  }
+
+  // src/core/capability.js
+  function detectCapabilities(env = globalThis) {
+    const doc = env.document;
+    let anchorDownload = false;
+    try {
+      anchorDownload = !!doc && "download" in doc.createElement("a");
+    } catch {
+      anchorDownload = false;
+    }
+    return Object.freeze({
+      directoryPicker: typeof env.showDirectoryPicker === "function",
+      saveFilePicker: typeof env.showSaveFilePicker === "function",
+      fileSystemWrite: typeof env.FileSystemFileHandle !== "undefined" || typeof env.FileSystemDirectoryHandle !== "undefined",
+      indexedDB: !!env.indexedDB,
+      clipboard: !!env.navigator?.clipboard?.writeText,
+      anchorDownload
+    });
+  }
+  async function queryHandlePermission(handle) {
+    if (!handle) return "unavailable";
+    if (typeof handle.queryPermission !== "function") return "granted";
+    try {
+      return await handle.queryPermission({ mode: "readwrite" });
+    } catch {
+      return "denied";
+    }
+  }
+  async function requestHandlePermission(handle) {
+    if (!handle) return "unavailable";
+    const current = await queryHandlePermission(handle);
+    if (current === "granted") return current;
+    if (typeof handle.requestPermission !== "function") return current;
+    try {
+      return await handle.requestPermission({ mode: "readwrite" });
+    } catch {
+      return "denied";
+    }
+  }
+
+  // src/store/settings-store.js
+  var STORAGE_KEY = "ri32:settings:v1";
+  var DB_NAME = "ri32";
+  var DB_VERSION = 1;
+  var HANDLE_STORE = "handles";
+  var DIRECTORY_KEY = "download-directory";
+  var MODES = /* @__PURE__ */ new Set(["default", "directory", "prompt"]);
+  function createSettingsStore({ env = globalThis, capabilities: capabilities2, onChange } = {}) {
+    const listeners = /* @__PURE__ */ new Set();
+    let state = {
+      downloadMode: "default",
+      directoryName: null,
+      directoryHandle: null,
+      directoryPermission: capabilities2?.directoryPicker ? "prompt" : "unavailable",
+      schemaVersion: 1
+    };
+    function notify() {
+      const snapshot = getState();
+      if (typeof onChange === "function") onChange(snapshot);
+      for (const listener of [...listeners]) {
+        try {
+          listener(snapshot);
+        } catch (error) {
+          console.warn("[RI] settings listener failed", error);
+        }
+      }
+    }
+    function getState() {
+      return { ...state };
+    }
+    async function init() {
+      const persisted = readJson(env.localStorage, STORAGE_KEY);
+      if (persisted && MODES.has(persisted.downloadMode)) state.downloadMode = persisted.downloadMode;
+      if (typeof persisted?.directoryName === "string") state.directoryName = persisted.directoryName || null;
+      if (capabilities2?.indexedDB) {
+        try {
+          const handle = await readHandle(env.indexedDB);
+          if (handle) {
+            state.directoryHandle = handle;
+            state.directoryName = handle.name || state.directoryName;
+            state.directoryPermission = await queryHandlePermission(handle);
+          }
+        } catch (error) {
+          console.warn("[RI] directory handle restore failed", error);
+        }
+      }
+      if (state.downloadMode === "directory" && !state.directoryHandle) {
+        state.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
+      }
+      persistScalarState();
+      notify();
+      return getState();
+    }
+    function setDownloadMode(mode) {
+      if (!MODES.has(mode)) throw new Error(`Unsupported download mode: ${mode}`);
+      if (state.downloadMode === mode) return getState();
+      state.downloadMode = mode;
+      persistScalarState();
+      notify();
+      return getState();
+    }
+    async function selectDirectory() {
+      if (!capabilities2?.directoryPicker || typeof env.showDirectoryPicker !== "function") {
+        return { ok: false, code: "unsupported", message: "폴더 선택을 지원하지 않는 환경입니다." };
+      }
+      try {
+        const handle = await env.showDirectoryPicker({ mode: "readwrite" });
+        const permission = await requestHandlePermission(handle);
+        if (permission !== "granted") {
+          state.directoryPermission = permission;
+          notify();
+          return { ok: false, code: "permission-denied", message: "저장 폴더 쓰기 권한이 필요합니다." };
+        }
+        state.directoryHandle = handle;
+        state.directoryName = handle.name || null;
+        state.directoryPermission = permission;
+        state.downloadMode = "directory";
+        persistScalarState();
+        if (capabilities2?.indexedDB) {
+          try {
+            await writeHandle(env.indexedDB, handle);
+          } catch (error) {
+            console.warn("[RI] directory handle persistence failed", error);
+          }
+        }
+        notify();
+        return { ok: true, code: "selected", folderName: state.directoryName };
+      } catch (error) {
+        if (error?.name === "AbortError") return { ok: false, code: "cancelled", message: "폴더 선택을 취소했습니다." };
+        return { ok: false, code: "picker-failed", message: "폴더를 선택하지 못했습니다.", error };
+      }
+    }
+    async function clearDirectory() {
+      state.directoryHandle = null;
+      state.directoryName = null;
+      state.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
+      if (state.downloadMode === "directory") state.downloadMode = "default";
+      persistScalarState();
+      if (capabilities2?.indexedDB) {
+        try {
+          await deleteHandle(env.indexedDB);
+        } catch (error) {
+          console.warn("[RI] directory handle delete failed", error);
+        }
+      }
+      notify();
+      return getState();
+    }
+    async function refreshDirectoryPermission({ request = false } = {}) {
+      if (!state.directoryHandle) {
+        state.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
+        notify();
+        return state.directoryPermission;
+      }
+      state.directoryPermission = request ? await requestHandlePermission(state.directoryHandle) : await queryHandlePermission(state.directoryHandle);
+      notify();
+      return state.directoryPermission;
+    }
+    function subscribe(listener) {
+      if (typeof listener !== "function") return () => {
+      };
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }
+    function persistScalarState() {
+      writeJson(env.localStorage, STORAGE_KEY, {
+        downloadMode: state.downloadMode,
+        directoryName: state.directoryName,
+        schemaVersion: state.schemaVersion
+      });
+    }
+    return {
+      init,
+      getState,
+      setDownloadMode,
+      selectDirectory,
+      clearDirectory,
+      refreshDirectoryPermission,
+      subscribe
+    };
+  }
+  function readJson(storage, key) {
+    if (!storage) return null;
+    try {
+      const raw = storage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+  function writeJson(storage, key, value) {
+    if (!storage) return;
+    try {
+      storage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.warn("[RI] settings persistence failed", error);
+    }
+  }
+  function openDb(indexedDB) {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(HANDLE_STORE)) db.createObjectStore(HANDLE_STORE);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("indexedDB open failed"));
+    });
+  }
+  async function withHandleStore(indexedDB, mode, operation) {
+    const db = await openDb(indexedDB);
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE, mode);
+        const store = tx.objectStore(HANDLE_STORE);
+        const request = operation(store);
+        request.onsuccess = () => resolve(request.result ?? null);
+        request.onerror = () => reject(request.error || new Error("indexedDB request failed"));
+      });
+    } finally {
+      db.close();
+    }
+  }
+  function readHandle(indexedDB) {
+    return withHandleStore(indexedDB, "readonly", (store) => store.get(DIRECTORY_KEY));
+  }
+  function writeHandle(indexedDB, handle) {
+    return withHandleStore(indexedDB, "readwrite", (store) => store.put(handle, DIRECTORY_KEY));
+  }
+  function deleteHandle(indexedDB) {
+    return withHandleStore(indexedDB, "readwrite", (store) => store.delete(DIRECTORY_KEY));
+  }
+
+  // src/media/download-manager.js
+  var VALID_KINDS = /* @__PURE__ */ new Set(["video", "cover", "photo", "carousel-slide", "export"]);
+  function createDownloadManager({ env = globalThis, settings: settings2, capabilities: capabilities2, onChange } = {}) {
+    if (!settings2) throw new Error("Download Manager requires Settings Store");
+    let activeJobs = 0;
+    async function download(request, destinationOverride = null) {
+      const normalized = normalizeRequest(request);
+      if (!normalized.ok) return normalized.result;
+      const destination = destinationOverride || await resolveDestination(false);
+      if (!destination.ok) return destination.result;
+      return runJob(normalized.request, destination);
+    }
+    async function downloadBatch(requests) {
+      const normalizedRequests = [];
+      for (const request of Array.isArray(requests) ? requests : []) {
+        const normalized = normalizeRequest(request);
+        if (!normalized.ok) return { ok: false, code: "invalid-media", message: "다운로드할 미디어 정보가 올바르지 않습니다." };
+        normalizedRequests.push(normalized.request);
+      }
+      if (!normalizedRequests.length) return { ok: false, code: "invalid-media", message: "다운로드할 파일이 없습니다." };
+      const destination = await resolveDestination(true);
+      if (!destination.ok) return destination.result;
+      const results = [];
+      for (const request of normalizedRequests) results.push(await runJob(request, destination));
+      const failed = results.find((result2) => !result2.ok);
+      return {
+        ok: !failed,
+        code: failed ? "batch-partial" : "saved",
+        destinationMode: destination.mode,
+        folderName: destination.folderName || null,
+        results,
+        message: failed ? "일부 파일을 저장하지 못했습니다." : `${results.length}개 파일 저장을 요청했습니다.`
+      };
+    }
+    async function resolveDestination(batch) {
+      const state = settings2.getState();
+      const mode = state.downloadMode || "default";
+      if (mode === "default") return { ok: true, mode: "default", folderName: null };
+      if (mode === "directory") {
+        const handle = state.directoryHandle;
+        if (!handle) {
+          return failure("permission-denied", "저장 폴더를 다시 연결해야 합니다.", mode, state.directoryName);
+        }
+        const permission = await requestHandlePermission(handle);
+        if (permission !== "granted") {
+          return failure("permission-denied", "저장 폴더 쓰기 권한이 필요합니다.", mode, state.directoryName);
+        }
+        return { ok: true, mode, handle, folderName: handle.name || state.directoryName || null };
+      }
+      if (mode === "prompt") {
+        if (batch) {
+          if (!capabilities2?.directoryPicker || typeof env.showDirectoryPicker !== "function") {
+            return failure("unsupported", "캐러셀 일괄 저장 위치 선택을 지원하지 않는 환경입니다.", mode);
+          }
+          try {
+            const handle = await env.showDirectoryPicker({ mode: "readwrite" });
+            const permission = await requestHandlePermission(handle);
+            if (permission !== "granted") return failure("permission-denied", "선택한 폴더 쓰기 권한이 필요합니다.", mode, handle.name);
+            return { ok: true, mode: "prompt-directory", handle, folderName: handle.name || null };
+          } catch (error) {
+            if (error?.name === "AbortError") return failure("cancelled", "저장 위치 선택을 취소했습니다.", mode);
+            return failure("picker-failed", "저장 위치를 선택하지 못했습니다.", mode, null, error);
+          }
+        }
+        if (capabilities2?.saveFilePicker && typeof env.showSaveFilePicker === "function") return { ok: true, mode: "prompt-file" };
+        if (capabilities2?.directoryPicker && typeof env.showDirectoryPicker === "function") {
+          try {
+            const handle = await env.showDirectoryPicker({ mode: "readwrite" });
+            const permission = await requestHandlePermission(handle);
+            if (permission !== "granted") return failure("permission-denied", "선택한 폴더 쓰기 권한이 필요합니다.", mode, handle.name);
+            return { ok: true, mode: "prompt-directory", handle, folderName: handle.name || null };
+          } catch (error) {
+            if (error?.name === "AbortError") return failure("cancelled", "저장 위치 선택을 취소했습니다.", mode);
+            return failure("picker-failed", "저장 위치를 선택하지 못했습니다.", mode, null, error);
+          }
+        }
+        return failure("unsupported", "매번 저장 위치 선택을 지원하지 않는 환경입니다.", mode);
+      }
+      return failure("unsupported", "알 수 없는 저장 방식입니다.", mode);
+    }
+    async function runJob(request, destination) {
+      activeJobs += 1;
+      emitState({ activeJobs, state: "running", request });
+      try {
+        let result2;
+        if (destination.mode === "default") result2 = await saveBrowserDefault(request);
+        else if (destination.mode === "prompt-file") result2 = await saveWithFilePicker(request);
+        else result2 = await saveToDirectory(request, destination.handle, destination.mode, destination.folderName);
+        return result2;
+      } finally {
+        activeJobs = Math.max(0, activeJobs - 1);
+        emitState({ activeJobs, state: "idle", request });
+      }
+    }
+    async function saveToDirectory(request, handle, mode, folderName) {
+      let blob;
+      try {
+        blob = await fetchBlob(request.url);
+      } catch (error) {
+        return result(false, "fetch-failed", request, mode, folderName, "미디어 데이터를 가져오지 못했습니다.", error);
+      }
+      try {
+        const fileHandle = await handle.getFileHandle(request.filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return result(true, "saved", request, mode, folderName, "파일을 저장했습니다.");
+      } catch (error) {
+        return result(false, "write-failed", request, mode, folderName, "선택한 폴더에 파일을 쓰지 못했습니다.", error);
+      }
+    }
+    async function saveWithFilePicker(request) {
+      let blob;
+      try {
+        blob = await fetchBlob(request.url);
+      } catch (error) {
+        return result(false, "fetch-failed", request, "prompt", null, "미디어 데이터를 가져오지 못했습니다.", error);
+      }
+      try {
+        const handle = await env.showSaveFilePicker({ suggestedName: request.filename });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return result(true, "saved", request, "prompt", null, "파일을 저장했습니다.");
+      } catch (error) {
+        if (error?.name === "AbortError") return result(false, "cancelled", request, "prompt", null, "저장을 취소했습니다.", error);
+        return result(false, "write-failed", request, "prompt", null, "파일을 저장하지 못했습니다.", error);
+      }
+    }
+    async function saveBrowserDefault(request) {
+      let objectUrl = "";
+      try {
+        const blob = await fetchBlob(request.url);
+        objectUrl = env.URL.createObjectURL(blob);
+        clickDownload(objectUrl, request.filename);
+        setTimeout(() => env.URL.revokeObjectURL(objectUrl), 2500);
+        return result(true, "saved", request, "default", null, "브라우저 기본 다운로드로 저장을 요청했습니다.");
+      } catch (error) {
+        try {
+          clickDownload(request.url, request.filename);
+          return result(true, "saved", request, "default", null, "브라우저 기본 다운로드로 저장을 요청했습니다.");
+        } catch (directError) {
+          if (objectUrl) env.URL.revokeObjectURL(objectUrl);
+          return result(false, "write-failed", request, "default", null, "브라우저 다운로드를 시작하지 못했습니다.", directError || error);
+        }
+      }
+    }
+    async function fetchBlob(url) {
+      if (typeof env.fetch !== "function") throw new Error("fetch unavailable");
+      const response = await env.fetch(url, { credentials: "omit" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.blob();
+    }
+    function clickDownload(url, filename) {
+      const doc = env.document;
+      if (!doc?.body) throw new Error("document body unavailable");
+      const anchor = doc.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.target = "_blank";
+      anchor.rel = "noopener";
+      anchor.style.display = "none";
+      doc.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    }
+    function emitState(payload) {
+      if (typeof onChange === "function") onChange(payload);
+    }
+    return { download, downloadBatch };
+  }
+  function normalizeRequest(request) {
+    if (!request || !VALID_KINDS.has(request.kind) || !/^https?:/i.test(String(request.url || ""))) {
+      return { ok: false, result: { ok: false, code: "invalid-media", message: "다운로드할 미디어 정보가 올바르지 않습니다." } };
+    }
+    const shortcode = String(request.shortcode || "").replace(/[^A-Za-z0-9_-]/g, "");
+    const filename = sanitizeFilename(request.filename || defaultFilename(request.kind, shortcode, request.slideIndex));
+    return {
+      ok: true,
+      request: {
+        kind: request.kind,
+        shortcode,
+        url: String(request.url),
+        filename,
+        mimeHint: request.mimeHint || "",
+        slideIndex: request.slideIndex ?? null
+      }
+    };
+  }
+  function defaultFilename(kind, shortcode, slideIndex) {
+    const code = shortcode || "media";
+    if (kind === "video") return `Instagram_${code}_video.mp4`;
+    if (kind === "cover") return `Instagram_${code}_thumb.jpg`;
+    if (kind === "photo") return `Instagram_${code}_image.jpg`;
+    if (kind === "carousel-slide") return `Instagram_${code}_slide_${String(Number(slideIndex || 0)).padStart(2, "0")}.jpg`;
+    return `Instagram_${code}_export.txt`;
+  }
+  function sanitizeFilename(filename) {
+    return String(filename || "Instagram_media").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").replace(/\s+/g, " ").trim().slice(0, 180) || "Instagram_media";
+  }
+  function result(ok, code, request, destinationMode, folderName, message, error = null) {
+    return {
+      ok,
+      code,
+      destinationMode,
+      folderName: folderName || null,
+      filename: request.filename,
+      message,
+      error
+    };
+  }
+  function failure(code, message, destinationMode, folderName = null, error = null) {
+    return { ok: false, result: { ok: false, code, destinationMode, folderName, message, error } };
+  }
+
   // src/legacy-runtime.js
   (function() {
     "use strict";
@@ -1284,23 +1840,23 @@
       var originalReplace = history.replaceState;
       if (!originalPush.__ri315) {
         history.pushState = function() {
-          var result = originalPush.apply(this, arguments);
+          var result2 = originalPush.apply(this, arguments);
           closeGridMenu();
           lastHistorySignature = "";
           scanEmbedded(true);
           scheduleRefresh();
-          return result;
+          return result2;
         };
         history.pushState.__ri315 = true;
       }
       if (!originalReplace.__ri315) {
         history.replaceState = function() {
-          var result = originalReplace.apply(this, arguments);
+          var result2 = originalReplace.apply(this, arguments);
           closeGridMenu();
           lastHistorySignature = "";
           scanEmbedded(true);
           scheduleRefresh();
-          return result;
+          return result2;
         };
         history.replaceState.__ri315 = true;
       }
@@ -1668,4 +2224,27 @@
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", scheduleRefresh, { once: true });
     else scheduleRefresh();
   })();
+
+  // src/main.js
+  var app = createApp();
+  var capabilities = detectCapabilities(globalThis);
+  var settings = createSettingsStore({
+    env: globalThis,
+    capabilities,
+    onChange(state) {
+      app.emit(EVENTS.SETTINGS_CHANGED, state);
+    }
+  });
+  var downloads = createDownloadManager({
+    env: globalThis,
+    capabilities,
+    settings,
+    onChange(state) {
+      app.emit(EVENTS.DOWNLOAD_CHANGED, state);
+    }
+  });
+  app.services = { capabilities, settings, downloads };
+  void settings.init().catch((error) => {
+    console.warn("[RI] settings initialization failed", error);
+  });
 })();
