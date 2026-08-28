@@ -28,10 +28,10 @@ export function createLegacyStoreAdapter({ env = globalThis } = {}) {
       mediaType: String(value('mediaType') || '').toUpperCase(),
       productType: value('productType') || '',
       canonicalUrl: value('canonicalUrl') || item.pageUrl || '',
-      views: value('views'),
-      likes: value('likes'),
-      comments: value('comments'),
-      reposts: value('reposts'),
+      views: optionalMetric(value('views')),
+      likes: optionalMetric(value('likes')),
+      comments: optionalMetric(value('comments')),
+      reposts: optionalMetric(value('reposts')),
       date: value('date') || '',
       videoUrl: value('videoUrl') || '',
       coverUrl: value('coverUrl') || '',
@@ -71,6 +71,10 @@ function fieldValue(item, key) {
   const field = item?.fields?.[key];
   if (field && (field.status === 'verified' || field.status === 'conflict')) return field.value;
   return item?.[key] ?? null;
+}
+
+function optionalMetric(value) {
+  return value == null || value === '' ? undefined : value;
 }
 
 function normalizeImages(value) {
