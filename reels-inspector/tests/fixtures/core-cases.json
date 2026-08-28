@@ -1,0 +1,19 @@
+{
+  "mediaTypes": [
+    {"name":"reel-product-type","input":{"media_type":2,"product_type":"clips"},"expected":"REEL"},
+    {"name":"carousel-media-type","input":{"media_type":8},"expected":"CAROUSEL"},
+    {"name":"feed-video-media-type","input":{"media_type":2},"expected":"VIDEO"},
+    {"name":"photo-media-type","input":{"media_type":1},"expected":"PHOTO"}
+  ],
+  "conflicts": [
+    {"name":"metric-small-growth-allowed","old":1000,"next":1100,"expected":"verified"},
+    {"name":"metric-drop-rejected","old":1000,"next":700,"expected":"conflict"},
+    {"name":"metric-instant-20x-jump-rejected","old":1000,"next":25000,"ageMs":30000,"expected":"conflict"}
+  ],
+  "grid": [
+    {"name":"photo-no-views","href":"/p/PHOTO1/","views":100000000,"expectedViewVisible":false},
+    {"name":"reel-views-visible","href":"/reel/REEL1/","views":420000,"expectedViewVisible":true},
+    {"name":"same-render-key-no-write","expected":"no-dom-write"},
+    {"name":"react-anchor-reuse","firstCode":"AAA","secondCode":"BBB","expected":"BBB"}
+  ]
+}
