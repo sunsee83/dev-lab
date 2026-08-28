@@ -1,69 +1,60 @@
 # Reels Inspector
 
-Instagram 모바일 웹에서 콘텐츠를 빠르게 조사하기 위한 Tampermonkey 리서치 도구입니다.
+Instagram 모바일 웹에서 콘텐츠를 빠르게 조사하기 위한 Tampermonkey 기반 Instagram Content Research Tool 프로토타입입니다.
 
 ## 기준 문서
 
-- `PROJECT_PLAN.md` — 제품 구조, 데이터 모델, UI 기준, 개발 로드맵
-- `STATUS.md` — 현재 배포 버전, 이번 변경, 검증 항목, 다음 작업
+개발 전에 아래 순서로 확인합니다.
 
-기능 수정/추가 전에는 두 문서와 현재 실행 파일을 먼저 확인합니다. 구조·기능·우선순위 결정이 바뀌면 문서도 함께 갱신합니다.
+1. `PROJECT_PLAN.md` — 제품 구조, 데이터 모델, 개발 로드맵의 단일 기준
+2. `STATUS.md` — 현재 배포 버전, 구현 상태, 다음 작업
+3. `GRID_BASELINE.md` — 현재 Grid Frozen UI 기준
+4. `tests/README.md` — Core/Grid 회귀검증 기준
 
-## 현재 상태
+구조·기능·우선순위 결정이 바뀌면 관련 문서도 코드와 함께 갱신합니다.
 
-- 현재 배포 버전: **v3.1.0**
-- 현재 단계: **Core Stabilization**
-- 현재 그리드 UI: **Frozen UI** — 외형과 정보 배치를 유지
-- 실제 실행 파일: `ri-retry.user.js` 하나
+## 현재 배포
+
+- 버전: **v3.1.1**
+- 실행: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
+- 배포 파일: `ri-retry.user.js`
 - 배포 방식: 단일 self-contained userscript
+- 별도 hotfix `@require` 체인 사용 안 함
 
-과거의 `@require` 체인, hotfix 파일, 테스트 설치 파일, 구형 모듈 파일은 모두 제거했습니다. 이전 버전은 Git 히스토리에서 복구할 수 있습니다.
-
-## 설치 URL
+## 설치/업데이트
 
 `https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js`
 
+## 현재 개발 단계
+
+**v3.1 Core Stabilization**
+
+- ContentIdentity
+- PHOTO / VIDEO / CAROUSEL / REEL mediaType
+- Verified Store + source/confidence/status/conflict
+- 중복 요청 방지
+- Event/Observer 기반 refresh
+- Grid renderKey
+- Grid Frozen UI 보존
+- 회귀 fixture 도입
+
+다음 단계는 Core/Grid 회귀검증 후 `v3.3 Content Types`로 진행합니다.
+
+## Grid Frozen UI
+
+- 썸네일 위 하단 정보영역 유지
+- 1줄: 조회수(릴스) · 좋아요 · 댓글 · 리포스트
+- 2줄: ER · 24h · 계정 대비 · 게시일
+- Photo/Carousel에는 검증되지 않은 조회수 기반 지표 미표시
+- 이미지/썸네일 액션 유지
+- Reel 순수영상 액션 유지
+- UI 세부 기준은 `GRID_BASELINE.md` 참고
+
 ## 개발 원칙
 
-- 새 수정은 별도 hotfix 파일을 추가하지 않고 `ri-retry.user.js` 안에서만 합니다.
-- UI보다 `Identity → Extractor → Verified Store → Metrics → UI` 데이터 흐름을 우선합니다.
-- 동일 UI/데이터를 여러 반복 루프가 동시에 수정하지 않게 합니다.
-- 사진/카드뉴스(`/p/`)에는 검증된 조회수가 없으면 조회수를 표시하지 않습니다.
-- Reels 피드와 일반 게시물 상세 화면을 구분합니다.
-- 값이 확인되지 않으면 임의 숫자를 만들지 않고 숨기거나 `—`/`확인 중`으로 표시합니다.
-- 그리드 Frozen UI는 명시적 변경 요청 없이는 재설계하지 않습니다.
-- `@version`을 올린 뒤 문법 검사 후 main에 반영합니다.
-- 실제 변경 내용과 다음 작업은 `STATUS.md`에 기록합니다.
-
-## 현재 목표 UI
-
-### 그리드
-
-- 1줄: 조회수(릴스만) · 좋아요 · 댓글 · 리포스트
-- 2줄: ER · 24h 증감 · 계정 대비 배수 · 게시일
-- 사진/카드뉴스는 조회수 기반 지표 제외
-- 이미지/순수영상 버튼 유지
-
-### Reels 피드
-
-화면 직접 표시:
-
-- 조회수
-- ER
-- 24h 증감
-- 계정 대비 배수
-- 게시일
-
-도구 패널:
-
-- 조회수 · 좋아요 · 댓글 · 리포스트
-- ER · 24h · 계정 대비 · 게시일
-- 영상 길이/해상도
-- 순수 영상 · 썸네일 · 링크 복사 · 업데이트
-- 하단 닫기 버튼
-
-## 실행 환경
-
-- Android Microsoft Edge
-- Tampermonkey
-- Instagram 모바일 웹
+- Identity → Extractor → Verified Store → Metrics → UI 흐름을 지킵니다.
+- UI마다 별도 데이터 파서를 만들지 않습니다.
+- 값이 확인되지 않으면 임의 수치를 만들지 않습니다.
+- 같은 값이면 DOM을 다시 그리지 않습니다.
+- Grid Frozen UI는 명시적 변경 요청이 없으면 유지합니다.
+- 수정 전 `PROJECT_PLAN.md`와 `STATUS.md`를 확인합니다.
