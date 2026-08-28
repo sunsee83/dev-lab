@@ -1,7 +1,7 @@
 # Instagram Content Research Tool — 개발 기준 문서
 
 > 이 문서는 프로젝트 개발의 **단일 기준 문서(Single Source of Truth)** 입니다.  
-> 기능을 수정하거나 추가하기 전에 이 문서와 `STATUS.md`, 관련 UI baseline, 현재 실행 파일을 먼저 확인합니다.  
+> 기능을 수정하거나 추가하기 전에 이 문서와 `STATUS.md`, `CODE_STRUCTURE.md`, 관련 UI baseline, 현재 실행 파일을 먼저 확인합니다.  
 > 요구사항·구조·UI·우선순위가 바뀌면 기존 설계를 먼저 검토한 뒤 새 결정을 통합하며, 관련 없는 기존 설계를 무턱대고 삭제하지 않습니다.
 
 ## 0. 현재 상태
@@ -821,7 +821,20 @@ AI는 최종 교정과 의미 분류를 담당한다.
 
 # 18. 개발 소스/배포 구조
 
-## 현재 Tampermonkey MVP
+실제 파일 분류·파일명·분리 기준·의존성 규칙은 **`CODE_STRUCTURE.md`를 구현 기준 문서로 사용**한다.
+
+## 18.1 Progressive Modularization
+
+파일 수를 늘리는 것이 목적이 아니다.
+
+- 실제 책임이 생길 때만 파일 생성
+- 빈 placeholder 폴더/파일을 미리 만들지 않음
+- 초기에는 약 10~15개의 의미 있는 소스 파일로 시작
+- 책임/테스트/재사용/변경주기 경계가 명확할 때만 분리
+- `old/new/final/fix/hotfix/backup/copy` 파일을 만들지 않음
+- 과거 버전은 Git history로 관리
+
+v3.2 초기 목표 구조:
 
 ```text
 reels-inspector/
@@ -829,25 +842,68 @@ reels-inspector/
 ├ PROJECT_PLAN.md
 ├ STATUS.md
 ├ GRID_BASELINE.md
+├ CODE_STRUCTURE.md
+├ .gitignore
 ├ tests/
-├ src/                 # 단계적으로 추가
+├ src/
+│  ├ main.js
 │  ├ core/
+│  │  ├ app.js
+│  │  └ capability.js
 │  ├ instagram/
-│  ├ data/
+│  │  ├ identity.js
+│  │  └ extractor.js
+│  ├ store/
+│  │  ├ verified-store.js
+│  │  └ settings-store.js
 │  ├ metrics/
-│  ├ comments/
+│  │  └ metrics.js
 │  ├ media/
+│  │  ├ media-resolver.js
+│  │  └ download-manager.js
 │  └ ui/
+│     ├ grid.js
+│     ├ reel.js
+│     ├ ri-panel.js
+│     └ styles.js
 └ ri-retry.user.js
 ```
 
-목표 build 흐름:
+필요가 생길 때만 extractor/normalizer/download-strategy/panel-tab/comments/analysis 등을 추가 분리한다.
 
-`src/* → build → ri-retry.user.js`
+## 18.2 Source of Truth 전환
 
-Tampermonkey에는 최종 single userscript만 설치한다.
+현재 v3.1.6까지는 `ri-retry.user.js`가 실제 실행 원본이다.
 
-## 향후 MV3
+v3.2 모듈화 이후 이중 원본 기간을 짧게 유지하고 최종적으로:
+
+```text
+src/* = 개발 원본
+  ↓
+build / check
+  ↓
+ri-retry.user.js = generated deployment artifact
+```
+
+로 고정한다.
+
+전환 후 `ri-retry.user.js` 직접 수작업 수정은 금지한다.
+
+Tampermonkey에는 계속 `ri-retry.user.js` 하나만 설치한다.
+
+## 18.3 Git 파일 관리
+
+`.gitignore`로 다음 로컬 자료가 저장소에 섞이지 않게 한다.
+
+- 다운로드한 Instagram 영상/사진
+- HAR/network capture/debug dump
+- `.env`/secret
+- 임시 파일/log/cache
+- 개인 테스트 데이터
+
+테스트 fixture는 cookie/token/private header/개인 raw dump를 제거한 sanitized data만 commit한다.
+
+## 18.4 향후 MV3
 
 - content script와 MAIN-world page hook 분리
 - 필요 시 bridge 사용
@@ -882,23 +938,26 @@ Tampermonkey에는 최종 single userscript만 설치한다.
 
 ## v3.2 — UI/Foundation
 
-기존의 단순 `Grid 안정화` 범위를 **Grid 안정화 + 전역 UI/다운로드 기반**으로 확장한다.
+기존의 단순 `Grid 안정화` 범위를 **Grid 안정화 + 전역 UI/다운로드 기반 + 단계적 소스 모듈화**로 확장한다.
 
 순서:
 
-1. 전역 RI 버튼을 모든 Instagram 화면에 표시
-2. 버튼 위치를 우측 하단 safe area로 통일
-3. 공용 RI Panel shell 생성
-4. `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell
-5. 공용 Settings Store
-6. 공통 Download Manager
-7. 카드 미디어 메뉴에서 저장 폴더 설정 제거
-8. 지정 폴더/기본 Downloads/매번 선택 정책 구현
-9. 영상·썸네일·사진·캐러셀의 저장경로를 완전히 동일한 manager로 통합
-10. 8개 Grid 고정 슬롯 실기기 마감
-11. Video/Reel cover identity 회귀 마감
-12. Carousel ZIP 없는 개별 batch 저장 안정화
-13. regression fixture/실기기 검증
+1. `CODE_STRUCTURE.md` 기준 최소 Foundation 소스 작성
+2. capability detection
+3. 공용 Settings Store
+4. 공통 Download Manager 기반
+5. 전역 RI 버튼을 모든 Instagram 화면에 표시
+6. 버튼 위치를 우측 하단 safe area로 통일
+7. 공용 RI Panel shell 생성
+8. `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정` 탭 shell
+9. 카드 미디어 메뉴에서 저장 폴더 설정 제거
+10. 지정 폴더/기본 Downloads/매번 선택 정책 구현
+11. 영상·썸네일·사진·캐러셀의 저장경로를 완전히 동일한 manager로 통합
+12. 8개 Grid 고정 슬롯 실기기 마감
+13. Video/Reel cover identity 회귀 마감
+14. Carousel ZIP 없는 개별 batch 저장 안정화
+15. regression fixture/실기기 검증
+16. 안정된 기능부터 `src/*` source-of-truth로 단계 전환
 
 ## v3.3 — Content Types
 
@@ -977,12 +1036,12 @@ Tampermonkey에서 검증된 엔진을 정식 확장프로그램 구조로 이�
 
 요구사항이나 설계가 바뀔 때는 다음을 지킨다.
 
-1. 기존 `PROJECT_PLAN.md`, `STATUS.md`, 관련 baseline/test를 먼저 읽는다.
+1. 기존 `PROJECT_PLAN.md`, `STATUS.md`, `CODE_STRUCTURE.md`, 관련 baseline/test를 먼저 읽는다.
 2. 새 요구사항이 기존 제품 목표·데이터 구조·UI 역할과 충돌하는지 확인한다.
 3. 기존 설계를 통째로 삭제하거나 과거 버전으로 되돌리지 않는다.
 4. 유지할 결정과 바뀔 결정을 구분해서 현재 구조에 통합한다.
 5. 기존 결정이 더 이상 유효하지 않으면 해당 문구를 새 결정으로 교체하고 `STATUS.md`에 변경 이유를 남긴다.
-6. 구조/UI/우선순위가 바뀌면 코드보다 먼저 또는 같은 작업에서 문서를 갱신한다.
+6. 구조/UI/우선순위/파일 책임이 바뀌면 코드보다 먼저 또는 같은 작업에서 관련 문서를 갱신한다.
 7. 코드가 설계문서보다 앞서 장기간 표류하지 않게 한다.
 8. 실기기에서 좋아졌다고 확인된 동작은 다음 설계 변경에서도 누적 보존한다.
 
@@ -998,6 +1057,7 @@ Tampermonkey에서 검증된 엔진을 정식 확장프로그램 구조로 이�
 - 미디어 종류별로 서로 다른 저장 위치 정책을 만들지 않는다.
 - 지정 폴더 저장 실패 시 사용자에게 알리지 않고 다른 폴더로 조용히 저장하지 않는다.
 - 하나의 버그를 막기 위해 새 hotfix userscript를 계속 `@require`하지 않는다.
+- `old`, `backup`, `final2` 같은 보관용 소스 파일을 만들지 않는다.
 - UI마다 별도 데이터 parser를 만들지 않는다.
 - 서버에 Instagram login cookie를 전달하는 구조를 기본 설계로 삼지 않는다.
 - AI를 deterministic extraction/정렬보다 앞에 두지 않는다.
@@ -1010,17 +1070,18 @@ Tampermonkey에서 검증된 엔진을 정식 확장프로그램 구조로 이�
 
 1. `PROJECT_PLAN.md` 확인
 2. `STATUS.md` 확인
-3. 관련 baseline/test 확인
-4. 현재 `ri-retry.user.js` 확인
-5. 수정 대상 계층 식별: Identity / Extractor / Store / Metrics / Media / UI
-6. 기존 승인 기능과 회귀 위험 확인
-7. 설계가 바뀌면 문서 먼저 또는 동시에 갱신
-8. 코드 수정
-9. 문법 검사
-10. 회귀 항목 확인
-11. 의미 있는 변경이면 version bump
-12. GitHub 반영
-13. `STATUS.md`에 구현/검증/미해결/다음 단계 기록
+3. `CODE_STRUCTURE.md` 확인
+4. 관련 baseline/test 확인
+5. 현재 `ri-retry.user.js`와 관련 `src/*` 확인
+6. 수정 대상 계층 식별: Identity / Extractor / Store / Metrics / Media / UI
+7. 기존 승인 기능과 회귀 위험 확인
+8. 설계/파일 책임이 바뀌면 문서 먼저 또는 동시에 갱신
+9. 코드 수정
+10. 문법 검사
+11. 회귀 항목 확인
+12. 의미 있는 변경이면 version bump
+13. GitHub 반영
+14. `STATUS.md`에 구현/검증/미해결/다음 단계 기록
 
 ## 작업 보고 시 반드시 남길 것
 
