@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createLegacyStoreAdapter } from '../../src/migration/legacy-store-adapter.js';
-import { resolveGridCardMedia, extensionFromUrl } from '../../src/media/media-resolver.js';
+import { resolveGridCardMedia, extensionFromUrl, mediaFilename } from '../../src/media/media-resolver.js';
 
 test('legacy migration adapter exposes verified cache values and current identity', () => {
   const item = {
@@ -52,6 +52,13 @@ test('media resolver keeps the large card body image instead of a small album im
   assert.equal(media.imageUrl, 'https://cdn.example.test/body.jpg');
   assert.equal(media.type, 'REEL');
   assert.equal(extensionFromUrl('https://cdn.example.test/a.JPG?x=1', '.jpg'), '.jpg');
+});
+
+test('media filename is owned by the media layer and preserves kind/index conventions', () => {
+  assert.equal(mediaFilename({ kind: 'video', shortcode: 'ABC123', url: 'https://cdn.example.test/v.mp4?x=1' }), 'Instagram_ABC123_video.mp4');
+  assert.equal(mediaFilename({ kind: 'cover', shortcode: 'ABC123', url: 'https://cdn.example.test/no-extension' }), 'Instagram_ABC123_thumb.jpg');
+  assert.equal(mediaFilename({ kind: 'photo', shortcode: 'ABC123', url: 'https://cdn.example.test/a.webp' }), 'Instagram_ABC123_image.webp');
+  assert.equal(mediaFilename({ kind: 'carousel-slide', shortcode: 'CAR123', url: 'https://cdn.example.test/2.jpg', slideIndex: 2 }), 'Instagram_CAR123_slide_02.jpg');
 });
 
 function fakeImage({ left, top, width, height, src, alt = '' }) {

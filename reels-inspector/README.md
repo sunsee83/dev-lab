@@ -1,49 +1,35 @@
 # Reels Inspector
 
-Instagram 모바일 웹에서 콘텐츠를 빠르게 조사하기 위한 Tampermonkey 기반 Instagram Content Research Tool 프로토타입입니다.
+Instagram 모바일 웹에서 Reel·영상·사진·캐러셀·캡션·댓글·성과를 조사하기 위한 Tampermonkey 기반 **Instagram Content Research Tool** 프로토타입입니다.
 
 ## 기준 문서
 
-개발 전에 아래 순서로 확인합니다.
+개발 전 확인 순서:
 
-1. `PROJECT_PLAN.md` — 제품 구조, 데이터 모델, 전체 UI, 다운로드 구조, 개발 로드맵의 단일 기준
-2. `STATUS.md` — 현재 배포 버전, 실기기 확인사항, 다음 구현 순서
-3. `GRID_BASELINE.md` — Grid Frozen UI 세부 기준
-4. `CODE_STRUCTURE.md` — 실제 코드 파일 구조, 파일 책임, 분리/생성 규칙
-5. `tests/README.md` — Core/Grid/UI/Foundation 회귀검증 기준
+1. `PROJECT_PLAN.md` — 제품/데이터/UI/로드맵
+2. `STATUS.md` — 현재 배포/실기기 상태/다음 작업
+3. `GRID_BASELINE.md` — Grid Frozen UI 회귀 기준
+4. `CODE_STRUCTURE.md` — 실제 파일 구조/owner/API/build/migration 규칙
+5. `tests/README.md` — 회귀/실기기 승인 기준
 
-요구사항·구조·UI·우선순위가 바뀌면 기존 설계를 먼저 참고한 뒤 새 결정을 현재 구조에 통합하고 관련 문서를 갱신합니다. 관련 없는 기존 설계를 통째로 삭제하거나 과거 방식으로 되돌리지 않습니다.
+새 요구사항은 기존 설계를 먼저 검토한 뒤 현재 구조에 통합합니다. 관련 없는 기존 결정을 통째로 삭제하거나 좋아진 동작을 되돌리지 않습니다.
 
 ## 현재 배포
 
-- 버전: **v3.1.6**
+- 버전: **v3.2.1**
 - 실행: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
 - 배포 파일: `ri-retry.user.js`
-- 배포 방식: 단일 self-contained userscript
-- 별도 hotfix `@require` 체인 사용 안 함
+- 개발 원본: `src/*`
+- 배포 방식: self-contained userscript 1개
+- runtime `@require` hotfix 체인 없음
 
-## 설치/업데이트
+설치/업데이트:
 
 `https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js`
 
-## 현재 개발 단계
+`ri-retry.user.js`는 generated artifact입니다. 직접 수정하지 않습니다.
 
-**v3.1 Core/Grid 안정화 → v3.2 UI/Foundation 준비**
-
-v3.1에서 확보한 기반:
-
-- ContentIdentity
-- PHOTO / VIDEO / CAROUSEL / REEL mediaType
-- Verified Store + source/confidence/status/conflict
-- pending request dedupe
-- Event/Observer 기반 refresh
-- Grid renderKey
-- 숫자 깜빡임 제거
-- Grid 8개 고정 슬롯
-- Video/Reel cover identity
-- Carousel 개별 batch 다운로드 기반
-
-## 확정된 UI 역할
+## 현재 UI 역할
 
 ```text
 Grid = 빠른 비교/발굴
@@ -54,138 +40,175 @@ RI = 전체 리서치/상세 기능
 
 ### Grid
 
-- 썸네일 위 하단 정보영역 유지
+- Instagram 기존 3열 유지
+- 썸네일 하단 2줄 정보영역
 - 1줄: 조회수 · 좋아요 · 댓글 · 리포스트
 - 2줄: ER · 24h · 계정 대비 · 게시일
-- 값이 없으면 슬롯을 없애지 않고 `-`
-- 각 슬롯은 다른 값 길이에 밀리지 않는 고정 x 영역
-- 카드당 우리 미디어 버튼은 1개
+- 값 없으면 `-`
+- 각 지표 독립 고정 x 영역
+- 카드당 우리 미디어 버튼 1개
 - Instagram 기본 media-type 아이콘 유지
 
-### 전역 RI 버튼
+### 전역 RI
 
-현재 Reel RI 도구 버튼을 모든 Instagram 화면의 공용 진입점으로 확장합니다.
+모든 Instagram 화면에서 같은 RI 버튼 1개를 사용합니다.
 
 - 프로필 / 검색 / 탐색 / Grid
 - Reel
 - 일반 Post / Photo / Video / Carousel 상세
 
-전역 RI Panel 목표 탭:
+Panel 탭:
 
 `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`
 
+현재 `요약 / 미디어 / 설정`부터 실제 데이터/서비스와 연결되어 있고 나머지는 단계적으로 연결합니다.
+
 ## 저장 구조
 
-Grid 카드 메뉴에는 저장 위치 설정을 두지 않습니다.
+Grid 카드 메뉴는 **무엇을 저장할지**만 결정합니다.
 
-카드 메뉴는 현재 콘텐츠 액션만 제공합니다.
+- Reel/Video: 영상 / 썸네일 / 링크
+- Photo: 이미지 / 링크
+- Carousel: 전체 이미지 / 대표 이미지 / 링크
 
-- Reel/Video: 영상 다운로드 / 썸네일 다운로드 / 링크 복사
-- Photo: 이미지 다운로드 / 링크 복사
-- Carousel: 전체 이미지 다운로드 / 대표 이미지 다운로드 / 링크 복사
-
-저장 위치는 전역 RI `설정`에서 관리하고, 영상·썸네일·사진·Carousel이 하나의 **공통 Download Manager**를 사용하도록 통합합니다.
-
-지원 가능한 저장정책:
+저장 위치는 RI `설정`의 전역 정책입니다.
 
 - 지정 폴더
 - 기본 Downloads
 - 매번 선택
 
-실제 브라우저 API/permission을 확인해 가능한 옵션만 노출합니다.
+영상·썸네일·사진·Carousel은 모두 같은 `Download Manager`를 사용합니다. 지정 폴더 저장 실패 시 기본 Downloads로 조용히 바꾸지 않습니다.
 
-## 코드 파일 관리
+## v3.2.1 구조 개선
 
-코드는 **Progressive Modularization** 방식으로 관리합니다.
+### SPA context
 
-- 처음부터 수십 개 파일을 만들지 않음
-- 실제 책임이 생길 때만 파일 생성
-- 초기 `src/`는 약 10~15개 의미 있는 파일로 시작
-- 책임/테스트/재사용 경계가 명확해질 때만 분리
-- 빈 placeholder 폴더/파일을 미리 만들지 않음
-- `old`, `backup`, `hotfix`, `final2` 같은 보관용 파일 금지
-- 과거 버전은 Git history로 관리
+`core/app.js`가 Instagram SPA route lifecycle을 관리합니다.
 
-초기 목표 구조:
+- URL 변경 시 current identity 갱신
+- 열린 RI Panel도 route/identity event에 따라 갱신
+- Grid의 열린 action menu는 route 변경 시 닫힘
+- history override를 새로 겹쳐 쌓지 않음
+
+### 중복 제거
+
+두 번째 사용처가 실제 생긴 기능만 공통 owner로 승격했습니다.
+
+```text
+링크 복사        → core/clipboard.js
+미디어 파일명    → media/media-resolver.js
+저장 destination → media/download-manager.js
+저장 설정        → store/settings-store.js
+```
+
+Grid/RI Panel이 각자 clipboard fallback이나 `Instagram_<shortcode>_...` 파일명 조립을 다시 만들지 않습니다.
+
+`check.mjs`도 이를 강제합니다.
+
+## 실제 소스 구조
 
 ```text
 src/
+├ version.js
 ├ main.js
+├ legacy-runtime.js
+├ migration/
+│  └ legacy-store-adapter.js
 ├ core/
 │  ├ app.js
-│  └ capability.js
-├ instagram/
-│  ├ identity.js
-│  └ extractor.js
+│  ├ capability.js
+│  └ clipboard.js
 ├ store/
-│  ├ verified-store.js
 │  └ settings-store.js
-├ metrics/
-│  └ metrics.js
 ├ media/
 │  ├ media-resolver.js
 │  └ download-manager.js
 └ ui/
    ├ grid.js
-   ├ reel.js
    ├ ri-panel.js
+   ├ toast.js
    └ styles.js
 ```
 
-세부 파일 책임, 분리 기준, 의존성 규칙은 `CODE_STRUCTURE.md`를 따릅니다.
+`legacy-runtime.js`는 backup이 아니라 migration용 기존 검증 runtime입니다. 새 owner로 책임이 이동하면 기존 구현을 제거하고, migration 종료 후 파일 자체를 삭제합니다.
 
-목표 흐름:
+## Build / Test
 
 ```text
 src/*
   ↓
-build / check
+npm test
   ↓
-ri-retry.user.js
+npm run build
+  ↓
+npm run check
+  ↓
+node --check ri-retry.user.js
+  ↓
+generated deployment artifact
 ```
 
-모듈 전환이 완료되면:
+버전 단일 원본은 `src/version.js`입니다.
 
-- `src/*` = 사람이 수정하는 개발 원본
-- `ri-retry.user.js` = 생성된 Tampermonkey 배포파일
+자동 구조 검사는 다음을 포함합니다.
 
-으로 고정합니다.
+- 금지 backup/hotfix/copy 계열 파일명
+- UI의 storage/File System API 직접 사용
+- UI의 fetch/XHR/Blob transport 직접 구현
+- UI의 clipboard fallback 직접 구현
+- UI의 기본 media filename 직접 조립
+- metrics의 DOM 접근
+- store → ui import
+- 순환 import
+- source/generated/STATUS version 불일치
+- 일반 source 파일 크기 기준
+- 긴 duplicate block 후보
 
-## Git 파일 관리
+## 파일 관리
 
-`.gitignore`를 사용해 다음 로컬 자료가 저장소에 섞이지 않게 합니다.
+Progressive Modularization 원칙을 사용합니다.
+
+- 실제 책임/두 번째 사용처가 생길 때만 파일 생성
+- 빈 placeholder 파일/폴더를 미리 만들지 않음
+- `old`, `backup`, `hotfix`, `final2`, `copy` 파일 금지
+- 과거 버전은 Git history 사용
+- 350줄부터 책임 분리 검토, 500줄 초과는 원칙적으로 분리
+- `legacy-runtime.js`만 migration 기간 크기 예외
+
+Git에 넣지 않는 것:
 
 - 다운로드한 Instagram 영상/사진
-- HAR/network capture/debug dump
+- HAR/network raw capture
 - `.env`/secret
-- 임시 파일/로그/cache
-- 개인 테스트 데이터
+- cookie/token/private header
+- debug dump/log/cache
+- 개인 계정 raw fixture
 
-테스트용 Instagram 데이터는 필요한 구조만 남긴 **sanitized fixture**만 commit합니다.
+테스트 fixture는 sanitized data만 저장합니다.
 
-`ri-retry.user.js`는 Tampermonkey 직접 설치/업데이트 대상이므로 generated artifact가 된 이후에도 GitHub에서 계속 추적합니다.
+## 현재 실기기 검증이 필요한 것
 
-## 다음 구현 — v3.2 UI/Foundation
+- v3.2.x 전역 RI 버튼/Panel 실제 배치
+- Grid 메뉴에서 폴더 설정 제거 여부
+- 지정 폴더가 video/photo/cover/carousel에 공통 적용되는지
+- image/cover의 cross-origin directory 저장 여부
+- prompt mode
+- Carousel batch
+- SPA Reel/Post 이동 시 이전 shortcode가 RI Panel에 남지 않는지
+- 기존 Grid 8-slot/no-flicker/cover 개선 유지
 
-1. 신규 Foundation 소스 모듈 생성
-2. 전역 RI 버튼
-3. 공용 RI Panel shell
-4. 설정 탭 / Settings Store
-5. 공통 Download Manager
-6. 카드 메뉴에서 폴더 설정 제거
-7. 영상·썸네일·사진·Carousel 저장정책 통합
-8. Grid 8슬롯/cover/Carousel 회귀 마감
-9. 실기기 검증
+cross-origin image 문제가 실제 확인되면 UI를 다시 만들지 않고 `media transport` 계층만 분리합니다.
 
-이후 `v3.3 Content Types → v3.4 Research Detail UI → v3.5 Comments → v3.6 Research Features → v4.x STT/OCR/AI → v5.0 MV3` 순서로 진행합니다.
+## 다음 개발
 
-## 개발 원칙
+1. v3.2 저장정책/SPA UI 실기기 검증
+2. 필요 시 media transport 분리
+3. Store live binding 강화
+4. RI safe-area 보정
+5. Metrics Engine → ER/24h/계정 대비 연결
+6. Reel identity/native metrics 개선
+7. Identity → Extractor → Verified Store → Metrics → renderer 순으로 legacy migration
 
-- Identity → Extractor → Normalizer → Verified Store → Metrics → UI 흐름을 지킵니다.
-- UI마다 별도 데이터 parser를 만들지 않습니다.
-- 값이 확인되지 않으면 임의 수치를 만들지 않습니다.
-- 같은 값이면 DOM을 다시 그리지 않습니다.
-- Grid Frozen UI는 관련 없는 기능 때문에 되돌리지 않습니다.
-- 실기기에서 좋아진 동작은 누적 보존합니다.
-- 파일 수보다 책임 분리와 회귀 방지를 우선합니다.
-- 설계 변경 시 `PROJECT_PLAN.md`, `CODE_STRUCTURE.md`와 관련 문서를 코드보다 먼저 또는 같은 작업에서 갱신합니다.
+이후:
+
+`v3.3 Content Types → v3.4 Research Detail UI → v3.5 Comments → v3.6 Research Features → v4.x STT/OCR/AI → v5.0 MV3`

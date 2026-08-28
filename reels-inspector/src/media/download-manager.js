@@ -1,4 +1,5 @@
 import { requestHandlePermission } from '../core/capability.js';
+import { mediaFilename } from './media-resolver.js';
 
 const VALID_KINDS = new Set(['video', 'cover', 'photo', 'carousel-slide', 'export']);
 
@@ -201,7 +202,12 @@ function normalizeRequest(request) {
   }
 
   const shortcode = String(request.shortcode || '').replace(/[^A-Za-z0-9_-]/g, '');
-  const filename = sanitizeFilename(request.filename || defaultFilename(request.kind, shortcode, request.slideIndex));
+  const filename = sanitizeFilename(request.filename || mediaFilename({
+    kind: request.kind,
+    shortcode,
+    url: request.url,
+    slideIndex: request.slideIndex
+  }));
   return {
     ok: true,
     request: {
@@ -213,15 +219,6 @@ function normalizeRequest(request) {
       slideIndex: request.slideIndex ?? null
     }
   };
-}
-
-function defaultFilename(kind, shortcode, slideIndex) {
-  const code = shortcode || 'media';
-  if (kind === 'video') return `Instagram_${code}_video.mp4`;
-  if (kind === 'cover') return `Instagram_${code}_thumb.jpg`;
-  if (kind === 'photo') return `Instagram_${code}_image.jpg`;
-  if (kind === 'carousel-slide') return `Instagram_${code}_slide_${String(Number(slideIndex || 0)).padStart(2, '0')}.jpg`;
-  return `Instagram_${code}_export.txt`;
 }
 
 function sanitizeFilename(filename) {

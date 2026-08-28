@@ -13,6 +13,7 @@ export function createApp({ version = '' } = {}) {
   let destroyed = false;
   let route = { href: '', pathname: '' };
   let currentIdentity = null;
+  let stopRouteTracking = null;
 
   const app = {
     version,
@@ -91,8 +92,62 @@ export function createApp({ version = '' } = {}) {
       return currentIdentity;
     },
 
+    startRouteTracking({ env = globalThis, resolveIdentity } = {}) {
+      stopRouteTracking?.();
+      if (destroyed) return () => {};
+
+      const doc = env.document;
+      let stopped = false;
+      let queued = false;
+      let lastHref = '';
+
+      const sync = () => {
+        queued = false;
+        if (stopped || destroyed) return;
+        const href = String(env.location?.href || '');
+        if (href === lastHref) return;
+        lastHref = href;
+        app.setRoute({ href, pathname: String(env.location?.pathname || '') });
+        if (typeof resolveIdentity === 'function') {
+          try {
+            app.setCurrentIdentity(resolveIdentity(href) || null);
+          } catch (error) {
+            console.warn('[RI] route identity sync failed', error);
+            app.setCurrentIdentity(null);
+          }
+        }
+      };
+
+      const schedule = () => {
+        if (stopped || destroyed || queued) return;
+        queued = true;
+        const raf = env.requestAnimationFrame || ((fn) => (env.setTimeout || setTimeout)(fn, 16));
+        raf(sync);
+      };
+
+      const observer = env.MutationObserver && doc?.documentElement
+        ? new env.MutationObserver(schedule)
+        : null;
+      observer?.observe(doc.documentElement, { childList: true, subtree: true });
+
+      const eventNames = ['popstate', 'hashchange', 'pageshow'];
+      for (const name of eventNames) env.addEventListener?.(name, schedule, true);
+      sync();
+
+      const cleanup = () => {
+        if (stopped) return;
+        stopped = true;
+        observer?.disconnect();
+        for (const name of eventNames) env.removeEventListener?.(name, schedule, true);
+        if (stopRouteTracking === cleanup) stopRouteTracking = null;
+      };
+      stopRouteTracking = cleanup;
+      return cleanup;
+    },
+
     destroy() {
       if (destroyed) return;
+      stopRouteTracking?.();
       destroyed = true;
       listeners.clear();
       renderQueue.clear();

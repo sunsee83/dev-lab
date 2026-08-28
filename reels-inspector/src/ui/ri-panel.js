@@ -1,6 +1,7 @@
+import { EVENTS } from '../core/app.js';
+import { copyText } from '../core/clipboard.js';
 import { injectStyles } from './styles.js';
 import { showResult, showToast } from './toast.js';
-import { extensionFromUrl } from '../media/media-resolver.js';
 
 const TABS = [
   ['summary', '요약'],
@@ -38,6 +39,8 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
     settingsState = next;
     if (open && activeTab === 'settings') renderBody();
   });
+  const unsubscribeRoute = app?.on?.(EVENTS.ROUTE_CHANGED, scheduleContextRender) || (() => {});
+  const unsubscribeIdentity = app?.on?.(EVENTS.IDENTITY_CHANGED, scheduleContextRender) || (() => {});
 
   button.addEventListener('click', toggle);
 
@@ -62,6 +65,17 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
     button.setAttribute('aria-expanded', 'false');
     panel?.remove();
     panel = null;
+  }
+
+  function scheduleContextRender() {
+    if (!open || activeTab === 'settings') return;
+    if (app?.scheduleRender) {
+      app.scheduleRender('ri32-panel-context', () => {
+        if (open && activeTab !== 'settings') renderBody();
+      });
+      return;
+    }
+    renderBody();
   }
 
   function ensurePanel() {
@@ -120,6 +134,7 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
   function renderSummary(body, post) {
     if (!post?.shortcode) return renderEmpty(body, '현재 콘텐츠가 선택되지 않았습니다.');
     const section = createSection(body, '현재 콘텐츠');
+    addRow(section, '계정', post.username ? `@${post.username}` : '—');
     addRow(section, 'Shortcode', post.shortcode);
     addRow(section, '유형', post.mediaType || '확인 중');
     addRow(section, '조회수', countLabel(post.views));
@@ -137,30 +152,33 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
     if (!post?.shortcode) return renderEmpty(body, '현재 콘텐츠가 선택되지 않았습니다.');
     const section = createSection(body, '미디어');
     const type = String(post.mediaType || '').toUpperCase();
+    let actionCount = 0;
+
     if ((type === 'REEL' || type === 'VIDEO') && post.videoUrl) {
-      addAction(section, '영상 다운로드', () => save({
-        kind: 'video', shortcode: post.shortcode, url: post.videoUrl,
-        filename: `Instagram_${post.shortcode}_video${extensionFromUrl(post.videoUrl, '.mp4')}`
-      }));
+      addAction(section, '영상 다운로드', () => save({ kind: 'video', shortcode: post.shortcode, url: post.videoUrl }));
+      actionCount += 1;
     }
     if ((type === 'REEL' || type === 'VIDEO') && (post.coverUrl || post.thumbUrl)) {
       const url = post.coverUrl || post.thumbUrl;
-      addAction(section, '썸네일 다운로드', () => save({
-        kind: 'cover', shortcode: post.shortcode, url,
-        filename: `Instagram_${post.shortcode}_thumb${extensionFromUrl(url, '.jpg')}`
-      }));
+      addAction(section, '썸네일 다운로드', () => save({ kind: 'cover', shortcode: post.shortcode, url }));
+      actionCount += 1;
     }
     if (type === 'PHOTO' && (post.coverUrl || post.thumbUrl)) {
       const url = post.coverUrl || post.thumbUrl;
-      addAction(section, '이미지 다운로드', () => save({
-        kind: 'photo', shortcode: post.shortcode, url,
-        filename: `Instagram_${post.shortcode}_image${extensionFromUrl(url, '.jpg')}`
-      }));
+      addAction(section, '이미지 다운로드', () => save({ kind: 'photo', shortcode: post.shortcode, url }));
+      actionCount += 1;
     }
     if (type === 'CAROUSEL' && post.carouselImages?.length) {
       addAction(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
+      actionCount += 1;
     }
     addAction(section, '링크 복사', () => copyCurrentLink(post));
+    if (!actionCount) {
+      const note = doc.createElement('div');
+      note.className = 'ri32-note';
+      note.textContent = '원본 미디어 주소는 아직 확보되지 않았습니다.';
+      section.appendChild(note);
+    }
   }
 
   function renderPlaceholder(body, post) {
@@ -228,11 +246,7 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
 
   async function saveBatch(post) {
     const requests = post.carouselImages.map((url, index) => ({
-      kind: 'carousel-slide',
-      shortcode: post.shortcode,
-      url,
-      slideIndex: index + 1,
-      filename: `Instagram_${post.shortcode}_slide_${String(index + 1).padStart(2, '0')}${extensionFromUrl(url, '.jpg')}`
+      kind: 'carousel-slide', shortcode: post.shortcode, url, slideIndex: index + 1
     }));
     showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
     showResult(doc, await downloads.downloadBatch(requests));
@@ -240,24 +254,18 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
 
   async function copyCurrentLink(post) {
     const text = post.canonicalUrl || `https://www.instagram.com/${post.mediaType === 'REEL' ? 'reel' : 'p'}/${post.shortcode}/`;
-    try {
-      if (capabilities?.clipboard && env.navigator?.clipboard?.writeText) {
-        await env.navigator.clipboard.writeText(text);
-        return showToast(doc, '링크를 복사했습니다.');
-      }
-    } catch {}
-    showToast(doc, '이 환경에서는 링크 복사를 완료하지 못했습니다.');
+    const ok = await copyText(text, { env, doc, capabilities });
+    showToast(doc, ok ? '링크를 복사했습니다.' : '링크 복사에 실패했습니다.');
   }
 
   function syncCurrentIdentity() {
     const identity = adapter?.getCurrentIdentity?.() || null;
-    app?.setRoute?.({ href: env.location?.href || '', pathname: env.location?.pathname || '' });
     app?.setCurrentIdentity?.(identity);
     return identity;
   }
 
   function currentPost() {
-    const identity = syncCurrentIdentity() || app?.getCurrentIdentity?.();
+    const identity = app?.getCurrentIdentity?.() || syncCurrentIdentity();
     return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
   }
 
@@ -303,6 +311,8 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
     if (destroyed) return;
     destroyed = true;
     unsubscribeSettings();
+    unsubscribeRoute();
+    unsubscribeIdentity();
     button?.removeEventListener('click', toggle);
     panel?.remove();
     button?.remove();

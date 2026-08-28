@@ -20,6 +20,18 @@ export function extensionFromUrl(url, fallback = '') {
   return match ? `.${match[1].toLowerCase()}` : fallback;
 }
 
+export function mediaFilename({ kind, shortcode, url = '', slideIndex = null } = {}) {
+  const code = String(shortcode || 'media').replace(/[^A-Za-z0-9_-]/g, '') || 'media';
+  if (kind === 'video') return `Instagram_${code}_video${extensionFromUrl(url, '.mp4')}`;
+  if (kind === 'cover') return `Instagram_${code}_thumb${extensionFromUrl(url, '.jpg')}`;
+  if (kind === 'photo') return `Instagram_${code}_image${extensionFromUrl(url, '.jpg')}`;
+  if (kind === 'carousel-slide') {
+    const index = Math.max(0, Number(slideIndex || 0));
+    return `Instagram_${code}_slide_${String(index).padStart(2, '0')}${extensionFromUrl(url, '.jpg')}`;
+  }
+  return `Instagram_${code}_export.txt`;
+}
+
 function effectiveType(anchor, post) {
   const stored = String(post?.mediaType || '').toUpperCase();
   if (['REEL', 'VIDEO', 'PHOTO', 'CAROUSEL'].includes(stored)) return stored;

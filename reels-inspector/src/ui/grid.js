@@ -1,4 +1,6 @@
-import { resolveGridCardMedia, extensionFromUrl } from '../media/media-resolver.js';
+import { EVENTS } from '../core/app.js';
+import { copyText } from '../core/clipboard.js';
+import { resolveGridCardMedia } from '../media/media-resolver.js';
 import { showResult, showToast } from './toast.js';
 
 const MENU_ID = 'ri32-grid-menu';
@@ -11,6 +13,7 @@ export function mountGridActions({ app, adapter, downloads, capabilities, doc = 
   doc.addEventListener('click', onClick, true);
   env.addEventListener?.('scroll', closeMenu, true);
   env.addEventListener?.('resize', closeMenu, true);
+  const unsubscribeRoute = app?.on?.(EVENTS.ROUTE_CHANGED, closeMenu) || (() => {});
 
   function onPointerDown(event) {
     const mediaButton = event.target?.closest?.('.ri3-grid-media');
@@ -52,37 +55,25 @@ export function mountGridActions({ app, adapter, downloads, capabilities, doc = 
 
     if (media.type === 'REEL' || media.type === 'VIDEO') {
       addButton(menu, media.videoUrl ? '영상 다운로드' : '영상 준비중', !!media.videoUrl, () => downloadSingle({
-        kind: 'video',
-        shortcode,
-        url: media.videoUrl,
-        filename: `Instagram_${shortcode}_video${extensionFromUrl(media.videoUrl, '.mp4')}`
+        kind: 'video', shortcode, url: media.videoUrl
       }));
       addButton(menu, media.imageUrl ? '썸네일 다운로드' : '썸네일 준비중', !!media.imageUrl, () => downloadSingle({
-        kind: 'cover',
-        shortcode,
-        url: media.imageUrl,
-        filename: `Instagram_${shortcode}_thumb${extensionFromUrl(media.imageUrl, '.jpg')}`
+        kind: 'cover', shortcode, url: media.imageUrl
       }));
     } else if (media.type === 'CAROUSEL') {
       const count = media.carouselImages.length;
       addButton(menu, count ? `전체 이미지 다운로드 (${count})` : '전체 이미지 준비중', count > 0, () => downloadCarousel(shortcode, media.carouselImages));
       addButton(menu, media.imageUrl ? '대표 이미지 다운로드' : '대표 이미지 준비중', !!media.imageUrl, () => downloadSingle({
-        kind: 'photo',
-        shortcode,
-        url: media.imageUrl,
-        filename: `Instagram_${shortcode}_cover${extensionFromUrl(media.imageUrl, '.jpg')}`
+        kind: 'photo', shortcode, url: media.imageUrl
       }));
     } else {
       addButton(menu, media.imageUrl ? '이미지 다운로드' : '이미지 준비중', !!media.imageUrl, () => downloadSingle({
-        kind: 'photo',
-        shortcode,
-        url: media.imageUrl,
-        filename: `Instagram_${shortcode}_image${extensionFromUrl(media.imageUrl, '.jpg')}`
+        kind: 'photo', shortcode, url: media.imageUrl
       }));
     }
 
     addButton(menu, '링크 복사', !!media.pageUrl, async () => {
-      const ok = await copyText(media.pageUrl);
+      const ok = await copyText(media.pageUrl, { env, doc, capabilities });
       showToast(doc, ok ? '링크를 복사했습니다.' : '링크 복사에 실패했습니다.');
     });
 
@@ -121,36 +112,12 @@ export function mountGridActions({ app, adapter, downloads, capabilities, doc = 
       kind: 'carousel-slide',
       shortcode,
       url,
-      slideIndex: index + 1,
-      filename: `Instagram_${shortcode}_slide_${String(index + 1).padStart(2, '0')}${extensionFromUrl(url, '.jpg')}`
+      slideIndex: index + 1
     }));
     showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
     const result = await downloads.downloadBatch(requests);
     showResult(doc, result);
     return result;
-  }
-
-  async function copyText(text) {
-    if (!text) return false;
-    if (capabilities?.clipboard && env.navigator?.clipboard?.writeText) {
-      try {
-        await env.navigator.clipboard.writeText(text);
-        return true;
-      } catch {}
-    }
-    try {
-      const textarea = doc.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      doc.body?.appendChild(textarea);
-      textarea.select();
-      const ok = doc.execCommand?.('copy') !== false;
-      textarea.remove();
-      return ok;
-    } catch {
-      return false;
-    }
   }
 
   function positionMenu(menu, trigger) {
@@ -173,6 +140,7 @@ export function mountGridActions({ app, adapter, downloads, capabilities, doc = 
     if (destroyed) return;
     destroyed = true;
     closeMenu();
+    unsubscribeRoute();
     doc.removeEventListener('pointerdown', onPointerDown, true);
     doc.removeEventListener('click', onClick, true);
     env.removeEventListener?.('scroll', closeMenu, true);

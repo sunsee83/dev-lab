@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createApp, EVENTS } from '../../src/core/app.js';
+import { copyText } from '../../src/core/clipboard.js';
 import { detectCapabilities } from '../../src/core/capability.js';
 import { createSettingsStore } from '../../src/store/settings-store.js';
 import { createDownloadManager } from '../../src/media/download-manager.js';
@@ -36,6 +37,73 @@ test('AppContext publishes events and dedupes scheduled render by key', async ()
   } finally {
     globalThis.requestAnimationFrame = previousRaf;
   }
+});
+
+test('AppContext route tracker updates identity on SPA URL changes without polling', () => {
+  let observerCallback = null;
+  let queuedFrame = null;
+  const listeners = new Map();
+  class FakeMutationObserver {
+    constructor(callback) { observerCallback = callback; }
+    observe() {}
+    disconnect() {}
+  }
+  const env = {
+    location: { href: 'https://www.instagram.com/reel/AAA111/', pathname: '/reel/AAA111/' },
+    document: { documentElement: {} },
+    MutationObserver: FakeMutationObserver,
+    requestAnimationFrame(callback) { queuedFrame = callback; return 1; },
+    addEventListener(name, listener) { listeners.set(name, listener); },
+    removeEventListener(name) { listeners.delete(name); }
+  };
+  const app = createApp();
+  const identities = [];
+  app.on(EVENTS.IDENTITY_CHANGED, ({ current }) => identities.push(current?.shortcode || ''));
+  const stop = app.startRouteTracking({
+    env,
+    resolveIdentity(url) {
+      return { shortcode: url.match(/\/reel\/([^/]+)/)?.[1] || '' };
+    }
+  });
+
+  assert.equal(app.getCurrentIdentity().shortcode, 'AAA111');
+  env.location.href = 'https://www.instagram.com/reel/BBB222/';
+  env.location.pathname = '/reel/BBB222/';
+  observerCallback();
+  queuedFrame();
+
+  assert.equal(app.getRoute().pathname, '/reel/BBB222/');
+  assert.equal(app.getCurrentIdentity().shortcode, 'BBB222');
+  assert.deepEqual(identities, ['AAA111', 'BBB222']);
+  stop();
+  assert.equal(listeners.size, 0);
+});
+
+test('shared clipboard owner uses browser clipboard first and DOM fallback second', async () => {
+  const clipboardWrites = [];
+  const direct = await copyText('https://www.instagram.com/p/ABC/', {
+    env: { navigator: { clipboard: { async writeText(value) { clipboardWrites.push(value); } } } },
+    capabilities: { clipboard: true }
+  });
+  assert.equal(direct, true);
+  assert.deepEqual(clipboardWrites, ['https://www.instagram.com/p/ABC/']);
+
+  let copied = false;
+  const textarea = {
+    style: {}, value: '',
+    setAttribute() {}, select() {}, setSelectionRange() {}, remove() {}
+  };
+  const fallback = await copyText('fallback', {
+    env: {},
+    capabilities: { clipboard: false },
+    doc: {
+      body: { appendChild() {} },
+      createElement() { return textarea; },
+      execCommand(command) { copied = command === 'copy'; return true; }
+    }
+  });
+  assert.equal(fallback, true);
+  assert.equal(copied, true);
 });
 
 test('capability detection is based on runtime APIs, not platform strings', () => {
@@ -99,13 +167,13 @@ test('directory write failure returns an error and never falls back to browser d
   const result = await manager.download({
     kind: 'photo',
     shortcode: 'ABC123',
-    url: 'https://cdn.example.test/image.jpg',
-    filename: 'Instagram_ABC123_image.jpg'
+    url: 'https://cdn.example.test/image.jpg'
   });
 
   assert.equal(result.ok, false);
   assert.equal(result.code, 'write-failed');
   assert.equal(result.destinationMode, 'directory');
+  assert.equal(result.filename, 'Instagram_ABC123_image.jpg');
   assert.equal(anchorClicks, 0);
 });
 

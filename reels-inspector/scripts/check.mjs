@@ -75,6 +75,8 @@ for (const file of sourceFiles) {
   if (relative.startsWith('src/ui/')) {
     if (/\b(?:showDirectoryPicker|showSaveFilePicker|indexedDB|localStorage)\b/.test(source)) addError(file, 'UI must not access storage/File System APIs directly');
     if (/\bXMLHttpRequest\b|\bwindow\.fetch\b|\bfetch\s*\([^)]/.test(source)) addError(file, 'UI must not implement network/media transport directly');
+    if (/\bnavigator\.clipboard\b|\bexecCommand\s*\(\s*['"]copy['"]/.test(source)) addError(file, 'UI must use core/clipboard.js instead of implementing clipboard fallback');
+    if (/Instagram_/.test(source)) addError(file, 'UI must not own default media filename construction');
   }
 
   if (relative.startsWith('src/metrics/')) {

@@ -29,9 +29,13 @@ const legacyStore = createLegacyStoreAdapter({ env: globalThis });
 
 app.services = { capabilities, settings, downloads };
 app.adapters.legacyStore = legacyStore;
-app.setRoute({ href: location.href, pathname: location.pathname });
-app.setCurrentIdentity(legacyStore.getCurrentIdentity());
 
+const stopRouteTracking = app.startRouteTracking({
+  env: globalThis,
+  resolveIdentity(url) {
+    return legacyStore.getCurrentIdentity(url);
+  }
+});
 const grid = mountGridActions({ app, adapter: legacyStore, downloads, capabilities, doc: document, env: globalThis });
 const riPanel = mountRiPanel({
   app,
@@ -44,6 +48,7 @@ const riPanel = mountRiPanel({
   env: globalThis
 });
 
+app.adapters.stopRouteTracking = stopRouteTracking;
 app.adapters.grid = grid;
 app.adapters.riPanel = riPanel;
 
