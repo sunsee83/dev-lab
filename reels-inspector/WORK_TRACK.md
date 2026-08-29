@@ -8,20 +8,20 @@
 PROJECT_PLAN.md          = 장기 제품/데이터/기능 설계
 CODE_STRUCTURE.md        = 현재 파일/owner/dependency/migration 설계
 GRID_BASELINE.md         = Grid Frozen UI 기준
-UI_BASELINE.md           = 사용자가 보게 되는 모바일 UI 기준
-UI_ARCHITECTURE.md       = UI 계층/상태/컴포넌트/데이터 흐름
-PRESERVATION_BASELINE.md = 기존 승인 기능 보존/교체/삭제 승인 기준
+UI_BASELINE.md           = 모바일 visual/interaction 기준
+UI_ARCHITECTURE.md       = UI state/component/data-flow
+PRESERVATION_BASELINE.md = 기존 승인 기능 보존/교체/삭제 gate
 STATUS.md                = 현재 배포/실기기/완료 상태
-WORK_TRACK.md            = 현재 작업 목표/진행/다음 순서/차단요소
+WORK_TRACK.md            = 현재 목표/진행/다음 순서/차단요소
 ```
 
-계획이 바뀌면:
+계획 변경 절차:
 
-1. 기존 결정의 목적 확인
+1. 기존 결정 목적 확인
 2. 유지 / 수정 / 추가 분류
 3. 기존 기능/외형 `PRESERVE / REPLACE / REMOVE-APPROVED` 분류
-4. UI 작업이면 `UI_BASELINE.md / UI_ARCHITECTURE.md / GRID_BASELINE.md` 대조
-5. data flow / owner 영향 검토
+4. UI면 `UI_BASELINE / UI_ARCHITECTURE / GRID_BASELINE` 대조
+5. owner/data-flow 영향 확인
 6. 관련 문서 먼저 또는 동시에 갱신
 7. 이 문서 실행순서 갱신
 8. 코드 수정
@@ -33,9 +33,11 @@ WORK_TRACK.md            = 현재 작업 목표/진행/다음 순서/차단요�
 - Current version: **v3.2.3**
 - Source of truth: `src/*`
 - Deployment artifact: `ri-retry.user.js`
-- Current phase: **v3.2 UI/Foundation + Contextual Mobile Research Workspace 전환**
+- Current phase: **v3.2 Contextual Mobile Research Workspace 전환**
 
-현재 v3.2.3 source는 UI-B Foundation과 UI-C Global RI visual restoration까지 반영했습니다. **Bottom Research Workspace 교체는 아직 하지 않았고, UI-C의 Android Edge 실제 시각/터치/충돌 결과도 Unverified**입니다.
+현재 source는 UI-B Foundation, UI-C launcher restoration, **UI-D Contextual Research Workspace source**까지 반영했습니다.
+
+자동검증과 source 구조는 확인하지만 **Android Edge 실제 시각/터치/Instagram collision은 실기기 확인 전 Unverified**입니다.
 
 ---
 
@@ -43,7 +45,7 @@ WORK_TRACK.md            = 현재 작업 목표/진행/다음 순서/차단요�
 
 현재 최우선 목표:
 
-**기존 Grid/미디어/업데이트 접근/기존 Reel RI visual identity를 보존하면서, 모바일 한 손 조작에 맞는 Contextual Research Workspace로 단계적으로 전환한다.**
+**기존 Grid/미디어/업데이트/RI visual identity를 보존하면서 모바일 한 손 조작에 적합한 Research Workspace를 안정화하고, 다음 UI-E Feedback/Activity로 이동한다.**
 
 제품 흐름:
 
@@ -56,308 +58,224 @@ WORK_TRACK.md            = 현재 작업 목표/진행/다음 순서/차단요�
 → 분석
 ```
 
-이번 전환에서 반드시 유지:
+반드시 유지:
 
 - Instagram 3열 Grid / 8-slot
-- 숫자 깜빡임 제거 / renderKey
+- no-flicker / renderKey
 - Video/Reel actual cover
-- music/album/avatar artwork 제외
-- Carousel ZIP 없는 개별 batch
+- music/album/avatar artwork reject
+- Carousel individual batch / no ZIP
 - Grid 카드당 media action 1개
 - 기존 Reel RI visual identity
-- Global RI 화면당 1개
+- Global RI 화면당 1개 target
 - CONTENT 6탭 `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`
 - 큰 업데이트 바로가기
 - common Download Manager / Settings Store
 - missing metric 추정 금지
-- 지정폴더 실패 silent fallback 금지
+- directory failure silent fallback 금지
 
 ---
 
 # 3. Completed Foundation
 
-이미 완료/활성:
-
-- `src/*` source-of-truth
-- generated userscript
-- AppContext / SPA route tracking
-- Capability owner
-- Settings Store
-- Download Manager
-- Grid save action migration
-- Clipboard owner
-- media filename/cover owner
-- legacy read adapter
-- Metrics Engine owner
-- RI Summary ER/24h/account relative
-- store fingerprint live binding
-- Preservation Baseline
-- VERSION / UPDATE_URL single owner
-- 업데이트 바로가기 복구 + CI gate
-- `UI_BASELINE.md`
-- `UI_ARCHITECTURE.md`
-
 ## UI-A — Contextual UI Architecture Freeze — 완료
-
-완료:
 
 - 5-layer UI model
 - CONTENT / GLOBAL context
-- CLOSED / COMPACT / EXPANDED state model
-- route/identity rebind rule
-- active-tab lazy mount 목표
-- non-modal Compact / semi-modal Expanded 정책
-- Layout Manager / Activity / Research Read Model boundary 설계
+- CLOSED / COMPACT / EXPANDED
+- route/identity stale invalidation
+- active body lazy-render 목표
+- non-modal Compact / semi-modal Expanded
+- Layout Manager / Activity / Read Model boundary
 
-runtime visual 변경 없음.
+## UI-B — Primitive + Layout + Workspace State Foundation — 완료
 
-## UI-B — Primitive + Layout + Workspace State Foundation — 코드 완료
-
-### `ui/ri-primitives.js`
-
-공통화:
-
-- `createSection()`
-- `addRow()`
-- `addAction()`
-- `renderEmpty()`
-
-`ri-panel.js / ri-summary.js`가 section/row/empty DOM 구현을 중복하지 않게 변경.
-
-### `ui/workspace-state.js`
-
-단일 state owner:
+활성 owner:
 
 ```text
-open
-detent: closed | compact | expanded
-mode: content | global
-activeTab
-contextKey
-contextEpoch
+ui/ri-primitives.js
+ui/workspace-state.js
+ui/layout.js
 ```
 
-- open/close/tab/context state를 panel closure에서 분리
-- identity key가 실제 바뀔 때만 contextEpoch 증가
-- route/identity rebind 기반 마련
+완료:
 
-### `ui/layout.js`
+- section/row/action/empty 공통화
+- Workspace open/detent/mode/tab/context single owner
+- LayoutSnapshot → launcher/reel/sheet/feedback
+- route/resize/orientation/visualViewport schedule
+- no second full DOM observer
+- duplicate warning 0 checkpoint
 
-Layout Manager foundation:
+## UI-C — Global RI Launcher visual restoration — source 완료 / device validation pending
+
+v3.1.6 source audit:
+
+- SVG는 현재 `researchIcon()`과 동일
+- 실제 mismatch는 v3.2.3 wrapper styling
+
+복원 source:
 
 ```text
-input
-- viewport / visualViewport
-- safeBottom
-- bottom blockers
-- right blockers
-- keyboard
-
-output
-- launcherAnchor
-- reelOverlayLane
-- sheetMetrics
-- feedbackAnchor
+44×44 actual touch target
+└ 34×34 legacy-style low-opacity circle
+  └ 21×21 original research icon
 ```
 
-현재 runtime에서는 CSS variables로 기존 UI baseline을 기본 유지하면서 launcher/panel/toast 위치를 한 owner에 연결.
+- border 없음
+- `rgba(0,0,0,.12)` visual
+- drop-shadow
+- Layout Manager anchor
+- update/Grid/panel actions 보존
+
+## UI-D — Contextual Research Workspace — source 완료 / device validation pending
+
+신규 owner:
+
+`ui/research-workspace.js`
+
+현재 source 구조:
 
 ```text
---ri-launcher-right
---ri-launcher-bottom
---ri-panel-bottom
---ri-feedback-bottom
---ri-sheet-compact-height
---ri-sheet-expanded-height
+Global RI
+   ↓
+Workspace State
+   ↓
+Research Workspace View
+   ├ CONTENT
+   │  └ 요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정
+   └ GLOBAL
+      └ RI Home + global settings
 ```
 
-route/resize/orientation/visualViewport 변화에서 schedule하며 일반 DOM mutation마다 전체 layout scan하지 않음.
+구현:
 
-### composition
+- right floating panel → bottom Research Sheet source
+- COMPACT / EXPANDED height는 Layout Manager variables 사용
+- 명시적 `확장 / 축소`
+- close 항상 header에 존재
+- Compact는 scrim 없음 + outside tap close
+- Expanded는 soft scrim
+- body만 scroll
+- header/tab/footer는 scroll 밖 유지
+- CONTENT만 6탭 표시
+- GLOBAL에서는 빈 6탭 숨기고 RI Home + Settings
+- 큰 업데이트 바로가기 footer 유지
+- route/identity contextEpoch 변경 시 scroll reset
+- active body 하나만 render
+- browser history/back manipulation 추가 없음
+- 기존 Summary / Media / Settings action 보존
 
-`main.js`가 Workspace State와 Layout Manager를 생성해 RI Panel에 주입.
+자동 unit source guard:
 
-### 검증
-
-UI-B 자동검증 checkpoint:
-
-- unit test **18/18 pass**
-- build pass
-- architecture/syntax pass
-- **19 source files / 0 warnings**
-- generated userscript syntax pass
-
-UI-B는 코드/CI Verified. Android Edge 시각/터치 결과는 Unverified.
-
-## UI-C — Global RI Launcher visual restoration — source 완료 / 실기기 대기
-
-v3.1.6 source와 현재 source를 다시 비교해 확인한 사실:
-
-- `researchIcon()` SVG 자체는 이미 v3.1.6과 동일했습니다.
-- 실제 mismatch는 아이콘 path가 아니라 v3.2.3의 launcher 외곽 styling이었습니다.
-- v3.1.6 visual baseline은 `34×34`, border 없음, `rgba(0,0,0,.12)` 원형 배경, drop-shadow, `21×21` research icon입니다.
-
-이번 source 변경:
-
-```text
-실제 touch target 44×44
-└ visual circle 34×34
-  └ 기존 v3.1.6 21×21 research icon
-```
-
-- 큰 opaque 새 버튼으로 키우지 않고 invisible touch area만 확장
-- border 제거
-- legacy low-opacity circle / drop-shadow 복원
-- Layout Manager `--ri-launcher-right / --ri-launcher-bottom` 계속 사용
-- `aria-expanded`, keyboard focus, 기존 panel toggle 유지
-- Grid / update shortcut / panel action 변경 없음
-
-이 단계는 source 기준 visual restoration 완료이며 **Android Edge에서 실제 위치, native rail/nav/banner collision, 체감 visual parity는 확인 전 Verified 금지**.
+- launcher visual preservation
+- workspace Compact/Expanded structure
+- CONTENT/GLOBAL split
+- update shortcut preservation
 
 ---
 
 # 4. Preserve — 건드리면 안 되는 승인 개선
 
-## 공통 접근/운영
+## Common
 
+- raw userscript update path
 - 큰 업데이트 바로가기
-- raw userscript 설치/업데이트 경로
 - single generated userscript
-- runtime `@require` chain 없음
-- Global RI 1개
+- no runtime `@require` hotfix chain
 - 기존 Reel RI visual identity
-- CONTENT 6탭
+- CONTENT 6-tab information architecture
 
 ## Grid / Data
 
-- 3열 Grid
-- 하단 2줄 8-slot
+- 3-column Grid
+- two rows / 8 fixed slots
 - no-flicker
-- same-value DOM rewrite 방지
+- same-value DOM rewrite prevention
 - pending request dedupe
-- PHOTO/CAROUSEL bogus views 차단
-- Instagram native media icon
-- 카드당 media button 1개
+- PHOTO/CAROUSEL bogus views prevention
+- native media-type icon
+- custom media button 1/card
 - Verified Store provenance/conflict
-- `ri311:*` migration 완료 전 보존
+- `ri311:*` migration 전 보존
 - missing→0 금지
 
-## Reel / Media / Settings
+## Media / Download
 
-- native likes/comments/reposts/share 유지
-- box/blur 없는 Reel overlay 방향
 - actual video cover
-- music/audio/album/avatar 제외
-- Carousel individual files / ZIP 미사용
+- music/audio/album/avatar reject
+- Carousel individual files / no ZIP
 - directory failure silent fallback 금지
-- Grid menu에 global folder setting 금지
+- Grid menu global folder setting 금지
 
-기존 component 제거/숨김은 `PRESERVATION_BASELINE.md` replacement gate 이후에만 수행.
+기존 기능을 숨기거나 삭제하려면 replacement가 동등 이상인지 먼저 확인합니다.
 
 ---
 
 # 5. Current Known Issues / Unverified
 
-현재 UI 상태:
+Android Edge 실기기 확인 전:
 
-- Global RI SVG/visual styling은 v3.1.6 baseline에 맞춰 source 복원했지만 Android Edge parity는 미확인
-- current right floating panel은 target Research Workspace가 아님
-- Layout Manager blocker heuristic은 Foundation 단계이며 Android Edge/Instagram 실제 구조 검증 필요
-- Reel right rail 세부 collision은 실기기 검증 후 필요 시 보강
-- panel Compact/Expanded visual은 아직 미구현
-- GLOBAL RI Home 미구현
-- active tab lazy mount 미구현
-- Activity/progress persistent UI 미구현
-
-실기기 미확인:
-
-- Global RI visual/touch target 체감
-- Global RI가 화면당 1개로 보이는지
-- bottom nav/app banner/Reel right rail collision
-- SPA 이동 후 stale shortcode
-- live Store → 열린 Summary 갱신
-- 업데이트 바로가기 → Tampermonkey install/update intercept
+- Global RI visible launcher 정확히 1개인지
+- 34px visual / 44px touch target 체감
+- bottom nav / app banner / Reel right rail collision
+- COMPACT 실제 높이/가림 정도
+- EXPANDED 긴 내용 조작성
+- close / expand / collapse 접근성
+- GLOBAL RI Home presentation
+- CONTENT 6탭 가로 이동
+- keyboard/visualViewport
+- SPA route 후 stale context
+- live Store → open summary 갱신
+- update shortcut → Tampermonkey install/update intercept
 - directory photo/cover cross-origin save
 - prompt mode
 - Carousel batch same destination
-- Grid 8-slot/no-flicker/cover regression 여부
+- Grid 8-slot/no-flicker/cover regression
 
-photo/cover CORS 확인 전 `@grant` / privileged transport 선제 도입 금지.
+photo/cover CORS가 실기기에서 확인되기 전 `@grant`/privileged transport 변경 금지.
 
 ---
 
 # 6. Current Technical Debt
 
-UI-B에서 해결:
+해결됨:
 
-- `ri-panel.js / ri-summary.js` section/row/empty 중복 → 해결
-- layout offset owner 부재 → foundation owner 생성
-- workspace open/tab/context state owner 부재 → 해결
-- architecture duplicate warnings 4 → **0**
-
-UI-C에서 해결:
-
-- 기존 Reel RI SVG source 재확인
-- v3.2.3 launcher 외곽 visual mismatch → source 수준 복원
-- 34px visual / 44px touch target 분리
+- RI section/row primitive duplicate
+- workspace state owner 부재
+- layout owner 부재
+- v3.2.3 launcher wrapper visual drift
+- right floating workspace shell → bottom sheet source로 교체
+- GLOBAL에서 빈 6탭 문제
 
 남음:
 
-- right floating Foundation panel
-- GLOBAL/CONTENT 실제 presentation 분리
-- active-tab lazy host
-- Activity owner
-- `ri-panel.js`가 migration adapter를 직접 읽는 coupling
-- legacy Reel metric compatibility functions
+- Feedback/Activity owner 미구현
+- batch progress는 toast 중심
+- persistent actionable error UI 미구현
+- `ri-panel.js` → legacy adapter 직접 read coupling
+- Reel legacy metric compatibility functions
+- Reel native metrics/identity accuracy
 
-Read Model implementation은 Data Engine migration 시 실제 필요가 생겼을 때 생성.
+Read Model implementation은 Data Engine migration 시 실제 필요가 생길 때 생성합니다.
 
 ---
 
 # 7. Next Execution Order
 
-순서를 바꾸려면 이 문서와 관련 baseline/architecture를 먼저 갱신합니다.
+순서를 바꾸려면 관련 문서를 먼저 갱신합니다.
 
-## UI-C — Global RI Launcher visual restoration — source 완료 / device validation pending
+## UI-E — Feedback / Activity — 다음 작업
 
-완료한 source 작업:
-
-1. v3.1.6 `ri3-tool` source 재확인
-2. SVG는 기존과 동일하다는 사실 확인
-3. 외곽 visual을 legacy 34px low-opacity circle로 복원
-4. touch target만 44px로 확대
-5. Layout Manager anchor 유지
-6. 기존 panel toggle / update / Grid action 보존
-
-실기기 확인 전 남은 승인:
-
-- Profile/Search/Explore/Grid/Reel/Post에서 visible launcher 1개
-- bottom nav/app banner/Reel rail과 심각한 겹침 없음
-- 한 손 tap 가능
-- 기존 Reel RI와 visual identity가 체감상 이어짐
-
-## UI-D — Contextual Research Workspace — 다음 구현
-
-1. 기존 panel 사용자 action inventory
-2. bottom Research Sheet 구현
-3. COMPACT 약 48~56vh
-4. EXPANDED 약 78~84vh
-5. close 항상 접근
-6. 명시적 expand/collapse
-7. CONTENT → 기존 6탭
-8. GLOBAL → RI Home + Settings/Update
-9. sticky header/tab
-10. active tab lazy mount
-11. route identity rebind / scroll reset
-12. 기존 summary/media/settings/update 완전 이관
-13. 새 workspace 검증 후 old floating panel 제거
-
-## UI-E — Feedback / Activity
-
-- toast dedupe
-- Carousel batch progress `3/8`
-- persistent actionable error
-- future STT/OCR/AI job extension point
+1. Download Manager event/result inventory
+2. 짧은 success toast와 long-running activity 분리
+3. duplicate toast suppression
+4. Carousel batch `3/8 저장 중` 표현 구조
+5. 사용자 조치가 필요한 directory/permission error persistent message
+6. 향후 STT/OCR/AI job에 재사용 가능한 Activity model
+7. launcher badge는 필요할 때만 optional
+8. UI-D Workspace action과 연결
+9. 기존 download policy/실패 semantics 보존
 
 ## UI-F — Reel identity + Metrics Overlay
 
@@ -366,9 +284,9 @@ Read Model implementation은 Data Engine migration 시 실제 필요가 생겼�
 3. Metrics owner 사용
 4. `▶ / ER / 24h / × / date`
 5. Layout Manager reel lane
-6. native rail/caption collision 검증
+6. native rail/caption collision
 7. legacy metric renderer 제거
-8. regression 후 compatibility function 삭제
+8. compatibility functions regression 후 제거
 
 ## UI-G — Data Engine / Research Tabs
 
@@ -379,10 +297,10 @@ instagram/identity.js
 → common history
 → media[]
 → Grid/Reel renderer
-→ legacy runtime 제거
+→ legacy removal
 ```
 
-이후 실제 데이터가 준비된 순서:
+그 뒤 실제 데이터 준비 순서:
 
 - 콘텐츠
 - 댓글
@@ -406,41 +324,37 @@ instagram/identity.js
 - Preserve
 - Known Issues
 - Next Execution Order
-- UI 작업이면 `UI_BASELINE.md / UI_ARCHITECTURE.md`
-- Grid 작업이면 `GRID_BASELINE.md`
-- 기존 component 교체면 `PRESERVATION_BASELINE.md`
+- UI 작업 → `UI_BASELINE.md / UI_ARCHITECTURE.md`
+- Grid 작업 → `GRID_BASELINE.md`
+- component 교체 → `PRESERVATION_BASELINE.md`
 
 ```text
-기존 기능/외형 inventory
+inventory
 → PRESERVE / REPLACE / REMOVE-APPROVED
-→ target baseline 비교
+→ baseline 비교
 → owner/data flow 확인
 → 문서 갱신
-→ 새 구현
+→ 구현
 → 자동검증
-→ 필요 시 실기기 확인
-→ 그 다음 기존 구현 제거/숨김
+→ 실기기 필요항목 분리
+→ replacement gate 후 old path 제거
 ```
 
-## 작업 중
+## 작업 중 상태
 
 ```text
-Verified   = 코드/CI 또는 실기기 확인
+Verified   = 코드/CI 또는 실기기에서 실제 확인
 Unverified = 구현됐지만 실기기 미확인
 Blocked    = 외부 조건/실기기 결과 필요
 Deferred   = 현재 범위 밖
 ```
 
-관련 없는 subsystem을 한 문제 때문에 동시에 재작성하지 않습니다.
-
 ## 작업 종료 시
-
-반드시 기록:
 
 1. 변경 내용
 2. 유지 내용
 3. baseline 차이
-4. 자동검증 결과
+4. 자동검증
 5. 실기기 여부
 6. 새 문제
 7. 다음 정확한 작업
@@ -449,19 +363,18 @@ Deferred   = 현재 범위 밖
 
 # 9. Definition of Done for Each Step
 
-- 관련 문서와 실제 구현 일치
-- baseline/architecture 비교 완료
+- 관련 문서와 실제 source 일치
+- baseline/architecture 대조
 - owner 위반 없음
-- 불필요한 중복 증가 없음
-- existing feature/visual inventory 완료
+- 불필요한 duplicate 없음
 - PRESERVE/REPLACE 접근경로 유지
-- 주요 mobile touch target 검토
+- 주요 touch target 검토
 - Instagram native UI collision 검토
 - `npm test` pass
 - `npm run build` pass
 - `npm run check` pass
 - `node --check ri-retry.user.js` pass
-- 실기기 항목은 확인 전 Verified 금지
-- 다음 작업이 이 문서에 명확히 남아 있음
+- Android Edge 항목은 실제 확인 전 Verified 금지
+- 다음 작업이 이 문서에 명확히 남음
 
-현재 다음 정확한 구현 작업은 **UI-D Contextual Research Workspace**입니다.
+현재 다음 정확한 구현 작업은 **UI-E Feedback / Activity**입니다.
