@@ -78,8 +78,8 @@ export function mountRiPanel({
   function openPanel() {
     if (destroyed || isOpen()) return;
     workspace.rebindContext(currentIdentity());
-    workspace.open();
     ensureWorkspaceView();
+    workspace.open();
     syncWorkspaceView();
     renderBody();
     layout?.schedule?.();
@@ -89,8 +89,8 @@ export function mountRiPanel({
     if (destroyed) return;
     workspace.rebindContext(currentIdentity());
     workspace.setActiveTab('settings');
-    if (!isOpen()) workspace.open();
     ensureWorkspaceView();
+    if (!isOpen()) workspace.open();
     syncWorkspaceView();
     workspaceView?.resetScroll();
     renderBody();
