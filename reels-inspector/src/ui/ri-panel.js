@@ -2,6 +2,7 @@ import { EVENTS } from '../core/app.js';
 import { copyText } from '../core/clipboard.js';
 import { updateInstallUrl } from '../version.js';
 import { addAction, addRow, createSection, renderEmpty } from './ri-primitives.js';
+import { createResearchWorkspaceView } from './research-workspace.js';
 import { createWorkspaceState } from './workspace-state.js';
 import { injectStyles } from './styles.js';
 import { showResult, showToast } from './toast.js';
@@ -35,9 +36,11 @@ export function mountRiPanel({
   let settingsState = settings.getState();
   let destroyed = false;
   let button = doc.getElementById('ri32-tool');
-  let panel = doc.getElementById('ri32-panel');
+  let workspaceView = null;
 
   doc.getElementById('ri3-panel')?.remove();
+  doc.getElementById('ri32-panel')?.remove();
+  doc.getElementById('ri32-scrim')?.remove();
 
   if (!button) {
     button = doc.createElement('button');
@@ -54,14 +57,15 @@ export function mountRiPanel({
 
   const unsubscribeSettings = settings.subscribe((next) => {
     settingsState = next;
-    if (isOpen() && activeTab() === 'settings') renderBody();
+    const state = workspace.getState();
+    if (state.open && (state.mode === 'global' || state.activeTab === 'settings')) renderBody();
   });
   const unsubscribeRoute = app?.on?.(EVENTS.ROUTE_CHANGED, scheduleContextRender) || (() => {});
   const unsubscribeIdentity = app?.on?.(EVENTS.IDENTITY_CHANGED, scheduleContextRender) || (() => {});
   const unsubscribeStore = app?.on?.(EVENTS.STORE_CHANGED, scheduleContextRender) || (() => {});
-  const unsubscribeWorkspace = workspace.subscribe(({ current, reason }) => {
+  const unsubscribeWorkspace = workspace.subscribe(({ current }) => {
     button?.setAttribute('aria-expanded', String(current.open));
-    if (reason === 'context') panel?.setAttribute('data-context-epoch', String(current.contextEpoch));
+    if (workspaceView && current.open) syncWorkspaceView();
   });
 
   button.addEventListener('click', toggle);
@@ -75,8 +79,8 @@ export function mountRiPanel({
     if (destroyed || isOpen()) return;
     workspace.rebindContext(currentIdentity());
     workspace.open();
-    ensurePanel();
-    renderTabs();
+    ensureWorkspaceView();
+    syncWorkspaceView();
     renderBody();
     layout?.schedule?.();
   }
@@ -84,83 +88,91 @@ export function mountRiPanel({
   function closePanel() {
     if (!isOpen()) return;
     workspace.close();
-    panel?.remove();
-    panel = null;
+    workspaceView?.destroy();
+    workspaceView = null;
     layout?.schedule?.();
   }
 
-  function scheduleContextRender() {
-    const identity = currentIdentity();
-    workspace.rebindContext(identity);
+  function toggleDetent() {
+    const state = workspace.getState();
+    if (state.detent === 'expanded') workspace.collapse();
+    else workspace.expand();
     layout?.schedule?.();
-    if (!isOpen() || activeTab() === 'settings') return;
-    if (app?.scheduleRender) {
-      app.scheduleRender('ri32-panel-context', () => {
-        if (isOpen() && activeTab() !== 'settings') renderBody();
-      });
-      return;
-    }
+  }
+
+  function selectTab(key) {
+    if (workspace.getState().activeTab === key) return;
+    workspace.setActiveTab(key);
+    workspaceView?.resetScroll();
+    syncWorkspaceView();
     renderBody();
   }
 
-  function ensurePanel() {
-    panel = doc.getElementById('ri32-panel');
-    if (panel) return;
-    panel = doc.createElement('aside');
-    panel.id = 'ri32-panel';
-    panel.setAttribute('data-context-epoch', String(workspace.getState().contextEpoch));
-    panel.innerHTML = [
-      '<div class="ri32-head">',
-      '<strong>Instagram Research</strong>',
-      `<span class="ri32-version">v${escapeHtml(version || app?.version || '')}</span>`,
-      '<button type="button" class="ri32-close" aria-label="닫기">×</button>',
-      '</div>',
-      '<div class="ri32-tabs" role="tablist"></div>',
-      '<div class="ri32-body"></div>',
-      '<button type="button" class="ri32-update-shortcut">업데이트 바로가기</button>'
-    ].join('');
-    panel.querySelector('.ri32-close').addEventListener('click', closePanel);
-    panel.querySelector('.ri32-update-shortcut').addEventListener('click', openUpdateShortcut);
-    doc.documentElement.appendChild(panel);
+  function scheduleContextRender() {
+    const previousEpoch = workspace.getState().contextEpoch;
+    const next = workspace.rebindContext(currentIdentity());
+    const contextChanged = next.contextEpoch !== previousEpoch;
+    layout?.schedule?.();
+    if (!isOpen()) return;
+
+    const render = () => {
+      if (!isOpen()) return;
+      ensureWorkspaceView();
+      syncWorkspaceView();
+      if (contextChanged) workspaceView?.resetScroll();
+      renderBody();
+    };
+    if (app?.scheduleRender) app.scheduleRender('ri32-panel-context', render);
+    else render();
   }
 
-  function renderTabs() {
-    const tabs = panel?.querySelector('.ri32-tabs');
-    if (!tabs) return;
-    tabs.replaceChildren();
-    for (const [key, label] of TABS) {
-      const tab = doc.createElement('button');
-      tab.type = 'button';
-      tab.className = 'ri32-tab';
-      tab.dataset.tab = key;
-      tab.setAttribute('role', 'tab');
-      tab.setAttribute('aria-selected', String(activeTab() === key));
-      tab.textContent = label;
-      tab.addEventListener('click', () => {
-        if (activeTab() === key) return;
-        workspace.setActiveTab(key);
-        workspace.rebindContext(currentIdentity());
-        renderTabs();
-        renderBody();
-      });
-      tabs.appendChild(tab);
-    }
+  function ensureWorkspaceView() {
+    if (workspaceView) return workspaceView;
+    workspaceView = createResearchWorkspaceView({
+      doc,
+      version: version || app?.version || '',
+      onClose: closePanel,
+      onToggleDetent: toggleDetent,
+      onSelectTab: selectTab,
+      onUpdate: openUpdateShortcut
+    });
+    workspaceView.mount(TABS);
+    return workspaceView;
+  }
+
+  function syncWorkspaceView() {
+    workspaceView?.sync({
+      state: workspace.getState(),
+      context: currentPost(),
+      tabs: TABS
+    });
   }
 
   function renderBody() {
-    const body = panel?.querySelector('.ri32-body');
+    const body = workspaceView?.getBody();
     if (!body) return;
     body.replaceChildren();
 
-    if (activeTab() === 'settings') return renderSettings(body);
+    const state = workspace.getState();
+    if (state.mode === 'global') {
+      renderGlobalHome(body);
+      renderSettings(body);
+      return;
+    }
+
     const post = currentPost();
-    if (activeTab() === 'summary') return renderSummary(body, post);
-    if (activeTab() === 'media') return renderMedia(body, post);
-    renderPlaceholder(body, post);
+    if (state.activeTab === 'settings') return renderSettings(body);
+    if (state.activeTab === 'summary') return renderRiSummary({ body, post, metrics, doc });
+    if (state.activeTab === 'media') return renderMedia(body, post);
+    renderPlaceholder(body, post, state.activeTab);
   }
 
-  function renderSummary(body, post) {
-    renderRiSummary({ body, post, metrics, doc });
+  function renderGlobalHome(body) {
+    const section = createSection(body, 'RI Home', doc);
+    const note = doc.createElement('div');
+    note.className = 'ri32-note ri32-home-note';
+    note.textContent = '현재 화면에서 특정 콘텐츠가 선택되지 않았습니다. Reel·사진·영상·캐러셀 상세를 열면 콘텐츠 리서치 6탭이 연결됩니다.';
+    section.appendChild(note);
   }
 
   function renderMedia(body, post) {
@@ -196,9 +208,9 @@ export function mountRiPanel({
     }
   }
 
-  function renderPlaceholder(body, post) {
-    const label = tabLabel(activeTab());
-    renderEmpty(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`, doc);
+  function renderPlaceholder(body, post, tab) {
+    const label = tabLabel(tab);
+    renderEmpty(body, post?.shortcode ? `${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`, doc);
   }
 
   function renderSettings(body) {
@@ -286,16 +298,11 @@ export function mountRiPanel({
 
   function currentPost() {
     const identity = currentIdentity();
-    workspace.rebindContext(identity);
     return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
   }
 
   function isOpen() {
     return workspace.getState().open;
-  }
-
-  function activeTab() {
-    return workspace.getState().activeTab;
   }
 
   function destroy() {
@@ -307,9 +314,9 @@ export function mountRiPanel({
     unsubscribeStore();
     unsubscribeWorkspace();
     button?.removeEventListener('click', toggle);
-    panel?.remove();
+    workspaceView?.destroy();
     button?.remove();
-    panel = null;
+    workspaceView = null;
     button = null;
   }
 
@@ -334,8 +341,4 @@ function permissionLabel(permission) {
 
 function researchIcon() {
   return '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V13M9 19V9M14 19V5"/><circle cx="17.5" cy="14.5" r="3.5"/><path d="M20 17l2 2"/></svg>';
-}
-
-function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 }
