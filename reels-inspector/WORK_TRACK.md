@@ -30,14 +30,16 @@ WORK_TRACK.md            = 현재 목표/진행/다음 순서/차단요소
 
 # 1. Current Release
 
-- Current version: **v3.2.4**
+- Current version: **v3.2.5**
 - Source of truth: `src/*`
 - Deployment artifact: `ri-retry.user.js`
-- Current phase: **v3.2 Contextual Mobile Research Workspace + Feedback/Activity**
+- Current phase: **v3.2 Active Reel Context + staged Metrics Overlay / Data migration 준비**
 
-현재 source는 UI-B Foundation, UI-C launcher restoration, UI-D Contextual Research Workspace, **UI-E Feedback / Activity**까지 반영했습니다.
+현재 source는 UI-B Foundation, UI-C launcher restoration, UI-D Contextual Research Workspace, UI-E Feedback/Activity에 이어 **UI-F의 Active Reel Context foundation과 새 Metrics Overlay source**까지 반영했습니다.
 
-자동검증과 source 구조는 확인하지만 **Android Edge 실제 시각/터치/Instagram collision은 실기기 확인 전 Unverified**입니다.
+새 Reel Overlay는 replacement gate 때문에 아직 runtime visual로 활성화하지 않았습니다. **기존 legacy Reel overlay는 삭제하거나 숨기지 않고 유지**하며 Android Edge에서 새 identity/native metric source를 확인한 뒤 교체합니다.
+
+자동검증과 source 구조는 확인하지만 **Android Edge 실제 시각/터치/Instagram collision/Reel identity accuracy는 실기기 확인 전 Unverified**입니다.
 
 ---
 
@@ -45,7 +47,7 @@ WORK_TRACK.md            = 현재 목표/진행/다음 순서/차단요소
 
 현재 최우선 목표:
 
-**기존 Grid/미디어/업데이트/RI visual identity를 보존하면서 공용 Feedback/Activity 경로를 안정화했고, 다음 단계에서 Reel identity/native metrics를 같은 Metrics owner로 통합한다.**
+**기존 Grid/미디어/업데이트/RI/Reel overlay의 좋은 동작을 보존하면서, active Reel identity와 native metric source를 보수적으로 정리하고 Data Engine migration으로 연결한다.**
 
 제품 흐름:
 
@@ -67,6 +69,8 @@ WORK_TRACK.md            = 현재 목표/진행/다음 순서/차단요소
 - Carousel individual batch / no ZIP
 - Grid 카드당 media action 1개
 - 기존 Reel RI visual identity
+- 기존 Reel overlay의 가벼운 visual geometry
+- Instagram native likes/comments/reposts/share
 - Global RI 화면당 1개 target
 - CONTENT 6탭 `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`
 - 큰 업데이트 바로가기
@@ -168,7 +172,7 @@ Research Workspace View
 
 ## UI-E — Feedback / Activity — source 완료 / device validation pending
 
-새 owner:
+owner:
 
 ```text
 core/activity.js         = async activity state/lifecycle
@@ -206,12 +210,73 @@ Activity Indicator / Toast
 - launcher badge는 필요 근거가 없어 추가하지 않음
 - `ri-panel.js` Settings rendering은 `ri-settings.js`로 분리해 size warning 제거
 
-UI-E 자동검증 checkpoint:
+## UI-F — Active Reel Context + staged Metrics Overlay — source 완료 / replacement gate 대기
 
-- unit **26/26 pass**
+### Active Reel Context
+
+새 owner:
+
+`migration/reel-context-adapter.js`
+
+보수적인 identity evidence 순서:
+
+```text
+현재 Reel scope 내부 shortcode link
+→ 현재 video/poster와 legacy Store의 exact media URL mapping
+→ exact /reel|reels/<shortcode> route
+→ 없으면 unresolved
+```
+
+기존 legacy의 **username + likes/comments 유사값 fuzzy shortcode 선택은 새 경로에서 사용하지 않습니다.**
+
+native metric 수집:
+
+- active video를 viewport/playing 기준으로 선택
+- 해당 video 주변의 Reel scope를 찾음
+- 그 scope 안에서만 likes/comments/reposts control을 읽음
+- 한국어 단위 `천/만/억`, `K/M/B`, comma grouped count parsing
+
+SPA identity:
+
+- 기존 AppContext의 **한 개 MutationObserver activity를 재사용**
+- URL이 그대로인 vertical Reel 이동에서도 `resolveActivityIdentity()`로 current identity 갱신 가능
+- second full DOM observer 추가 없음
+
+legacy store bridge:
+
+- `findPostByMediaUrls()` 추가
+- videoUrl/coverUrl/thumbUrl의 exact normalized URL만 사용
+- query token 차이는 제거하되 fuzzy metric/owner matching은 하지 않음
+
+### Staged Metrics Overlay
+
+새 source:
+
+```text
+ui/metric-format.js
+ui/reel-overlay.js
+```
+
+`ui/reel-overlay.js`는:
+
+- `metrics.summarize()`만 사용해 ER/24h/account relative 계산
+- target `▶ views / ER / 24h / × / date`
+- missing line 숨김
+- renderKey로 same-value rewrite 방지
+- second MutationObserver 없음
+- Layout Manager `--ri-reel-overlay-right` 준비
+- 기존 가벼운 visual geometry를 그대로 시작점으로 사용
+
+**중요:** `reel-overlay.js`는 아직 `main.js`에 mount하지 않았습니다. `#ri3-reels-overlay`도 숨기지 않았습니다. 사용자 승인 개선을 먼저 지우지 않는 replacement gate를 지키기 위해서입니다.
+
+현재 자동검증 checkpoint:
+
+- unit **32/32 pass**
 - build pass
-- architecture/syntax pass
-- **23 source files / 0 warnings**
+- staged overlay/source syntax pass
+- architecture warning **0 목표**
+
+Android Edge current Reel identity/native metric 정확도와 새 overlay visual은 아직 Unverified입니다.
 
 ---
 
@@ -240,8 +305,10 @@ UI-E 자동검증 checkpoint:
 - `ri311:*` migration 전 보존
 - missing→0 금지
 
-## Media / Download
+## Reel / Media / Download
 
+- 기존 Reel overlay visual은 replacement device gate 전 유지
+- native likes/comments/reposts/share 제거/중복 금지
 - actual video cover
 - music/audio/album/avatar reject
 - Carousel individual files / no ZIP
@@ -249,7 +316,7 @@ UI-E 자동검증 checkpoint:
 - Grid menu global folder setting 금지
 - Carousel prompt destination 1회 선택
 
-기존 기능을 숨기거나 삭제하려면 replacement가 동등 이상인지 먼저 확인합니다.
+기존 기능을 숨기거나 삭제하려면 replacement가 동등 이상인지 먼저 확인하고 **실기기 확인 전에는 old visual path를 제거/숨기지 않습니다.**
 
 ---
 
@@ -276,6 +343,10 @@ Android Edge 실기기 확인 전:
 - prompt mode
 - Carousel batch same destination
 - Grid 8-slot/no-flicker/cover regression
+- active Reel 선택이 실제 vertical scroll에서 현재 영상과 일치하는지
+- scoped native likes/comments/reposts가 같은 Reel에 결합되는지
+- exact media URL mapping이 Instagram CDN URL 변화에서 충분한지
+- staged new Reel overlay의 위치/가독성/rail collision
 
 photo/cover CORS가 실기기에서 확인되기 전 `@grant`/privileged transport 변경 금지.
 
@@ -283,7 +354,7 @@ photo/cover CORS가 실기기에서 확인되기 전 `@grant`/privileged transpo
 
 # 6. Current Technical Debt
 
-해결됨:
+해결/완화됨:
 
 - RI section/row primitive duplicate
 - workspace state owner 부재
@@ -295,13 +366,16 @@ photo/cover CORS가 실기기에서 확인되기 전 `@grant`/privileged transpo
 - batch progress toast-only 구조
 - persistent actionable directory/permission error UI 부재
 - `ri-panel.js` size warning
+- 새 Reel identity 경로의 global metric scan
+- 새 Reel identity 경로의 fuzzy owner/metric shortcode selection
 
 남음:
 
 - `ri-panel.js` → legacy adapter 직접 read coupling
-- Reel legacy metric compatibility functions
-- Reel native metrics/identity accuracy
-- Reel renderer가 Metrics owner를 완전히 사용하지 않음
+- legacy Reel overlay/runtime의 old identity/metric compatibility path
+- legacy Reel metric compatibility formula bodies
+- new `reel-overlay.js` runtime activation + device gate
+- Identity/Extractor/Verified Store 영구 owner migration
 
 Read Model implementation은 Data Engine migration 시 실제 필요가 생길 때 생성합니다.
 
@@ -311,20 +385,25 @@ Read Model implementation은 Data Engine migration 시 실제 필요가 생길 �
 
 순서를 바꾸려면 관련 문서를 먼저 갱신합니다.
 
-## UI-F — Reel identity + Metrics Overlay — 다음 작업
+## UI-F2 — Reel Overlay replacement gate — Device validation 필요
 
-1. current Reel identity 정확도 audit
-2. native likes/comments/reposts source 결합 audit
-3. Reel overlay 계산을 `metrics/metrics.js` owner로 전환
-4. target `▶ / ER / 24h / × / date`
-5. Layout Manager `reelOverlayLane` 연결
-6. native rail/caption collision 보존
-7. 기존 안정적 Reel visual geometry에서 시작
-8. 새 경로 검증 후 legacy metric renderer/callsite 제거
-9. compatibility formula body는 regression 확인 후 제거
-10. Android Edge 실기기 전 accuracy/placement Verified 금지
+새 source는 준비됐지만 old visual을 먼저 숨기지 않습니다.
 
-## UI-G — Data Engine / Research Tabs
+확인 순서:
+
+1. vertical Reel 이동 시 active shortcode 동일성
+2. native likes/comments/reposts 동일 Reel 결합
+3. current legacy overlay와 새 Metrics output 비교
+4. 새 overlay 위치가 native rail/caption을 침범하지 않는지
+5. 새 path가 동등 이상이면 `main.js` mount
+6. 그 다음에만 legacy overlay visual hide/remove
+7. legacy formula body 제거는 Data Engine/renderer migration과 regression 확인 뒤 수행
+
+실기기 결과 전 UI-F2 visual activation은 **Blocked**입니다.
+
+## UI-G1 — Data Engine foundation — 다음 코드 작업
+
+UI-F2가 device gate를 기다리는 동안 다음 코드 작업은 기존 데이터 흐름 계획대로 진행합니다.
 
 ```text
 instagram/identity.js
@@ -335,6 +414,16 @@ instagram/identity.js
 → Grid/Reel renderer
 → legacy removal
 ```
+
+첫 checkpoint에서는:
+
+1. legacy runtime의 Identity/Extractor/Verified Store contract inventory
+2. provenance/conflict/no-fabricated-zero 규칙 문서 대조
+3. `instagram/identity.js` pure owner 설계/테스트
+4. `store/verified-store.js` conflict merge owner 설계/테스트
+5. legacy cache schema migration compatibility 유지
+6. Grid renderer는 Frozen 상태로 유지
+7. replacement callsite가 준비되기 전 legacy Store write path 제거 금지
 
 그 뒤 실제 데이터 준비 순서:
 
@@ -414,4 +503,4 @@ Deferred   = 현재 범위 밖
 - Android Edge 항목은 실제 확인 전 Verified 금지
 - 다음 작업이 이 문서에 명확히 남음
 
-현재 다음 정확한 구현 작업은 **UI-F Reel identity + Metrics Overlay**입니다.
+현재 다음 코드 작업은 **UI-G1 Data Engine foundation**이며, UI-F2 visual activation은 **Android Edge device validation 대기**입니다.
