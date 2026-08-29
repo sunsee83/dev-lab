@@ -20,13 +20,13 @@ WORK_TRACK.md            = 현재 구현 순서
 
 - UI-A Architecture Freeze: **완료**
 - UI-B Primitive + Layout + Workspace State Foundation: **코드/CI 완료, 실기기 미확인**
-- UI-C Global Launcher Replacement: **다음 작업**
-- UI-D Contextual Research Workspace: 예정
-- UI-E Feedback/Activity: 예정
-- UI-F Reel Overlay Unification: 예정
+- UI-C Global Launcher Restoration: **source 완료, 실기기 미확인**
+- UI-D Contextual Research Workspace: **source 완료, 실기기 미확인**
+- UI-E Feedback/Activity: **source 완료, 실기기 미확인**
+- UI-F Reel Overlay Unification: **다음 작업**
 - UI-G Data Engine/Research Tabs: 예정
 
-현재 v3.2.3의 right floating panel과 막대+돋보기 launcher visual은 Foundation UI이며 최종 baseline이 아닙니다.
+현재 source는 기존 RI visual identity를 유지한 Global Launcher, 모바일 bottom Research Workspace, 공용 Activity/Feedback owner까지 연결했습니다. Android Edge 실제 크기·충돌·터치·진행표시는 실기기 확인 전 Verified가 아닙니다.
 
 ---
 
@@ -123,7 +123,7 @@ GLOBAL
 
 ---
 
-# 4. Single UI Root 목표
+# 4. Single UI Root
 
 논리 구조:
 
@@ -136,22 +136,25 @@ UIRoot
 ├ ResearchWorkspace
 │  ├ ContextHeader
 │  ├ WorkspaceNavigation
-│  ├ ActiveTabHost
-│  └ WorkspaceActivity
+│  ├ WorkspaceActivityHost
+│  └ ActiveTabHost
 └ FeedbackLayer
+   ├ ActivityIndicator
    └ Toast
 ```
 
-목표:
+목표/현재 원칙:
 
 - launcher 1개
 - workspace 1개
+- Activity state owner 1개
+- Activity indicator DOM node 1개
 - toast owner 1개
 - layout owner 1개
 - workspace state owner 1개
 - route/store event 중복 subscribe 최소화
 
-현재 migration에서는 기존 파일을 한꺼번에 분해하지 않고 ownership부터 순차적으로 이동합니다.
+Activity Indicator는 Workspace가 열렸다고 별도 인스턴스를 만들지 않습니다. 같은 DOM node를 Workspace host로 이동합니다.
 
 ---
 
@@ -185,20 +188,21 @@ contextKey
 contextEpoch
 ```
 
-현재 Foundation panel이 실제로 이 owner에서 open/tab/context를 읽습니다. Compact/Expanded의 bottom-sheet visual은 UI-D에서 적용합니다.
+UI-D부터 실제 bottom Research Workspace가 이 state를 읽습니다.
 
-## COMPACT target
+## COMPACT
 
 - 약 48~56vh
 - soft non-modal
 - Instagram을 상당 부분 계속 볼 수 있음
 - summary/media/settings 빠른 사용
+- outside tap close 가능
 
-## EXPANDED target
+## EXPANDED
 
 - 약 78~84vh
 - 긴 Caption/댓글/분석
-- soft scrim 허용
+- soft scrim
 - full screen 강제 금지
 
 조작:
@@ -226,7 +230,7 @@ contextEpoch
 8. 새 body는 top으로 reset
 9. active view만 render
 
-현재 UI-B에서 `workspace.rebindContext(identity)` 기반을 panel route/identity/store scheduling에 연결했습니다.
+현재 `workspace.rebindContext(identity)`가 panel route/identity/store scheduling과 연결되어 있습니다.
 
 이전 shortcode의 media/comments/metrics를 새 shortcode와 혼합하지 않습니다.
 
@@ -240,39 +244,35 @@ CONTENT 6탭:
 요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정
 ```
 
-Target:
+현재:
 
-- sticky header 아래 sticky tab rail
-- horizontal scroll
-- selected tab scrollIntoView
+- header 아래 horizontal tab rail
+- selected tab `scrollIntoView`
 - touch target 약 44px
-- color만으로 selected 표시 금지
-- swipe tab navigation 금지
+- selected 상태를 aria + underline/text로 표현
+- swipe tab navigation 없음
 
-## Active Tab Host target
+## Active Tab Host
 
-- active tab만 mount
+- active tab만 mount/render
 - inactive heavy DOM 유지 금지
-- Content/Comments/Analysis lazy render
-- tab listener unmount cleanup
-- context change 시 이전 content scroll/cache 재사용 금지
-
-이 부분은 UI-D에서 실제 구현합니다.
+- Content/Comments/Analysis는 data migration 전 placeholder
+- context change 시 이전 content scroll 재사용 금지
 
 ---
 
 # 8. Context Header
 
-CONTENT target:
+CONTENT:
 
 ```text
-RI · @username    REEL    v3.2.x    ⇱  ×
+RI · @username    REEL    v3.2.x    확장/축소  ×
 ```
 
-GLOBAL target:
+GLOBAL:
 
 ```text
-RI Research              v3.2.x    ×
+RI Research              v3.2.x    확장/축소  ×
 ```
 
 우선순위:
@@ -295,16 +295,21 @@ CLOSED tap → COMPACT
 OPEN tap   → CLOSED
 ```
 
+현재 source:
+
+```text
+44×44 touch target
+└ 34×34 low-opacity circle
+  └ 21×21 research icon
+```
+
 규칙:
 
 - 화면당 1개
-- visual 32~36px
-- touch target 약 44×44px
 - Instagram native보다 과도하게 튀지 않음
 - 별도 settings gear를 Grid/header에 추가하지 않음
-- current v3.2.3 막대+돋보기 icon은 REPLACE 대상
-
-UI-C에서 기존 Reel RI source를 다시 확인한 뒤 교체합니다.
+- Layout Manager anchor 사용
+- Android Edge actual collision/parity는 실기기 전 Unverified
 
 ---
 
@@ -349,9 +354,7 @@ sheetMetrics
 feedbackAnchor
 ```
 
-## UI-B 현재 구현
-
-기존 v3.2.3 geometry를 기본값으로 유지하면서 CSS variable에 연결:
+CSS variables:
 
 ```text
 --ri-launcher-right
@@ -362,8 +365,6 @@ feedbackAnchor
 --ri-sheet-expanded-height
 ```
 
-현재 blocker candidate는 제한된 visible fixed/sticky element를 사용합니다.
-
 Trigger:
 
 - route change
@@ -372,17 +373,16 @@ Trigger:
 
 일반 DOM mutation마다 전체 layout scan하지 않습니다.
 
-## 향후 보강
+향후 보강:
 
-- UI-C: 실제 Global Launcher와 bottom nav/banner collision 검증
+- UI-C/UI-D/UI-E: 실제 launcher/sheet/activity와 nav/banner 충돌 실기기 검증
 - UI-F: Reel native right rail lane 보강
-- UI-D: keyboard/sheet visualViewport 실기기 검증
 
 ---
 
 # 11. Grid UI — Preserve
 
-Grid는 Workspace 전환 때문에 재설계하지 않습니다.
+Grid는 Workspace/Activity 전환 때문에 재설계하지 않습니다.
 
 유지:
 
@@ -422,7 +422,7 @@ ER 0.55%
 - 기존 안정적 geometry 시작점
 - Layout Manager `reelOverlayLane` 사용 목표
 
-실제 Metrics owner 전환은 UI-F.
+실제 identity/native metrics audit와 Metrics owner 전환은 UI-F.
 
 ---
 
@@ -458,7 +458,7 @@ conflict     검증 중
 verified     실제 값
 ```
 
-현재 Foundation Summary는 Metrics Engine과 연결돼 있고 UI-D에서 mobile summary layout을 개선합니다.
+현재 Summary는 Metrics Engine과 연결돼 있습니다.
 
 ---
 
@@ -508,12 +508,12 @@ copy action은 section 가까이에 둡니다.
 - Reel/Video: video + actual cover
 - Photo: original image
 - Carousel: count + representative + whole batch + future per-slide
-
-주요 button 약 44px target.
-
-모든 저장은 Download Manager.
+- 주요 button 약 44px target
+- 모든 저장은 Download Manager
 
 ## Settings
+
+`ui/ri-settings.js`가 presentation owner입니다.
 
 전역 설정:
 
@@ -524,33 +524,73 @@ copy action은 section 가까이에 둡니다.
 - permission
 - folder select/change
 
-큰 `업데이트 바로가기`를 Settings 하단에서 항상 접근 가능하게 유지합니다.
+Persistence/directory handle은 `store/settings-store.js` owner입니다.
 
-version shortcut은 보조이며 큰 버튼을 대체하지 않습니다.
+큰 `업데이트 바로가기`는 Workspace footer에서 항상 접근 가능하게 유지합니다.
 
 ---
 
 # 16. Feedback & Activity Layer
 
-Target model:
+현재 구현 owner:
+
+```text
+core/activity.js
+= Activity state/lifecycle
+
+media/download-manager.js
+= download activity emission
+
+ui/activity-indicator.js
+= running/persistent Activity presentation
+
+ui/toast.js
+= transient feedback + duplicate suppression
+```
+
+Activity model:
 
 ```text
 Activity
-- kind: download | analysis | stt | ocr
+- id
+- kind: download | analysis | stt | ocr | ...
 - state: running | success | error
 - label
-- progress
+- progress: { current, total } | null
 - message
+- code
+- persistent
+- action / actionLabel
+- startedAt / updatedAt
 ```
 
-표현:
+표현 정책:
 
 - 짧은 성공 → Toast
-- actionable error → Workspace persistent message
-- batch → `3/8 저장 중`
-- toast dedupe
+- non-actionable error → Toast
+- 같은 Toast 1.4초 내 중복 억제
+- long-running → Activity Indicator
+- actionable directory/permission/picker error → persistent Activity
+- persistent error → `설정 열기` action 가능
+- Carousel batch → 동일 id로 `1/N ... N/N 저장 중`
+- cancel → Activity 제거
+- launcher badge는 현재 필요성 없어 추가하지 않음
 
-UI-E에서 실제 owner/presentation을 도입합니다.
+Placement:
+
+```text
+Workspace closed
+→ global Activity Indicator
+→ Layout Manager --ri-feedback-bottom
+
+Workspace open
+→ 동일 #ri32-activity node
+→ .ri32-activity-host 로 이동
+```
+
+즉 global과 Workspace에 진행카드를 복제하지 않습니다.
+
+향후 STT/OCR/AI job은 Download Manager를 거치지 않아도 같은 Activity Store contract를 publish할 수 있습니다.
 
 ---
 
@@ -574,10 +614,10 @@ browser navigation/back 가로채지 않음.
 
 # 18. Mobile Design Tokens
 
-Target tokens:
+현재/target tokens:
 
 ```text
---ri-touch: 44px
+--ri-touch: 약 44px
 --ri-radius-sheet: 18~20px
 --ri-radius-control: 9~12px
 --ri-space-1: 4px
@@ -599,7 +639,7 @@ Target tokens:
 - dark/light 대응 가능
 - 상태를 color만으로 구분 금지
 
-UI-D에서 실제 token 적용 범위를 확장합니다.
+실제 토큰 일괄 추상화는 필요성이 생길 때만 합니다.
 
 ---
 
@@ -636,6 +676,7 @@ ResearchReadModel
 ```text
 Workspace State → ui/workspace-state.js
 Layout State    → ui/layout.js
+Activity State  → core/activity.js
 ```
 
 금지:
@@ -643,6 +684,7 @@ Layout State    → ui/layout.js
 - launcher separate open state
 - tab renderer sheet height ownership
 - toast direct bottom offset calculation
+- Grid/RI별 download progress boolean 복제
 - route마다 new global listener
 
 각 tab은 local presentation state만 소유합니다.
@@ -651,39 +693,27 @@ Layout State    → ui/layout.js
 
 # 21. Current / Target File Ownership
 
-현재 실제 UI:
+현재 실제 UI/Foundation:
 
 ```text
+core/
+└ activity.js
+
 ui/
+├ activity-indicator.js
 ├ grid.js
 ├ layout.js
 ├ workspace-state.js
+├ research-workspace.js
 ├ ri-primitives.js
 ├ ri-panel.js
+├ ri-settings.js
 ├ ri-summary.js
 ├ toast.js
 └ styles.js
 ```
 
-실제 책임이 커질 때만 target 분리:
-
-```text
-ui/
-├ ui-root.js
-├ launcher.js
-├ research-workspace.js
-├ workspace-navigation.js
-├ layout.js
-├ workspace-state.js
-├ ri-primitives.js
-├ ri-summary.js
-├ grid.js
-├ reel.js
-├ toast.js
-└ styles.js
-```
-
-처음부터 빈 `tabs/*`를 만들지 않습니다.
+실제 책임이 커질 때만 추가 분리합니다. 처음부터 빈 `tabs/*`, `utils.js`, `helpers.js`를 만들지 않습니다.
 
 ---
 
@@ -694,66 +724,50 @@ ui/
 - baseline/architecture/preservation 정리
 - current↔target gap 문서화
 
-## UI-B — Primitive + Layout + Workspace State — 코드 완료
+## UI-B — Primitive + Layout + Workspace State — source 완료
 
-실제 완료:
+- `ri-primitives.js`
+- `layout.js`
+- `workspace-state.js`
+- owner injection / route scheduling
+- duplicate warning 0
 
-1. `ri-primitives.js`
-2. `layout.js`
-3. `workspace-state.js`
-4. panel/summary primitive 공통화
-5. main composition injection
-6. panel open/tab/context state owner 연결
-7. styles offsets → layout CSS variables
-8. route/resize/visualViewport layout scheduling
-9. unit coverage
-10. architecture duplicate warning 0
+## UI-C — Launcher Restoration — source 완료 / device pending
 
-자동검증:
+- v3.1 RI SVG/visual audit
+- 34px legacy-style visual + 44px touch target
+- Layout Manager anchor
 
-- 18/18 unit pass
-- build pass
-- architecture/syntax pass
-- 19 source files / 0 warnings
+## UI-D — Research Workspace Replacement — source 완료 / device pending
 
-Android Edge visual/touch는 Unverified.
+- `research-workspace.js`
+- bottom sheet COMPACT/EXPANDED
+- CONTENT 6탭
+- GLOBAL RI Home
+- explicit expand/collapse/close
+- active body only render
+- summary/media/settings/update 이관
 
-## UI-C — Launcher Replacement — 다음
+## UI-E — Feedback / Activity — source 완료 / device pending
 
-1. 기존 v3.1 Reel RI icon/visual 재확인
-2. Global Launcher에 적용
-3. 44px touch target
-4. Layout Manager anchor
-5. 화면당 1개
-6. collision 실기기 검토
-7. 새 launcher 검증 후 임시 visual 제거
+- `core/activity.js`
+- `ui/activity-indicator.js`
+- Toast dedupe
+- Carousel batch progress
+- persistent actionable error
+- Workspace Activity host
+- Settings action 연결
+- `ri-settings.js` responsibility split
+- 23 source / 0 architecture warnings checkpoint
 
-## UI-D — Research Workspace Replacement
+## UI-F — Reel Overlay Unification — 다음
 
-1. old panel action inventory
-2. bottom sheet COMPACT/EXPANDED
-3. CONTENT 6탭
-4. GLOBAL RI Home
-5. sticky header/tabs
-6. explicit expand/collapse
-7. active tab lazy mount
-8. summary/media/settings/update 완전 이관
-9. new workspace 검증 후 right floating panel 제거
-
-## UI-E — Feedback / Activity
-
-- toast dedupe
-- batch progress
-- persistent error
-- analysis job extension
-
-## UI-F — Reel Overlay Unification
-
-- current Reel identity
-- native metrics
-- Metrics owner
-- Layout Manager lane
-- legacy metric renderer 제거
+1. current Reel identity audit
+2. native metrics source audit
+3. Metrics owner 연결
+4. `▶ / ER / 24h / × / date`
+5. Layout Manager reel lane
+6. legacy metric renderer/callsite 제거
 
 ## UI-G — Data Engine / Research Tabs
 
@@ -776,6 +790,7 @@ Android Edge visual/touch는 Unverified.
 - 기존 Reel RI visual identity
 - native Instagram actions
 - cover/no-flicker/media improvements
+- directory failure no silent fallback
 
 ## Structure
 
@@ -783,9 +798,19 @@ Android Edge visual/touch는 Unverified.
 - Workspace 1개
 - layout owner 1개
 - workspace state owner 1개
+- activity state owner 1개
+- Activity Indicator 1개
 - stale context invalidation
-- active heavy tab only mount target
+- active heavy tab only mount
 - UI storage/network/metrics formula 금지
+
+## Feedback
+
+- batch progress same-id update
+- short success toast
+- duplicate toast suppression
+- actionable error persistent
+- Workspace/global Activity duplication 없음
 
 ## Mobile
 
@@ -800,6 +825,7 @@ Android Edge visual/touch는 Unverified.
 ## Verification
 
 - unit/build/check pass
+- architecture warnings 0
 - Android Edge 실기기 전 visual/touch Verified 금지
 - component 제거는 replacement gate 이후
 
@@ -811,10 +837,10 @@ Android Edge visual/touch는 Unverified.
 
 - Grid 3열/8-slot
 - 기존 Reel RI visual identity
-- Reel 5개 파생지표
+- Reel 5개 파생지표 target
 - Global RI 1개
 - CONTENT 6탭
-- bottom Research Workspace target
+- bottom Research Workspace
 - Compact/Expanded
 - 업데이트 shortcut
 - common Settings/Download Manager
@@ -823,16 +849,19 @@ Android Edge visual/touch는 Unverified.
 
 - CONTENT/GLOBAL context
 - RI Home
-- Workspace State owner 실제 도입
-- Layout owner 실제 도입
+- Workspace State owner
+- Layout owner
 - RI primitive duplicate 제거
+- Research Workspace shell owner
+- Settings presentation owner
 - route identity contextEpoch
-- active-tab lazy target
+- active-tab lazy render
 - non-modal/semi-modal policy
 - explicit expand/collapse
 - browser history 비침범
-- Activity layer extension
+- Activity state owner
+- transient/persistent feedback 분리
+- future STT/OCR/AI Activity extension
 - Research Read Model boundary
-- mobile tokens
 
 이 문서의 구조를 바꾸려면 기존 의도와 보존항목을 먼저 검토하고 `WORK_TRACK.md` 실행순서를 먼저 갱신합니다.
