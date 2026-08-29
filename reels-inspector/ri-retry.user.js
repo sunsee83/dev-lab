@@ -1220,6 +1220,252 @@
     }
   }
 
+  // src/migration/reel-context-adapter.js
+  var METRIC_PATTERNS = Object.freeze({
+    likes: /좋아요|\blikes?\b/i,
+    comments: /댓글|\bcomments?\b/i,
+    reposts: /리포스트|재게시|\breposts?\b|\breshare\b/i
+  });
+  var PROFILE_RESERVED = /* @__PURE__ */ new Set(["accounts", "explore", "reels", "reel", "p", "direct", "stories"]);
+  function createReelContextAdapter({ store, doc = globalThis.document, env = globalThis } = {}) {
+    if (!store) throw new Error("Reel Context Adapter requires store adapter");
+    function getCurrent() {
+      const video = selectActiveVideo(doc, env);
+      if (!video) return null;
+      const viewport = viewportSize(env, doc);
+      const videoRect = safeRect(video);
+      if (!videoRect || visibleHeight(videoRect, viewport.height) < viewport.height * 0.45) return null;
+      const root = findScopedRoot(video, viewport, env) || video.parentElement || doc;
+      const native = readNativeMetrics(root, env);
+      const username = readUsername(root, videoRect, viewport, env);
+      const scopedCode = scopedShortcode(root, store, env);
+      const mediaPost = store.findPostByMediaUrls?.(mediaUrls(video)) || null;
+      const mediaCode = mediaPost?.shortcode || "";
+      const urlCode = exactReelCode(env.location?.href || "");
+      const resolved = resolveReelShortcode({ scopedCode, mediaCode, urlCode });
+      const shortcode = resolved.shortcode;
+      const post = shortcode ? store.getPost?.(shortcode) || null : null;
+      const identity = shortcode ? toIdentity(post, {
+        shortcode,
+        username: username || post?.username || "",
+        canonicalUrl: post?.canonicalUrl || canonicalReelUrl(shortcode),
+        source: resolved.source
+      }) : null;
+      return {
+        video,
+        shortcode,
+        identity,
+        identitySource: resolved.source,
+        username: username || post?.username || "",
+        native,
+        post
+      };
+    }
+    function resolveActivityIdentity() {
+      return getCurrent()?.identity || void 0;
+    }
+    return { getCurrent, resolveActivityIdentity };
+  }
+  function resolveReelShortcode({ scopedCode = "", mediaCode = "", urlCode = "" } = {}) {
+    if (scopedCode) return { shortcode: String(scopedCode), source: "scoped-link" };
+    if (mediaCode) return { shortcode: String(mediaCode), source: "media-map" };
+    if (urlCode) return { shortcode: String(urlCode), source: "route" };
+    return { shortcode: "", source: "unresolved" };
+  }
+  function parseMetricCount(text) {
+    const source = String(text || "").replace(/\u00a0/g, " ");
+    const match = source.match(/([0-9]+(?:[.,][0-9]+)?)\s*(억|만|천|[KMBkmb])?/);
+    if (!match) return void 0;
+    let number = Number(match[1].replace(",", "."));
+    if (!Number.isFinite(number) || number < 0) return void 0;
+    const unit = match[2] || "";
+    if (unit === "천" || /k/i.test(unit)) number *= 1e3;
+    else if (unit === "만") number *= 1e4;
+    else if (unit === "억") number *= 1e8;
+    else if (/m/i.test(unit)) number *= 1e6;
+    else if (/b/i.test(unit)) number *= 1e9;
+    return Math.round(number);
+  }
+  function selectActiveVideo(doc, env) {
+    const videos = [...doc?.querySelectorAll?.("video") || []];
+    const viewport = viewportSize(env, doc);
+    let best = null;
+    let bestScore = -Infinity;
+    for (const video of videos) {
+      const rect = safeRect(video);
+      if (!rect) continue;
+      const width = visibleWidth(rect, viewport.width);
+      const height = visibleHeight(rect, viewport.height);
+      const area = width * height;
+      if (area < viewport.width * viewport.height * 0.18) continue;
+      const center = (Math.max(0, rect.top) + Math.min(viewport.height, rect.bottom)) / 2;
+      const playingBonus = video.paused === false ? viewport.width * viewport.height * 0.18 : 0;
+      const score = area - Math.abs(center - viewport.height / 2) * viewport.width * 1.3 + playingBonus;
+      if (score > bestScore) {
+        best = video;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+  function findScopedRoot(video, viewport, env) {
+    let current = video?.parentElement || null;
+    let articleFallback = null;
+    for (let depth = 0; current && depth < 10; depth += 1, current = current.parentElement) {
+      const rect = safeRect(current);
+      if (!rect) continue;
+      if (String(current.tagName || "").toLowerCase() === "article") articleFallback = current;
+      if (rect.width < viewport.width * 0.5 || rect.height < viewport.height * 0.42) continue;
+      const recognized = recognizedControls(current, env, 180);
+      if (recognized >= 2) return current;
+    }
+    return articleFallback;
+  }
+  function recognizedControls(root, env, limit) {
+    let count = 0;
+    const controls = root?.querySelectorAll?.('button,[role="button"],a') || [];
+    for (let index = 0; index < controls.length && index < limit; index += 1) {
+      const control = controls[index];
+      if (!isVisible(control, env)) continue;
+      const label = controlLabel(control);
+      if (Object.values(METRIC_PATTERNS).some((pattern) => pattern.test(label))) count += 1;
+    }
+    return count;
+  }
+  function readNativeMetrics(root, env) {
+    const output = { likes: void 0, comments: void 0, reposts: void 0 };
+    const controls = root?.querySelectorAll?.('button,[role="button"],a') || [];
+    for (let index = 0; index < controls.length && index < 240; index += 1) {
+      const control = controls[index];
+      if (!isVisible(control, env)) continue;
+      const label = controlLabel(control);
+      const key = metricKey(label);
+      if (!key || output[key] != null) continue;
+      const value = metricValue(control, root, label);
+      if (value != null) output[key] = value;
+    }
+    return output;
+  }
+  function metricKey(label) {
+    for (const [key, pattern] of Object.entries(METRIC_PATTERNS)) if (pattern.test(label)) return key;
+    return "";
+  }
+  function metricValue(control, root, label) {
+    const fromLabel = parseMetricCount(label);
+    if (fromLabel != null) return fromLabel;
+    let current = control;
+    for (let depth = 0; current && depth < 3; depth += 1, current = current.parentElement) {
+      const text = String(current.textContent || "").trim();
+      if (text.length && text.length <= 90) {
+        const value = parseMetricCount(text);
+        if (value != null) return value;
+      }
+      if (current === root) break;
+    }
+    return void 0;
+  }
+  function readUsername(root, videoRect, viewport, env) {
+    const links = root?.querySelectorAll?.('a[href^="/"]') || [];
+    let best = null;
+    let bestScore = -Infinity;
+    for (let index = 0; index < links.length && index < 180; index += 1) {
+      const link = links[index];
+      if (!isVisible(link, env)) continue;
+      const match = String(link.getAttribute?.("href") || "").match(/^\/([A-Za-z0-9._]+)\/?$/);
+      if (!match || PROFILE_RESERVED.has(match[1].toLowerCase())) continue;
+      const rect = safeRect(link);
+      if (!rect) continue;
+      const lowerHalf = rect.top >= Math.max(videoRect.top, 0) + Math.max(0, videoRect.height) * 0.45;
+      const leftBias = Math.max(0, viewport.width - rect.left);
+      const score = (lowerHalf ? 1e5 : 0) + leftBias - Math.abs(rect.bottom - Math.min(viewport.height, videoRect.bottom));
+      if (score > bestScore) {
+        best = match[1].toLowerCase();
+        bestScore = score;
+      }
+    }
+    return best || "";
+  }
+  function scopedShortcode(root, store, env) {
+    const anchors = root?.querySelectorAll?.('a[href*="/reel/"],a[href*="/reels/"]') || [];
+    for (let index = 0; index < anchors.length && index < 120; index += 1) {
+      const anchor = anchors[index];
+      if (!isVisible(anchor, env)) continue;
+      const code = store.codeFromUrl?.(anchor.href || anchor.getAttribute?.("href")) || exactReelCode(anchor.href || anchor.getAttribute?.("href"));
+      if (code) return code;
+    }
+    return "";
+  }
+  function mediaUrls(video) {
+    return [video?.currentSrc, video?.src, video?.poster].map((value) => String(value || "")).filter((value) => /^https?:/i.test(value));
+  }
+  function exactReelCode(url) {
+    const match = String(url || "").match(/\/(?:reel|reels)\/([A-Za-z0-9_-]+)(?:[/?#]|$)/);
+    return match ? match[1] : "";
+  }
+  function toIdentity(post, fallback) {
+    return {
+      shortcode: fallback.shortcode,
+      mediaId: post?.mediaId || "",
+      ownerId: post?.ownerId || "",
+      username: fallback.username || "",
+      mediaType: post?.mediaType || "REEL",
+      productType: post?.productType || "",
+      canonicalUrl: fallback.canonicalUrl,
+      parentMediaId: "",
+      childMediaId: "",
+      slideIndex: null,
+      state: post?.mediaId || post?.username ? "IDENTIFIED" : "DETECTED",
+      source: fallback.source
+    };
+  }
+  function canonicalReelUrl(shortcode) {
+    return shortcode ? `https://www.instagram.com/reel/${shortcode}/` : "";
+  }
+  function controlLabel(element) {
+    const svg = element?.querySelector?.("svg[aria-label],svg[title]");
+    return [
+      element?.getAttribute?.("aria-label") || "",
+      element?.getAttribute?.("title") || "",
+      svg?.getAttribute?.("aria-label") || "",
+      svg?.getAttribute?.("title") || "",
+      element?.textContent || ""
+    ].join(" ").trim();
+  }
+  function isVisible(element, env) {
+    const rect = safeRect(element);
+    if (!rect || rect.width <= 2 || rect.height <= 2) return false;
+    const height = Number(env.innerHeight || env.visualViewport?.height || 0);
+    return rect.bottom > 0 && (!height || rect.top < height);
+  }
+  function safeRect(element) {
+    try {
+      const rect = element?.getBoundingClientRect?.();
+      if (!rect) return null;
+      return {
+        top: Number(rect.top) || 0,
+        right: Number(rect.right) || 0,
+        bottom: Number(rect.bottom) || 0,
+        left: Number(rect.left) || 0,
+        width: Number(rect.width) || 0,
+        height: Number(rect.height) || 0
+      };
+    } catch {
+      return null;
+    }
+  }
+  function viewportSize(env, doc) {
+    return {
+      width: Number(env.visualViewport?.width || env.innerWidth || doc?.documentElement?.clientWidth || 0),
+      height: Number(env.visualViewport?.height || env.innerHeight || doc?.documentElement?.clientHeight || 0)
+    };
+  }
+  function visibleWidth(rect, viewportWidth) {
+    return Math.max(0, Math.min(viewportWidth, rect.right) - Math.max(0, rect.left));
+  }
+  function visibleHeight(rect, viewportHeight) {
+    return Math.max(0, Math.min(viewportHeight, rect.bottom) - Math.max(0, rect.top));
+  }
+
   // src/ui/toast.js
   var TOAST_ID = "ri32-toast";
   var DEDUPE_WINDOW_MS = 1400;
@@ -1577,7 +1823,7 @@
     const cleanups = [];
     function measure() {
       if (destroyed) return snapshot;
-      const viewport = viewportSize(env, doc);
+      const viewport = viewportSize2(env, doc);
       const candidates = blockerCandidates(doc);
       const bottomBlockers = [];
       const rightBlockers = [];
@@ -1643,7 +1889,7 @@
       }
     };
   }
-  function viewportSize(env, doc) {
+  function viewportSize2(env, doc) {
     const visual = env.visualViewport;
     return {
       width: positive(visual?.width || env.innerWidth || doc?.documentElement?.clientWidth),
@@ -1749,6 +1995,170 @@
   function clamp(value, min, max) {
     if (max < min) return Math.max(0, max);
     return Math.min(Math.max(value, min), max);
+  }
+
+  // src/ui/metric-format.js
+  var COUNT_FORMATTER = new Intl.NumberFormat("ko-KR");
+  function countLabel(value, { missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return missing;
+    return COUNT_FORMATTER.format(number);
+  }
+  function compactCountLabel(value, { missing = "" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return missing;
+    if (number >= 1e8) return `${trimFixed(number / 1e8, 1)}억`;
+    if (number >= 1e4) return `${trimFixed(number / 1e4, 1)}만`;
+    if (number >= 1e3) return `${trimFixed(number / 1e3, 1)}K`;
+    return String(Math.round(number));
+  }
+  function percentLabel(value, { sign = false, missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return missing;
+    const digits = Math.abs(number) >= 10 ? 1 : 2;
+    const prefix = sign && number >= 0 ? "+" : "";
+    return `${prefix}${trimFixed(number, digits)}%`;
+  }
+  function multipleLabel(value, { missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return missing;
+    return `×${trimFixed(number, number >= 10 ? 1 : 2)}`;
+  }
+  function shortDateLabel(value, { missing = "" } = {}) {
+    const text = String(value || "").trim();
+    const match = text.match(/^(?:\d{4}-)?(\d{1,2})-(\d{1,2})/);
+    if (match) return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}`;
+    const slash = text.match(/^(?:\d{4}\/)?(\d{1,2})\/(\d{1,2})/);
+    if (slash) return `${slash[1].padStart(2, "0")}/${slash[2].padStart(2, "0")}`;
+    return missing;
+  }
+  function trimFixed(value, digits) {
+    return Number(value).toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
+  }
+
+  // src/ui/reel-overlay.js
+  var OVERLAY_ID = "ri32-reel-overlay";
+  var LEGACY_OVERLAY_ID = "ri3-reels-overlay";
+  function mountReelOverlay({
+    app: app2,
+    reelContext: reelContext2,
+    store,
+    metrics: metrics2,
+    layout: layout2,
+    doc = globalThis.document,
+    env = globalThis
+  } = {}) {
+    if (!doc?.documentElement || !reelContext2 || !store || !metrics2) {
+      throw new Error("Reel Overlay requires document, context adapter, store and Metrics Engine");
+    }
+    let destroyed = false;
+    let node = doc.getElementById(OVERLAY_ID);
+    let scheduled = false;
+    let frameId = 0;
+    let renderKey = "";
+    const cleanups = [];
+    doc.getElementById(LEGACY_OVERLAY_ID)?.remove();
+    function ensureNode() {
+      if (node) return node;
+      node = doc.createElement("div");
+      node.id = OVERLAY_ID;
+      node.setAttribute("aria-hidden", "true");
+      doc.documentElement.appendChild(node);
+      return node;
+    }
+    function render() {
+      scheduled = false;
+      frameId = 0;
+      if (destroyed) return;
+      doc.getElementById(LEGACY_OVERLAY_ID)?.remove();
+      const context = reelContext2.getCurrent();
+      if (!context?.shortcode) return hide();
+      const stored = store.getPost?.(context.shortcode) || context.post || { shortcode: context.shortcode };
+      const livePost = mergePost(stored, context);
+      const derived = metrics2.summarize(livePost) || {};
+      const lines = buildLines(livePost, derived);
+      if (!lines.length) return hide();
+      const overlay = ensureNode();
+      const nextKey = `${context.shortcode}|${lines.join("|")}`;
+      if (nextKey !== renderKey) {
+        overlay.replaceChildren(...lines.map((text) => {
+          const row = doc.createElement("div");
+          row.textContent = text;
+          return row;
+        }));
+        renderKey = nextKey;
+      }
+      overlay.style.display = "flex";
+    }
+    function hide() {
+      if (node) node.style.display = "none";
+      renderKey = "";
+    }
+    function schedule() {
+      if (destroyed || scheduled) return;
+      scheduled = true;
+      const raf = env.requestAnimationFrame || ((callback) => (env.setTimeout || setTimeout)(callback, 16));
+      frameId = raf(render);
+    }
+    function listen(target, eventName) {
+      if (!target?.addEventListener) return;
+      target.addEventListener(eventName, schedule, true);
+      cleanups.push(() => target.removeEventListener?.(eventName, schedule, true));
+    }
+    for (const eventName of [EVENTS.ROUTE_CHANGED, EVENTS.IDENTITY_CHANGED, EVENTS.STORE_CHANGED]) {
+      cleanups.push(app2?.on?.(eventName, schedule) || (() => {
+      }));
+    }
+    cleanups.push(layout2?.subscribe?.(schedule) || (() => {
+    }));
+    listen(doc, "play");
+    listen(doc, "loadedmetadata");
+    listen(env, "scroll");
+    listen(env, "resize");
+    schedule();
+    function destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      scheduled = false;
+      for (const cleanup of cleanups.splice(0)) cleanup();
+      if (frameId && typeof env.cancelAnimationFrame === "function") env.cancelAnimationFrame(frameId);
+      frameId = 0;
+      node?.remove();
+      node = null;
+      renderKey = "";
+    }
+    return { render, schedule, destroy };
+  }
+  function buildReelOverlayLines(post, derived = {}) {
+    return buildLines(post, derived);
+  }
+  function mergePost(stored, context) {
+    return {
+      ...stored,
+      shortcode: context.shortcode,
+      username: context.username || stored?.username || "",
+      mediaType: stored?.mediaType || "REEL",
+      likes: liveMetric(context.native?.likes, stored?.likes),
+      comments: liveMetric(context.native?.comments, stored?.comments),
+      reposts: liveMetric(context.native?.reposts, stored?.reposts)
+    };
+  }
+  function liveMetric(nativeValue, storedValue) {
+    return nativeValue == null ? storedValue : nativeValue;
+  }
+  function buildLines(post, derived) {
+    const lines = [];
+    const views = compactCountLabel(post?.views, { missing: "" });
+    const engagement = percentLabel(derived?.engagementRate, { missing: "" });
+    const growth = percentLabel(derived?.growth24h, { sign: true, missing: "" });
+    const multiple = multipleLabel(derived?.accountMultiple, { missing: "" });
+    const date = shortDateLabel(post?.date, { missing: "" });
+    if (views) lines.push(`▶ ${views}`);
+    if (engagement) lines.push(`ER ${engagement}`);
+    if (growth) lines.push(`24h ${growth}`);
+    if (multiple) lines.push(multiple);
+    if (date) lines.push(date);
+    return lines;
   }
 
   // src/ui/ri-primitives.js
@@ -2187,45 +2597,6 @@
 #ri32-toast{position:fixed;left:50%;bottom:var(--ri-feedback-bottom,max(134px,calc(env(safe-area-inset-bottom) + 124px)));transform:translateX(-50%);z-index:2147483647;max-width:82vw;padding:8px 12px;border-radius:16px;background:rgba(20,20,20,.94);color:#fff;font:650 11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;white-space:normal}
 @media (prefers-reduced-motion:reduce){#ri32-panel{transition:none}.ri32-tabs{scroll-behavior:auto}.ri32-activity-progress span{transition:none}}
 `;
-
-  // src/ui/metric-format.js
-  var COUNT_FORMATTER = new Intl.NumberFormat("ko-KR");
-  function countLabel(value, { missing = "—" } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number < 0) return missing;
-    return COUNT_FORMATTER.format(number);
-  }
-  function compactCountLabel(value, { missing = "" } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return missing;
-    if (number >= 1e8) return `${trimFixed(number / 1e8, 1)}억`;
-    if (number >= 1e4) return `${trimFixed(number / 1e4, 1)}만`;
-    if (number >= 1e3) return `${trimFixed(number / 1e3, 1)}K`;
-    return String(Math.round(number));
-  }
-  function percentLabel(value, { sign = false, missing = "—" } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return missing;
-    const digits = Math.abs(number) >= 10 ? 1 : 2;
-    const prefix = sign && number >= 0 ? "+" : "";
-    return `${prefix}${trimFixed(number, digits)}%`;
-  }
-  function multipleLabel(value, { missing = "—" } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return missing;
-    return `×${trimFixed(number, number >= 10 ? 1 : 2)}`;
-  }
-  function shortDateLabel(value, { missing = "" } = {}) {
-    const text = String(value || "").trim();
-    const match = text.match(/^(?:\d{4}-)?(\d{1,2})-(\d{1,2})/);
-    if (match) return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}`;
-    const slash = text.match(/^(?:\d{4}\/)?(\d{1,2})\/(\d{1,2})/);
-    if (slash) return `${slash[1].padStart(2, "0")}/${slash[2].padStart(2, "0")}`;
-    return missing;
-  }
-  function trimFixed(value, digits) {
-    return Number(value).toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
-  }
 
   // src/ui/ri-summary.js
   function renderRiSummary({ body, post, metrics: metrics2, doc = globalThis.document } = {}) {
@@ -3494,7 +3865,7 @@
       }
       return best;
     }
-    function controlLabel(el) {
+    function controlLabel2(el) {
       var svg = el && el.querySelector ? el.querySelector("svg[aria-label],svg[title]") : null;
       return [
         el && el.getAttribute && el.getAttribute("aria-label") || "",
@@ -3510,7 +3881,7 @@
         if (!visible(elements[i])) continue;
         r = elements[i].getBoundingClientRect();
         if (r.left < innerWidth * 0.66 || r.top < innerHeight * 0.18 || r.bottom > innerHeight * 0.92 || r.width > 120 || r.height > 120) continue;
-        text = controlLabel(elements[i]);
+        text = controlLabel2(elements[i]);
         if (/좋아요|\blike\b|댓글|comment|리포스트|repost|reshare|공유|share|send|더\s*보기|more|options/.test(text)) out.push({ el: elements[i], r, text });
       }
       return out.sort(function(a, b) {
@@ -3549,7 +3920,7 @@
       }
       return "";
     }
-    function reelContext() {
+    function reelContext2() {
       var video = activeVideo(), r, code = "", metrics2, owner, candidates = [], keys;
       if (!video) return null;
       r = video.getBoundingClientRect();
@@ -3636,7 +4007,7 @@
         button.setAttribute("aria-label", "리서치 도구");
         button.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V13M9 19V9M14 19V5"/><circle cx="17.5" cy="14.5" r="3.5"/><path d="M20 17l2 2"/></svg>';
         button.addEventListener("click", function() {
-          panelOpen ? closePanel() : openPanel(reelContext());
+          panelOpen ? closePanel() : openPanel(reelContext2());
         });
         document.documentElement.appendChild(button);
       }
@@ -3704,19 +4075,19 @@
       actions = panel.querySelector(".ri3-panel-actions");
       entries = [
         ["순수 영상", function() {
-          var latest = reelContext() || panelContext;
+          var latest = reelContext2() || panelContext;
           var data = latest && latest.code ? items[latest.code] || {} : {};
           var url = latest && latest.video && (latest.video.currentSrc || latest.video.src) || fieldValue2(data, "videoUrl") || "";
           if (/^blob:/i.test(url)) url = fieldValue2(data, "videoUrl") || "";
           openUrl(url);
         }],
         ["썸네일", function() {
-          var latest = reelContext() || panelContext;
+          var latest = reelContext2() || panelContext;
           var data = latest && latest.code ? items[latest.code] || {} : {};
           openUrl(fieldValue2(data, "thumbUrl") || latest && latest.video && latest.video.poster || "");
         }],
         ["링크 복사", function() {
-          var latest = reelContext() || panelContext;
+          var latest = reelContext2() || panelContext;
           var text = latest && latest.code ? "https://www.instagram.com/reel/" + latest.code + "/" : location.href;
           copyText2(text);
         }],
@@ -3767,7 +4138,7 @@
       injectStyle();
       scanEmbedded(false);
       scanGrid();
-      ctx = reelContext();
+      ctx = reelContext2();
       key = ctx ? (ctx.code || "unknown") + "|" + (ctx.owner || "") : "";
       if (key !== currentContextKey) {
         currentContextKey = key;
@@ -4194,21 +4565,29 @@
     }
   });
   var legacyStore = createLegacyStoreAdapter({ env: globalThis });
+  var reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
   var metrics = createMetricsEngine({ history: legacyStore });
   var workspace = createWorkspaceState();
+  var reelOverlay = null;
   var storeTracker = legacyStore.createChangeTracker((change) => {
-    app.setCurrentIdentity(legacyStore.getCurrentIdentity());
+    const activeIdentity = reelContext.resolveActivityIdentity();
+    app.setCurrentIdentity(activeIdentity === void 0 ? legacyStore.getCurrentIdentity() : activeIdentity);
     app.emit(EVENTS.STORE_CHANGED, change);
   });
   app.services = { capabilities, settings, downloads, metrics, workspace, activity };
   app.adapters.legacyStore = legacyStore;
+  app.adapters.reelContext = reelContext;
   var stopRouteTracking = app.startRouteTracking({
     env: globalThis,
     resolveIdentity(url) {
-      return legacyStore.getCurrentIdentity(url);
+      return reelContext.getCurrent()?.identity || legacyStore.getCurrentIdentity(url);
+    },
+    resolveActivityIdentity() {
+      return reelContext.resolveActivityIdentity();
     },
     onActivity(reason) {
       storeTracker.schedule(reason);
+      reelOverlay?.schedule(reason);
     }
   });
   var layout = createLayoutManager({ app, doc: document, env: globalThis });
@@ -4226,6 +4605,15 @@
     doc: document,
     env: globalThis
   });
+  reelOverlay = mountReelOverlay({
+    app,
+    reelContext,
+    store: legacyStore,
+    metrics,
+    layout,
+    doc: document,
+    env: globalThis
+  });
   var activityIndicator = mountActivityIndicator({
     activity,
     workspace,
@@ -4240,6 +4628,7 @@
   app.adapters.stopLayout = () => layout.destroy();
   app.adapters.grid = grid;
   app.adapters.riPanel = riPanel;
+  app.adapters.reelOverlay = reelOverlay;
   app.adapters.activityIndicator = activityIndicator;
   void settings.init().catch((error) => {
     console.warn("[RI] settings initialization failed", error);
