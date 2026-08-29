@@ -42,6 +42,7 @@ export function createResearchWorkspaceView({
       '<button type="button" class="ri32-close" aria-label="닫기">×</button>',
       '</div>',
       '<div class="ri32-tabs" role="tablist"></div>',
+      '<div class="ri32-activity-host"></div>',
       '<div class="ri32-body"></div>',
       '<div class="ri32-footer"><button type="button" class="ri32-update-shortcut">업데이트 바로가기</button></div>'
     ].join('');
