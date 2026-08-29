@@ -1210,7 +1210,7 @@
 .ri32-tabs::-webkit-scrollbar{display:none}
 .ri32-tab{flex:0 0 auto;height:35px;padding:0 9px;border:0;border-bottom:2px solid transparent;background:transparent;color:rgba(255,255,255,.58);font:650 10px/1 sans-serif}
 .ri32-tab[aria-selected="true"]{color:#fff;border-bottom-color:#fff}
-.ri32-body{max-height:calc(min(64vh,540px) - 78px);overflow-y:auto;padding:10px}
+.ri32-body{max-height:calc(min(64vh,540px) - 130px);overflow-y:auto;padding:10px}
 .ri32-empty{min-height:78px;display:grid;place-items:center;color:rgba(255,255,255,.52);font-size:10px;line-height:1.45;text-align:center}
 .ri32-section+.ri32-section{margin-top:13px}.ri32-section-title{margin-bottom:7px;font-size:10.5px;font-weight:750}
 .ri32-options{display:grid;gap:6px}.ri32-option{min-height:38px;display:flex;align-items:center;gap:8px;padding:0 9px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.035);color:#fff;text-align:left;font-size:10px}
@@ -1219,6 +1219,8 @@
 .ri32-setting-row{display:flex;align-items:center;gap:8px;min-height:32px;font-size:10px}.ri32-setting-row span:first-child{flex:1;opacity:.62}.ri32-setting-row strong{font-size:10px;text-align:right}
 .ri32-action{min-height:34px;padding:0 10px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.06);color:#fff;font-size:10px}
 .ri32-media-action{width:100%;margin-top:6px;text-align:left}.ri32-note{margin-top:7px;color:rgba(255,255,255,.46);font-size:9px;line-height:1.45}
+.ri32-update-shortcut{display:block;width:calc(100% - 20px);min-height:42px;margin:0 10px 10px;padding:0 12px;border:1px solid rgba(255,255,255,.24);border-radius:10px;background:rgba(255,255,255,.11);color:#fff;font:750 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;-webkit-tap-highlight-color:transparent}
+.ri32-update-shortcut:active{background:rgba(255,255,255,.19)}
 #ri32-grid-menu{position:fixed;z-index:2147483646;min-width:150px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
 #ri32-grid-menu button{height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#fff;text-align:left;font:650 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap}
 #ri32-grid-menu button:active{background:rgba(255,255,255,.12)}#ri32-grid-menu button:disabled{opacity:.38}
