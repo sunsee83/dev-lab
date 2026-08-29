@@ -33,6 +33,50 @@ test('legacy migration adapter exposes verified cache values and current identit
   assert.equal(identity.state, 'IDENTIFIED');
 });
 
+test('legacy adapter exposes snapshot/account history without giving write ownership to UI', () => {
+  const stores = new Map([
+    ['ri311:snap:v1', JSON.stringify({ ABC123: [{ t: 1000, v: 200 }] })],
+    ['ri311:posts:v1', JSON.stringify({
+      A: { code: 'A', owner: 'creator', views: 100, t: 1 },
+      B: { code: 'B', owner: 'other', views: 200, t: 2 }
+    })]
+  ]);
+  const adapter = createLegacyStoreAdapter({
+    env: { localStorage: { getItem(key) { return stores.get(key) ?? null; } } }
+  });
+
+  assert.deepEqual(adapter.getSnapshots('ABC123'), [{ t: 1000, v: 200 }]);
+  assert.deepEqual(adapter.getAccountPosts('CREATOR'), [{ code: 'A', owner: 'creator', views: 100, t: 1 }]);
+});
+
+test('legacy change tracker compares storage fingerprints only when shared SPA activity schedules a check', () => {
+  const stores = new Map([['ri311:items:v1', '{}']]);
+  const timers = [];
+  const listeners = new Map();
+  const env = {
+    localStorage: { getItem(key) { return stores.get(key) ?? null; } },
+    setTimeout(callback) { timers.push(callback); return timers.length; },
+    clearTimeout() {},
+    addEventListener(name, listener) { listeners.set(name, listener); },
+    removeEventListener(name) { listeners.delete(name); }
+  };
+  const adapter = createLegacyStoreAdapter({ env });
+  const changes = [];
+  const tracker = adapter.createChangeTracker((change) => changes.push(change), { delayMs: 1 });
+
+  tracker.schedule('dom');
+  stores.set('ri311:items:v1', '{"ABC123":{"views":10}}');
+  timers.shift()();
+  assert.equal(changes.length, 1);
+  assert.deepEqual(changes[0].changedKeys, ['ri311:items:v1']);
+
+  tracker.schedule('dom');
+  timers.shift()();
+  assert.equal(changes.length, 1);
+  tracker.destroy();
+  assert.equal(listeners.size, 0);
+});
+
 test('media resolver keeps the large card body image instead of a small album image', () => {
   const album = fakeImage({ left: 80, top: 8, width: 20, height: 20, src: 'https://cdn.example.test/album.jpg', alt: 'music album' });
   const body = fakeImage({ left: 0, top: 0, width: 100, height: 100, src: 'https://cdn.example.test/body.jpg' });
