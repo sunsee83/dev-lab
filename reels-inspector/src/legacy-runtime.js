@@ -1016,7 +1016,22 @@
     }
 
     function reelContext() {
-        var video = activeVideo(), r, code = '', metrics, owner, candidates = [], keys;
+        var bridged, video, r, code = '', metrics, owner, candidates = [], keys;
+        if (typeof window.__RI32_REEL_CONTEXT__ === 'function') {
+            try {
+                bridged = window.__RI32_REEL_CONTEXT__();
+                if (bridged && bridged.video) {
+                    return {
+                        video: bridged.video,
+                        code: bridged.shortcode || (bridged.identity && bridged.identity.shortcode) || '',
+                        native: bridged.native || { likes: null, comments: null, reposts: null },
+                        owner: bridged.username || (bridged.identity && bridged.identity.username) || '',
+                        status: bridged.status || ((bridged.shortcode || (bridged.identity && bridged.identity.shortcode)) ? 'IDENTIFIED' : 'IDENTIFYING')
+                    };
+                }
+            } catch (e) {}
+        }
+        video = activeVideo();
         if (!video) return null;
         r = video.getBoundingClientRect();
         if (Math.min(innerHeight, r.bottom) - Math.max(0, r.top) < innerHeight * 0.55) return null;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.11
+// @version      3.2.12
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.11
+// Build version: 3.2.12
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.11";
+  var VERSION = "3.2.12";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -2459,6 +2459,48 @@
     return Math.max(0, Math.min(viewportHeight, rect.bottom) - Math.max(0, rect.top));
   }
 
+  // src/migration/reel-context-handoff.js
+  var LEGACY_REEL_CONTEXT_HOOK = "__RI32_REEL_CONTEXT__";
+  function installLegacyReelContextHandoff({ env = globalThis, reelContext: reelContext2, data: data2 } = {}) {
+    const previous = env[LEGACY_REEL_CONTEXT_HOOK];
+    let lastEnrichmentKey = "";
+    function getCurrent() {
+      const current = reelContext2?.getCurrent?.() || null;
+      if (!current) return null;
+      const shortcode = current.shortcode || current.identity?.shortcode || "";
+      if (!shortcode) return { ...current, status: "IDENTIFYING" };
+      const username2 = current.username || current.identity?.username || "";
+      const canonicalUrl = current.post?.canonicalUrl || current.identity?.canonicalUrl || `https://www.instagram.com/reel/${shortcode}/`;
+      const enrichmentKey = `${shortcode}|${username2}|${canonicalUrl}`;
+      let enriched = null;
+      if (enrichmentKey !== lastEnrichmentKey) {
+        lastEnrichmentKey = enrichmentKey;
+        enriched = data2?.ingestPatch?.(shortcode, {
+          owner: username2 || void 0,
+          mediaType: "REEL",
+          pageUrl: canonicalUrl,
+          canonicalUrl
+        }, { source: "dom", confidence: "high" }) || null;
+      }
+      const post = enriched?.post || data2?.getPost?.(shortcode) || current.post || null;
+      const identity = enriched?.identity || data2?.getIdentity?.(shortcode) || current.identity || null;
+      return {
+        ...current,
+        shortcode,
+        username: username2 || post?.username || identity?.username || "",
+        post,
+        identity,
+        status: "IDENTIFIED"
+      };
+    }
+    env[LEGACY_REEL_CONTEXT_HOOK] = getCurrent;
+    function destroy() {
+      if (previous === void 0) delete env[LEGACY_REEL_CONTEXT_HOOK];
+      else env[LEGACY_REEL_CONTEXT_HOOK] = previous;
+    }
+    return { getCurrent, destroy };
+  }
+
   // src/ui/toast.js
   var TOAST_ID = "ri32-toast";
   var DEDUPE_WINDOW_MS = 1400;
@@ -4821,7 +4863,23 @@
       return "";
     }
     function reelContext2() {
-      var video = activeVideo(), r, code = "", metrics2, owner, candidates = [], keys;
+      var bridged, video, r, code = "", metrics2, owner, candidates = [], keys;
+      if (typeof window.__RI32_REEL_CONTEXT__ === "function") {
+        try {
+          bridged = window.__RI32_REEL_CONTEXT__();
+          if (bridged && bridged.video) {
+            return {
+              video: bridged.video,
+              code: bridged.shortcode || bridged.identity && bridged.identity.shortcode || "",
+              native: bridged.native || { likes: null, comments: null, reposts: null },
+              owner: bridged.username || bridged.identity && bridged.identity.username || "",
+              status: bridged.status || (bridged.shortcode || bridged.identity && bridged.identity.shortcode ? "IDENTIFIED" : "IDENTIFYING")
+            };
+          }
+        } catch (e) {
+        }
+      }
+      video = activeVideo();
       if (!video) return null;
       r = video.getBoundingClientRect();
       if (Math.min(innerHeight, r.bottom) - Math.max(0, r.top) < innerHeight * 0.55) return null;
@@ -5523,24 +5581,26 @@
   });
   var stopCaptureHandoff = installLegacyCaptureHandoff({ env: globalThis, data });
   var reelContext = createReelContextAdapter({ store: data, doc: document, env: globalThis });
+  var reelContextHandoff = installLegacyReelContextHandoff({ env: globalThis, reelContext, data });
   var metrics = createMetricsEngine({ history: history2 });
   var workspace = createWorkspaceState();
   var storeTracker = legacyStore.createChangeTracker((change) => {
     data.syncLegacy();
-    const activeIdentity = reelContext.resolveActivityIdentity();
+    const activeIdentity = reelContextHandoff.getCurrent()?.identity;
     app.setCurrentIdentity(activeIdentity === void 0 ? data.getIdentityFromUrl(globalThis.location?.href || "") : activeIdentity);
     app.emit(EVENTS.STORE_CHANGED, change);
   });
   app.services = { capabilities, settings, downloads, metrics, workspace, activity, history: history2, data };
   app.adapters.legacyStore = legacyStore;
   app.adapters.reelContext = reelContext;
+  app.adapters.reelContextHandoff = reelContextHandoff;
   var stopRouteTracking = app.startRouteTracking({
     env: globalThis,
     resolveIdentity(url) {
-      return reelContext.getCurrent()?.identity || data.getIdentityFromUrl(url);
+      return reelContextHandoff.getCurrent()?.identity || data.getIdentityFromUrl(url);
     },
     resolveActivityIdentity() {
-      return reelContext.resolveActivityIdentity();
+      return reelContextHandoff.getCurrent()?.identity || void 0;
     },
     onActivity(reason) {
       storeTracker.schedule(reason);
@@ -5573,6 +5633,7 @@
   app.adapters.stopRouteTracking = stopRouteTracking;
   app.adapters.stopStoreTracking = () => storeTracker.destroy();
   app.adapters.stopCaptureHandoff = stopCaptureHandoff;
+  app.adapters.stopReelContextHandoff = () => reelContextHandoff.destroy();
   app.adapters.stopData = () => data.destroy();
   app.adapters.stopLayout = () => layout.destroy();
   app.adapters.grid = grid;
