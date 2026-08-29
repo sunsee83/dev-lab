@@ -22,6 +22,111 @@
     return `${UPDATE_URL}?ri=${stamp}`;
   }
 
+  // src/core/activity.js
+  var VALID_STATES = /* @__PURE__ */ new Set(["running", "success", "error"]);
+  function createActivityStore({ now = () => Date.now(), maxItems = 24 } = {}) {
+    const listeners = /* @__PURE__ */ new Set();
+    const items = /* @__PURE__ */ new Map();
+    function apply(event) {
+      const id = String(event?.id || "").trim();
+      if (!id) return getState();
+      if (event?.remove) {
+        const previous2 = items.get(id) || null;
+        if (!items.delete(id)) return getState();
+        publish({ type: "removed", id, previous: previous2, event: { id, remove: true } });
+        return getState();
+      }
+      if (!VALID_STATES.has(event?.state)) return getState();
+      const previous = items.get(id) || null;
+      const next = normalizeActivity(event, previous, now());
+      if (sameActivity(previous, next)) return getState();
+      items.set(id, next);
+      prune(maxItems);
+      publish({ type: previous ? "updated" : "added", activity: next, previous, event: next });
+      return getState();
+    }
+    function dismiss(id) {
+      return apply({ id, remove: true });
+    }
+    function getState() {
+      const activities = [...items.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+      return Object.freeze({
+        activities: Object.freeze(activities),
+        visible: selectVisible(activities)
+      });
+    }
+    function getVisible() {
+      return getState().visible;
+    }
+    function subscribe(listener) {
+      if (typeof listener !== "function") return () => {
+      };
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }
+    function publish(change) {
+      const state = getState();
+      for (const listener of [...listeners]) {
+        try {
+          listener({ ...change, state });
+        } catch (error) {
+          console.warn("[RI] activity listener failed", error);
+        }
+      }
+    }
+    function prune(limit) {
+      const cap = Math.max(4, Number(limit) || 24);
+      if (items.size <= cap) return;
+      const settled = [...items.values()].filter((item) => item.state !== "running").sort((a, b) => a.updatedAt - b.updatedAt);
+      for (const item of settled) {
+        if (items.size <= cap) break;
+        items.delete(item.id);
+      }
+    }
+    return { apply, dismiss, getState, getVisible, subscribe };
+  }
+  function normalizeActivity(event, previous, timestamp) {
+    const state = event.state;
+    const progress = normalizeProgress(event.progress ?? previous?.progress);
+    const updatedAt = Number.isFinite(timestamp) ? Number(timestamp) : Date.now();
+    const startedAt = Number.isFinite(previous?.startedAt) ? previous.startedAt : Number.isFinite(event.startedAt) ? Number(event.startedAt) : updatedAt;
+    return Object.freeze({
+      id: String(event.id),
+      kind: String(event.kind || previous?.kind || "activity"),
+      state,
+      label: String(event.label ?? previous?.label ?? ""),
+      progress,
+      message: String(event.message ?? previous?.message ?? ""),
+      code: event.code == null ? previous?.code ?? null : String(event.code),
+      persistent: Boolean(event.persistent),
+      silent: Boolean(event.silent),
+      action: event.action == null ? null : String(event.action),
+      actionLabel: event.actionLabel == null ? null : String(event.actionLabel),
+      startedAt,
+      updatedAt
+    });
+  }
+  function normalizeProgress(progress) {
+    const current = Number(progress?.current);
+    const total = Number(progress?.total);
+    if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) return null;
+    return Object.freeze({
+      current: Math.max(0, Math.min(total, Math.trunc(current))),
+      total: Math.max(1, Math.trunc(total))
+    });
+  }
+  function selectVisible(activities) {
+    return activities.find((item) => item.state === "error" && item.persistent) || activities.find((item) => item.state === "running") || null;
+  }
+  function sameActivity(previous, next) {
+    if (!previous) return false;
+    return previous.id === next.id && previous.kind === next.kind && previous.state === next.state && previous.label === next.label && previous.message === next.message && previous.code === next.code && previous.persistent === next.persistent && previous.silent === next.silent && previous.action === next.action && previous.actionLabel === next.actionLabel && sameProgress(previous.progress, next.progress);
+  }
+  function sameProgress(a, b) {
+    if (!a || !b) return a === b;
+    return a.current === b.current && a.total === b.total;
+  }
+
   // src/core/app.js
   var EVENTS = Object.freeze({
     ROUTE_CHANGED: "route:changed",
@@ -705,8 +810,8 @@
       anchor.click();
       anchor.remove();
     }
-    function emitActivity(activity) {
-      if (typeof onChange === "function") onChange({ activeJobs, activity });
+    function emitActivity(activity2) {
+      if (typeof onChange === "function") onChange({ activeJobs, activity: activity2 });
     }
     function emitResultActivity(activityId, label, downloadResult, progress = null, failedResult = null) {
       if (downloadResult?.code === "cancelled") {
@@ -1065,37 +1170,6 @@
     }
   }
 
-  // src/core/clipboard.js
-  async function copyText(text, { env = globalThis, doc = env.document, capabilities: capabilities2 } = {}) {
-    const value = String(text || "");
-    if (!value) return false;
-    if (capabilities2?.clipboard && env.navigator?.clipboard?.writeText) {
-      try {
-        await env.navigator.clipboard.writeText(value);
-        return true;
-      } catch {
-      }
-    }
-    if (!doc?.body || typeof doc.createElement !== "function") return false;
-    let textarea = null;
-    try {
-      textarea = doc.createElement("textarea");
-      textarea.value = value;
-      textarea.setAttribute?.("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-      textarea.style.opacity = "0";
-      doc.body.appendChild(textarea);
-      textarea.select?.();
-      textarea.setSelectionRange?.(0, value.length);
-      return doc.execCommand?.("copy") !== false;
-    } catch {
-      return false;
-    } finally {
-      textarea?.remove?.();
-    }
-  }
-
   // src/ui/toast.js
   var TOAST_ID = "ri32-toast";
   var DEDUPE_WINDOW_MS = 1400;
@@ -1125,6 +1199,151 @@
   function showResult(doc, result2) {
     if (!result2 || result2.code === "cancelled") return false;
     return showToast(doc, result2.message || (result2.ok ? "완료했습니다." : "작업을 완료하지 못했습니다."));
+  }
+
+  // src/ui/activity-indicator.js
+  var ACTIVITY_ID = "ri32-activity";
+  function mountActivityIndicator({
+    activity: activity2,
+    workspace: workspace2,
+    doc = globalThis.document,
+    onAction
+  } = {}) {
+    if (!activity2 || !doc?.documentElement) throw new Error("Activity Indicator requires activity store and document");
+    let destroyed = false;
+    let node = null;
+    let labelNode = null;
+    let messageNode = null;
+    let progressNode = null;
+    let progressBar = null;
+    let actionButton = null;
+    let dismissButton = null;
+    const unsubscribeActivity = activity2.subscribe((change) => {
+      const item = change.activity || null;
+      if (item?.state === "success") {
+        if (!item.silent) showToast(doc, item.message || `${item.label || "작업"}을 완료했습니다.`);
+        activity2.dismiss(item.id);
+        return;
+      }
+      if (item?.state === "error" && !item.persistent) {
+        if (!item.silent) showToast(doc, item.message || `${item.label || "작업"}을 완료하지 못했습니다.`);
+        activity2.dismiss(item.id);
+        return;
+      }
+      render();
+    });
+    const unsubscribeWorkspace = workspace2?.subscribe?.(() => render()) || (() => {
+    });
+    render();
+    function render() {
+      if (destroyed) return;
+      const item = activity2.getVisible();
+      if (!item) {
+        node?.remove();
+        return;
+      }
+      ensureNode();
+      node.dataset.state = item.state;
+      node.setAttribute("role", item.state === "error" ? "alert" : "status");
+      node.setAttribute("aria-live", item.state === "error" ? "assertive" : "polite");
+      labelNode.textContent = item.label || (item.kind === "download" ? "저장" : "작업");
+      messageNode.textContent = item.message || progressMessage(item);
+      const progress = item.progress;
+      progressNode.hidden = !progress || item.state !== "running";
+      if (progress && progressBar) {
+        const ratio = Math.max(0, Math.min(1, progress.current / progress.total));
+        progressBar.style.width = `${Math.round(ratio * 100)}%`;
+        progressNode.setAttribute("aria-valuemin", "0");
+        progressNode.setAttribute("aria-valuemax", String(progress.total));
+        progressNode.setAttribute("aria-valuenow", String(progress.current));
+      }
+      const actionable = item.state === "error" && !!item.action;
+      actionButton.hidden = !actionable;
+      actionButton.textContent = item.actionLabel || "확인";
+      dismissButton.hidden = item.state !== "error";
+      const embeddedHost = workspace2?.getState?.().open ? doc.querySelector("#ri32-panel .ri32-activity-host") : null;
+      node.dataset.embedded = embeddedHost ? "true" : "false";
+      (embeddedHost || doc.documentElement).appendChild(node);
+    }
+    function ensureNode() {
+      if (node) return;
+      node = doc.createElement("div");
+      node.id = ACTIVITY_ID;
+      node.innerHTML = [
+        '<div class="ri32-activity-copy">',
+        "<strong></strong>",
+        '<span class="ri32-activity-message"></span>',
+        '<div class="ri32-activity-progress" role="progressbar"><span></span></div>',
+        "</div>",
+        '<button type="button" class="ri32-activity-action" hidden></button>',
+        '<button type="button" class="ri32-activity-dismiss" aria-label="알림 닫기" hidden>×</button>'
+      ].join("");
+      labelNode = node.querySelector(".ri32-activity-copy strong");
+      messageNode = node.querySelector(".ri32-activity-message");
+      progressNode = node.querySelector(".ri32-activity-progress");
+      progressBar = progressNode?.firstElementChild || null;
+      actionButton = node.querySelector(".ri32-activity-action");
+      dismissButton = node.querySelector(".ri32-activity-dismiss");
+      actionButton?.addEventListener("click", handleAction);
+      dismissButton?.addEventListener("click", handleDismiss);
+    }
+    function handleAction() {
+      const item = activity2.getVisible();
+      if (!item?.action) return;
+      onAction?.(item);
+      render();
+    }
+    function handleDismiss() {
+      const item = activity2.getVisible();
+      if (item?.state === "error") activity2.dismiss(item.id);
+    }
+    function destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      unsubscribeActivity();
+      unsubscribeWorkspace();
+      actionButton?.removeEventListener("click", handleAction);
+      dismissButton?.removeEventListener("click", handleDismiss);
+      node?.remove();
+      node = null;
+    }
+    return { render, destroy };
+  }
+  function progressMessage(item) {
+    const progress = item?.progress;
+    if (!progress) return item?.state === "running" ? "진행 중…" : "";
+    return `${progress.current}/${progress.total} 진행 중`;
+  }
+
+  // src/core/clipboard.js
+  async function copyText(text, { env = globalThis, doc = env.document, capabilities: capabilities2 } = {}) {
+    const value = String(text || "");
+    if (!value) return false;
+    if (capabilities2?.clipboard && env.navigator?.clipboard?.writeText) {
+      try {
+        await env.navigator.clipboard.writeText(value);
+        return true;
+      } catch {
+      }
+    }
+    if (!doc?.body || typeof doc.createElement !== "function") return false;
+    let textarea = null;
+    try {
+      textarea = doc.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute?.("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.opacity = "0";
+      doc.body.appendChild(textarea);
+      textarea.select?.();
+      textarea.setSelectionRange?.(0, value.length);
+      return doc.execCommand?.("copy") !== false;
+    } catch {
+      return false;
+    } finally {
+      textarea?.remove?.();
+    }
   }
 
   // src/ui/grid.js
@@ -3874,6 +4093,7 @@
   // src/main.js
   var app = createApp({ version: VERSION });
   var capabilities = detectCapabilities(globalThis);
+  var activity = createActivityStore();
   var settings = createSettingsStore({
     env: globalThis,
     capabilities,
@@ -3885,8 +4105,9 @@
     env: globalThis,
     capabilities,
     settings,
-    onChange(state) {
-      app.emit(EVENTS.DOWNLOAD_CHANGED, state);
+    onChange(change) {
+      if (change?.activity) activity.apply(change.activity);
+      app.emit(EVENTS.DOWNLOAD_CHANGED, change);
     }
   });
   var legacyStore = createLegacyStoreAdapter({ env: globalThis });
@@ -3896,7 +4117,7 @@
     app.setCurrentIdentity(legacyStore.getCurrentIdentity());
     app.emit(EVENTS.STORE_CHANGED, change);
   });
-  app.services = { capabilities, settings, downloads, metrics, workspace };
+  app.services = { capabilities, settings, downloads, metrics, workspace, activity };
   app.adapters.legacyStore = legacyStore;
   var stopRouteTracking = app.startRouteTracking({
     env: globalThis,
@@ -3922,12 +4143,21 @@
     doc: document,
     env: globalThis
   });
+  var activityIndicator = mountActivityIndicator({
+    activity,
+    workspace,
+    doc: document,
+    onAction(item) {
+      if (item.action === "open-settings") riPanel.openSettings();
+    }
+  });
   app.services.layout = layout;
   app.adapters.stopRouteTracking = stopRouteTracking;
   app.adapters.stopStoreTracking = () => storeTracker.destroy();
   app.adapters.stopLayout = () => layout.destroy();
   app.adapters.grid = grid;
   app.adapters.riPanel = riPanel;
+  app.adapters.activityIndicator = activityIndicator;
   void settings.init().catch((error) => {
     console.warn("[RI] settings initialization failed", error);
   });
