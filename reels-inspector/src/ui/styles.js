@@ -12,11 +12,16 @@ const CSS = `
 #ri3-tool,#ri3-panel{display:none!important}
 #ri32-tool{
   position:fixed;right:var(--ri-launcher-right,12px);bottom:var(--ri-launcher-bottom,max(88px,calc(env(safe-area-inset-bottom) + 78px)));z-index:2147483605;
-  width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.18);border-radius:50%;
-  background:rgba(12,12,12,.72);color:#fff;display:flex;align-items:center;justify-content:center;
-  box-shadow:0 2px 8px rgba(0,0,0,.32);-webkit-tap-highlight-color:transparent
+  width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;
+  display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;touch-action:manipulation
 }
-#ri32-tool[aria-expanded="true"]{background:rgba(38,38,38,.96)}
+#ri32-tool::before{
+  content:"";position:absolute;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.12);
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.6));pointer-events:none
+}
+#ri32-tool svg{position:relative;z-index:1;width:21px;height:21px;pointer-events:none}
+#ri32-tool[aria-expanded="true"]::before{background:rgba(0,0,0,.20)}
+#ri32-tool:focus-visible{outline:2px solid rgba(255,255,255,.88);outline-offset:1px}
 #ri32-panel{
   position:fixed;right:8px;bottom:var(--ri-panel-bottom,max(132px,calc(env(safe-area-inset-bottom) + 122px)));z-index:2147483646;
   width:min(70vw,270px);max-height:min(64vh,540px);overflow:hidden;border:1px solid rgba(255,255,255,.13);
