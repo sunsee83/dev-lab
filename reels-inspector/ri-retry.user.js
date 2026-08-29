@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.10
+// @version      3.2.11
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.10
+// Build version: 3.2.11
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.10";
+  var VERSION = "3.2.11";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -642,6 +642,116 @@
     return value == null ? "" : String(value).trim();
   }
 
+  // src/data/permalink-extractor.js
+  var VIEW_KEYS2 = [
+    "play_count",
+    "ig_play_count",
+    "video_play_count",
+    "video_view_count",
+    "view_count",
+    "clips_play_count",
+    "reel_view_count",
+    "media_view_count",
+    "views",
+    "plays"
+  ];
+  var LIKE_KEYS2 = ["like_count", "likes_count"];
+  var COMMENT_KEYS2 = ["comment_count", "comments_count"];
+  var REPOST_KEYS2 = ["reshare_count", "repost_count", "reposts_count"];
+  var DATE_KEYS = ["taken_at", "taken_at_timestamp"];
+  function extractPermalinkHtml(html, { pageUrl = "", fetched } = {}) {
+    const source = String(html || "");
+    const shortcode = shortcodeFromUrl(pageUrl);
+    if (!shortcode) return null;
+    const meta = extractMeta(source);
+    const description = meta.description || meta["og:description"] || "";
+    const videoUrl = meta["og:video:secure_url"] || meta["og:video"] || "";
+    const coverUrl = meta["og:image"] || "";
+    const reel = /\/(?:reel|reels)\//i.test(pageUrl);
+    const takenAt = nearMetric(source, shortcode, DATE_KEYS);
+    const patch = compact2({
+      pageUrl,
+      canonicalUrl: pageUrl,
+      mediaType: reel ? "REEL" : videoUrl ? "VIDEO" : void 0,
+      views: reel || videoUrl ? nearMetric(source, shortcode, VIEW_KEYS2) : void 0,
+      likes: descriptionMetric(description, "likes") ?? nearMetric(source, shortcode, LIKE_KEYS2),
+      comments: descriptionMetric(description, "comments") ?? nearMetric(source, shortcode, COMMENT_KEYS2),
+      reposts: nearMetric(source, shortcode, REPOST_KEYS2),
+      date: unixDate(takenAt),
+      videoUrl,
+      coverUrl,
+      thumbUrl: coverUrl,
+      fetched: Number.isFinite(Number(fetched)) ? Number(fetched) : void 0
+    });
+    return { shortcode, patch };
+  }
+  function nearMetric(html, shortcode, keys) {
+    const source = String(html || "");
+    const code = String(shortcode || "");
+    const position = source.indexOf(code);
+    if (!code || position < 0) return void 0;
+    const area = source.slice(Math.max(0, position - 18e3), Math.min(source.length, position + 3e4));
+    for (const key of keys || []) {
+      const match = area.match(new RegExp('["\\\\]?' + escapeRegExp(key) + '["\\\\]?\\s*:\\s*["\\\\]?([0-9]+)', "i"));
+      if (match) return Number(match[1]);
+    }
+    return void 0;
+  }
+  function extractMeta(html) {
+    const output = {};
+    const tags = String(html || "").match(/<meta\b[^>]*>/gi) || [];
+    for (const tag of tags) {
+      const attrs = extractAttributes(tag);
+      const key = String(attrs.property || attrs.name || "").toLowerCase();
+      if (!key || output[key]) continue;
+      output[key] = decodeAttribute(attrs.content || "");
+    }
+    return output;
+  }
+  function extractAttributes(tag) {
+    const output = {};
+    const pattern = /([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
+    let match;
+    while (match = pattern.exec(tag)) {
+      output[String(match[1] || "").toLowerCase()] = match[2] ?? match[3] ?? match[4] ?? "";
+    }
+    return output;
+  }
+  function descriptionMetric(description, label) {
+    const match = String(description || "").match(new RegExp("([\\d.,]+\\s*[KkMmBb]?)\\s+" + label + "?", "i"));
+    return match ? parseCount(match[1]) : void 0;
+  }
+  function parseCount(text) {
+    const source = String(text || "").replace(/[\s,]/g, "");
+    const match = source.match(/^([0-9]+(?:\.[0-9]+)?)([KMBkmb])?$/);
+    if (!match) return void 0;
+    let value = Number(match[1]);
+    if (!Number.isFinite(value) || value < 0) return void 0;
+    const unit = match[2] || "";
+    if (/k/i.test(unit)) value *= 1e3;
+    else if (/m/i.test(unit)) value *= 1e6;
+    else if (/b/i.test(unit)) value *= 1e9;
+    return Math.round(value);
+  }
+  function unixDate(value) {
+    const timestamp = Number(value);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return void 0;
+    try {
+      return new Date(timestamp * 1e3).toISOString().slice(0, 10);
+    } catch {
+      return void 0;
+    }
+  }
+  function decodeAttribute(value) {
+    return String(value || "").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">");
+  }
+  function compact2(value) {
+    return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== void 0 && item !== null && item !== ""));
+  }
+  function escapeRegExp(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
   // src/data/media-model.js
   function buildMediaList(post = {}) {
     const type = String(post.mediaType || "").toUpperCase();
@@ -916,6 +1026,11 @@
       const result2 = applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
       return result2 ? { ...result2, evidence: extracted.evidence } : null;
     }
+    function ingestPermalink(html, { pageUrl = "", source = "permalink", confidence = "medium", fetched = now() } = {}) {
+      const extracted = extractPermalinkHtml(html, { pageUrl, fetched });
+      if (!extracted?.shortcode) return null;
+      return applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
+    }
     function flush() {
       return persistence?.flush?.(verified.snapshot()) ?? false;
     }
@@ -933,6 +1048,7 @@
       getAccountPosts: history3?.getAccountPosts,
       syncLegacy,
       ingest,
+      ingestPermalink,
       ingestPatch,
       flush,
       destroy,
@@ -1853,9 +1969,11 @@
   // src/migration/capture-handoff.js
   var LEGACY_CAPTURE_HOOK = "__RI32_CAPTURE_PATCH__";
   var LEGACY_RAW_CAPTURE_HOOK = "__RI32_CAPTURE_RAW__";
+  var LEGACY_PERMALINK_CAPTURE_HOOK = "__RI32_CAPTURE_PERMALINK__";
   function installLegacyCaptureHandoff({ env = globalThis, data: data2 } = {}) {
     const previousPatch = env[LEGACY_CAPTURE_HOOK];
     const previousRaw = env[LEGACY_RAW_CAPTURE_HOOK];
+    const previousPermalink = env[LEGACY_PERMALINK_CAPTURE_HOOK];
     env[LEGACY_CAPTURE_HOOK] = (capture = {}) => {
       if (!data2?.ingestPatch) return null;
       return data2.ingestPatch(capture.shortcode, capture.patch, {
@@ -1871,9 +1989,19 @@
         confidence: capture.confidence
       });
     };
+    env[LEGACY_PERMALINK_CAPTURE_HOOK] = (capture = {}) => {
+      if (!data2?.ingestPermalink) return null;
+      return data2.ingestPermalink(capture.html || "", {
+        pageUrl: capture.pageUrl || "",
+        source: capture.source || "permalink",
+        confidence: capture.confidence,
+        fetched: capture.fetched
+      });
+    };
     return () => {
       restore(env, LEGACY_CAPTURE_HOOK, previousPatch);
       restore(env, LEGACY_RAW_CAPTURE_HOOK, previousRaw);
+      restore(env, LEGACY_PERMALINK_CAPTURE_HOOK, previousPermalink);
     };
   }
   function restore(env, key, previous) {
@@ -3651,7 +3779,7 @@
     var POST_KEY2 = "ri311:posts:v1";
     var SOURCE_RANK2 = { legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 };
     var METRIC_FIELDS2 = { views: 1, likes: 1, comments: 1, reposts: 1 };
-    var VIEW_KEYS2 = ["play_count", "ig_play_count", "video_play_count", "video_view_count", "view_count", "clips_play_count", "reel_view_count", "media_view_count", "views", "plays"];
+    var VIEW_KEYS3 = ["play_count", "ig_play_count", "video_play_count", "video_view_count", "view_count", "clips_play_count", "reel_view_count", "media_view_count", "views", "plays"];
     var items = readStore2(CACHE_KEY2, {});
     var videoMap = /* @__PURE__ */ Object.create(null);
     var posterMap = /* @__PURE__ */ Object.create(null);
@@ -3706,7 +3834,7 @@
         return "";
       }
     }
-    function parseCount(text) {
+    function parseCount2(text) {
       var s = String(text || "").replace(/[▶♥●↻,\s]/g, "");
       var m = s.match(/^([0-9]+(?:\.[0-9]+)?)(만|천|억|K|M|B|k|m|b)?$/);
       var n, unit;
@@ -3988,7 +4116,7 @@
       if (!obj || typeof obj !== "object") return;
       code = obj.code || obj.shortcode || obj.short_code;
       if (!code || typeof code !== "string" || code.length < 5 || code.length > 40) return;
-      n = sameMediaNumber(obj, VIEW_KEYS2, code, 0);
+      n = sameMediaNumber(obj, VIEW_KEYS3, code, 0);
       if (n != null) patch.views = n;
       n = sameMediaNumber(obj, ["like_count", "likes_count"], code, 0);
       if (n != null) patch.likes = n;
@@ -4107,7 +4235,7 @@
         if (text && (scripts[i].type === "application/json" || /"(?:code|shortcode|media_type|play_count|view_count)"/.test(text))) scanJsonText(text, "embedded");
       }
     }
-    function nearMetric(text, code, keys) {
+    function nearMetric2(text, code, keys) {
       var p = text.indexOf(code), area, i, m;
       if (p < 0) return null;
       area = text.slice(Math.max(0, p - 18e3), Math.min(text.length, p + 3e4));
@@ -4136,9 +4264,9 @@
         meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
         desc = meta ? meta.getAttribute("content") || "" : "";
         m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+likes?/i);
-        if (m) patch.likes = parseCount(m[1]);
+        if (m) patch.likes = parseCount2(m[1]);
         m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+comments?/i);
-        if (m) patch.comments = parseCount(m[1]);
+        if (m) patch.comments = parseCount2(m[1]);
         meta = doc.querySelector('meta[property="og:image"]');
         if (meta) patch.thumbUrl = meta.getAttribute("content") || "";
         meta = doc.querySelector('meta[property="og:video"],meta[property="og:video:secure_url"]');
@@ -4150,11 +4278,11 @@
       }
       if (isReelUrl(url)) patch.mediaType = "REEL";
       else if (hasVideo) patch.mediaType = "VIDEO";
-      if (patch.mediaType === "REEL" || patch.mediaType === "VIDEO") patch.views = nearMetric(html, code, VIEW_KEYS2);
-      if (patch.likes == null) patch.likes = nearMetric(html, code, ["like_count", "likes_count"]);
-      if (patch.comments == null) patch.comments = nearMetric(html, code, ["comment_count", "comments_count"]);
-      patch.reposts = nearMetric(html, code, ["reshare_count", "repost_count", "reposts_count"]);
-      n = nearMetric(html, code, ["taken_at", "taken_at_timestamp"]);
+      if (patch.mediaType === "REEL" || patch.mediaType === "VIDEO") patch.views = nearMetric2(html, code, VIEW_KEYS3);
+      if (patch.likes == null) patch.likes = nearMetric2(html, code, ["like_count", "likes_count"]);
+      if (patch.comments == null) patch.comments = nearMetric2(html, code, ["comment_count", "comments_count"]);
+      patch.reposts = nearMetric2(html, code, ["reshare_count", "repost_count", "reposts_count"]);
+      n = nearMetric2(html, code, ["taken_at", "taken_at_timestamp"]);
       if (n) {
         try {
           patch.date = new Date(n * 1e3).toISOString().slice(0, 10);
@@ -4200,10 +4328,29 @@
             if (xhr2.readyState !== 4) return;
             activeRequests--;
             if (xhr2.status >= 200 && xhr2.status < 400) {
-              scanPermalinkJson(xhr2.responseText || "");
-              var patch = parsePermalink(xhr2.responseText || "", job2.url);
-              patch.fetched = Date.now();
-              saveItem(job2.code, patch, "permalink", "medium");
+              var html = xhr2.responseText || "", fetched = Date.now(), captured = null, patch;
+              scanPermalinkJson(html);
+              if (typeof window.__RI32_CAPTURE_PERMALINK__ === "function") {
+                try {
+                  captured = window.__RI32_CAPTURE_PERMALINK__({
+                    html,
+                    pageUrl: job2.url,
+                    source: "permalink",
+                    confidence: "medium",
+                    fetched
+                  });
+                  if (captured && captured.item) {
+                    items[job2.code] = captured.item;
+                    if (captured.changed) scheduleRefresh();
+                  }
+                } catch (e) {
+                }
+              }
+              if (!captured || !captured.item) {
+                patch = parsePermalink(html, job2.url);
+                patch.fetched = fetched;
+                saveItem(job2.code, patch, "permalink", "medium");
+              }
             }
             finishPending(job2.code, items[job2.code] || null);
             pumpQueue();
@@ -4647,7 +4794,7 @@
         var node = control.el.closest && control.el.closest('button,[role="button"],a') || control.el;
         var text = node.parentElement && node.parentElement.textContent || node.textContent || "";
         var m = text.match(/([0-9]+(?:[.,][0-9]+)?\s*(?:만|천|억|K|M|B|k|m|b)?)/);
-        var n = m ? parseCount(m[1]) : null;
+        var n = m ? parseCount2(m[1]) : null;
         if (n == null) return;
         if (out.likes == null && /좋아요|\blike\b/.test(control.text)) out.likes = n;
         else if (out.comments == null && /댓글|comment/.test(control.text)) out.comments = n;
@@ -5078,7 +5225,7 @@
         } catch (e) {
         }
       }
-      n = sameMediaNumber(obj, VIEW_KEYS2, code, 0);
+      n = sameMediaNumber(obj, VIEW_KEYS3, code, 0);
       if (n != null) patch.views = n;
       n = sameMediaNumber(obj, ["like_count", "likes_count"], code, 0);
       if (n != null) patch.likes = n;
@@ -5128,9 +5275,9 @@
         meta = doc.querySelector('meta[name="description"],meta[property="og:description"]');
         desc = meta ? meta.getAttribute("content") || "" : "";
         m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+likes?/i);
-        if (m) patch.likes = parseCount(m[1]);
+        if (m) patch.likes = parseCount2(m[1]);
         m = desc.match(/([\d.,]+\s*[KkMmBb]?)\s+comments?/i);
-        if (m) patch.comments = parseCount(m[1]);
+        if (m) patch.comments = parseCount2(m[1]);
         meta = doc.querySelector('meta[property="og:image"]');
         if (meta && meta.getAttribute("content")) {
           patch.coverUrl = meta.getAttribute("content");
@@ -5145,11 +5292,11 @@
       }
       if (isReelUrl(url)) patch.mediaType = "REEL";
       else if (hasVideo) patch.mediaType = "VIDEO";
-      if (patch.mediaType === "REEL" || patch.mediaType === "VIDEO") patch.views = nearMetric(html, code, VIEW_KEYS2);
-      if (patch.likes == null) patch.likes = nearMetric(html, code, ["like_count", "likes_count"]);
-      if (patch.comments == null) patch.comments = nearMetric(html, code, ["comment_count", "comments_count"]);
-      patch.reposts = nearMetric(html, code, ["reshare_count", "repost_count", "reposts_count"]);
-      n = nearMetric(html, code, ["taken_at", "taken_at_timestamp"]);
+      if (patch.mediaType === "REEL" || patch.mediaType === "VIDEO") patch.views = nearMetric2(html, code, VIEW_KEYS3);
+      if (patch.likes == null) patch.likes = nearMetric2(html, code, ["like_count", "likes_count"]);
+      if (patch.comments == null) patch.comments = nearMetric2(html, code, ["comment_count", "comments_count"]);
+      patch.reposts = nearMetric2(html, code, ["reshare_count", "repost_count", "reposts_count"]);
+      n = nearMetric2(html, code, ["taken_at", "taken_at_timestamp"]);
       if (n) {
         try {
           patch.date = new Date(n * 1e3).toISOString().slice(0, 10);

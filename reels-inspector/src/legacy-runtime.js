@@ -529,10 +529,28 @@
                     if (xhr.readyState !== 4) return;
                     activeRequests--;
                     if (xhr.status >= 200 && xhr.status < 400) {
-                        scanPermalinkJson(xhr.responseText || '');
-                        var patch = parsePermalink(xhr.responseText || '', job.url);
-                        patch.fetched = Date.now();
-                        saveItem(job.code, patch, 'permalink', 'medium');
+                        var html = xhr.responseText || '', fetched = Date.now(), captured = null, patch;
+                        scanPermalinkJson(html);
+                        if (typeof window.__RI32_CAPTURE_PERMALINK__ === 'function') {
+                            try {
+                                captured = window.__RI32_CAPTURE_PERMALINK__({
+                                    html: html,
+                                    pageUrl: job.url,
+                                    source: 'permalink',
+                                    confidence: 'medium',
+                                    fetched: fetched
+                                });
+                                if (captured && captured.item) {
+                                    items[job.code] = captured.item;
+                                    if (captured.changed) scheduleRefresh();
+                                }
+                            } catch (e) {}
+                        }
+                        if (!captured || !captured.item) {
+                            patch = parsePermalink(html, job.url);
+                            patch.fetched = fetched;
+                            saveItem(job.code, patch, 'permalink', 'medium');
+                        }
                     }
                     finishPending(job.code, items[job.code] || null);
                     pumpQueue();
