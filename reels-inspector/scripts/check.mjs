@@ -116,30 +116,32 @@ function visit(file, stack = []) {
 for (const file of graph.keys()) visit(file);
 
 const generatedPath = path.join(root, 'ri-retry.user.js');
-const projectPlanPath = path.join(root, 'PROJECT_PLAN.md');
-const statusPath = path.join(root, 'STATUS.md');
-const workTrackPath = path.join(root, 'WORK_TRACK.md');
-const preservationPath = path.join(root, 'PRESERVATION_BASELINE.md');
-const uiBaselinePath = path.join(root, 'UI_BASELINE.md');
-const uiArchitecturePath = path.join(root, 'UI_ARCHITECTURE.md');
 const versionPath = path.join(srcRoot, 'version.js');
-const generated = await readFile(generatedPath, 'utf8');
-const projectPlanText = await readFile(projectPlanPath, 'utf8');
-const statusText = await readFile(statusPath, 'utf8');
-const workTrackText = await readFile(workTrackPath, 'utf8');
-const preservationText = await readFile(preservationPath, 'utf8');
-const uiBaselineText = await readFile(uiBaselinePath, 'utf8');
-const uiArchitectureText = await readFile(uiArchitecturePath, 'utf8');
-const versionText = await readFile(versionPath, 'utf8');
+const statusPath = path.join(root, 'STATUS.md');
+const baselinePath = path.join(root, 'BASELINE.md');
+const architecturePath = path.join(root, 'ARCHITECTURE.md');
+const planPath = path.join(root, 'PROJECT_PLAN.md');
+const readmePath = path.join(root, 'README.md');
+const testsReadmePath = path.join(root, 'tests', 'README.md');
+
+const [generated, versionText, statusText, baselineText, architectureText, planText, readmeText, testsReadmeText] = await Promise.all([
+  readFile(generatedPath, 'utf8'),
+  readFile(versionPath, 'utf8'),
+  readFile(statusPath, 'utf8'),
+  readFile(baselinePath, 'utf8'),
+  readFile(architecturePath, 'utf8'),
+  readFile(planPath, 'utf8'),
+  readFile(readmePath, 'utf8'),
+  readFile(testsReadmePath, 'utf8')
+]);
+
 const sourceVersion = versionText.match(/VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1];
 const sourceUpdateUrl = versionText.match(/UPDATE_URL\s*=\s*['"]([^'"]+)['"]/)?.[1];
 const generatedVersion = generated.match(/^\/\/ @version\s+([^\s]+)\s*$/m)?.[1];
 const generatedBuildVersion = generated.match(/^\/\/ Build version:\s*([^\s]+)\s*$/m)?.[1];
 const generatedUpdateUrl = generated.match(/^\/\/ @updateURL\s+([^\s]+)\s*$/m)?.[1];
 const generatedDownloadUrl = generated.match(/^\/\/ @downloadURL\s+([^\s]+)\s*$/m)?.[1];
-const projectPlanVersion = projectPlanText.match(/현재 배포 버전:\s*\*\*v([^*]+)\*\*/)?.[1];
-const statusVersion = statusText.match(/버전:\s*\*\*v([^*]+)\*\*/)?.[1];
-const workTrackVersion = workTrackText.match(/Current version:\s*\*\*v([^*]+)\*\*/)?.[1];
+const statusVersion = statusText.match(/Runtime version:\s*\*\*v([^*]+)\*\*/)?.[1];
 
 if (!sourceVersion) errors.push('src/version.js: missing VERSION');
 if (!sourceUpdateUrl) errors.push('src/version.js: missing UPDATE_URL');
@@ -147,54 +149,81 @@ if (!generatedVersion) errors.push('ri-retry.user.js: missing @version');
 if (!generated.includes('// GENERATED FILE — DO NOT EDIT DIRECTLY.')) errors.push('ri-retry.user.js: generated warning missing; run npm run build');
 if (sourceVersion && generatedVersion && sourceVersion !== generatedVersion) errors.push(`version mismatch: source=${sourceVersion}, generated=${generatedVersion}`);
 if (sourceVersion && generatedBuildVersion && sourceVersion !== generatedBuildVersion) errors.push(`build header mismatch: source=${sourceVersion}, build=${generatedBuildVersion}`);
-if (!projectPlanVersion) errors.push('PROJECT_PLAN.md: missing current deployment version');
-if (sourceVersion && projectPlanVersion && sourceVersion !== projectPlanVersion) errors.push(`version mismatch: source=${sourceVersion}, PROJECT_PLAN=${projectPlanVersion}`);
-if (generatedVersion && statusVersion && generatedVersion !== statusVersion) errors.push(`version mismatch: generated=${generatedVersion}, STATUS=${statusVersion}`);
-if (!workTrackVersion) errors.push('WORK_TRACK.md: missing Current version');
-if (sourceVersion && workTrackVersion && sourceVersion !== workTrackVersion) errors.push(`version mismatch: source=${sourceVersion}, WORK_TRACK=${workTrackVersion}`);
+if (!statusVersion) errors.push('STATUS.md: missing Runtime version');
+if (sourceVersion && statusVersion && sourceVersion !== statusVersion) errors.push(`version mismatch: source=${sourceVersion}, STATUS=${statusVersion}`);
 if (sourceUpdateUrl && generatedUpdateUrl !== sourceUpdateUrl) errors.push(`update URL mismatch: source=${sourceUpdateUrl}, @updateURL=${generatedUpdateUrl || 'missing'}`);
 if (sourceUpdateUrl && generatedDownloadUrl !== sourceUpdateUrl) errors.push(`download URL mismatch: source=${sourceUpdateUrl}, @downloadURL=${generatedDownloadUrl || 'missing'}`);
 if (!generated.includes('ri32-update-shortcut') || !generated.includes('업데이트 바로가기')) errors.push('ri-retry.user.js: preserved update shortcut missing');
-if (!preservationText.includes('RI Panel/Research Sheet의 큰 업데이트 바로가기')) errors.push('PRESERVATION_BASELINE.md: update shortcut preservation rule missing');
 
-const requiredUiSections = ['# 4. 전역 RI Launcher','# 5. Grid — Frozen UI 유지','# 6. Reel Overlay','# 7. RI Research Sheet — 모바일 상세 조사 UI','# 17. 현재 v3.2.3과 Target 비교','# 19. UI Upgrade Migration Plan','# 20. UI Definition of Done'];
-for (const heading of requiredUiSections) if (!uiBaselineText.includes(heading)) errors.push(`UI_BASELINE.md: required section missing: ${heading}`);
-if (!uiBaselineText.includes('기존 Reel RI')) errors.push('UI_BASELINE.md: preserved Reel RI visual identity rule missing');
-if (!uiBaselineText.includes('업데이트 바로가기')) errors.push('UI_BASELINE.md: update shortcut rule missing');
-if (!uiBaselineText.includes('UI-3 — Mobile Research Workspace — source 완료')) errors.push('UI_BASELINE.md: UI-D source checkpoint not reflected');
+const requiredStatus = ['## Current Release', '## Current Objective', '## Preserve', '## Unverified / Device', '## Next Execution Order', '## Work Protocol'];
+for (const marker of requiredStatus) if (!statusText.includes(marker)) errors.push(`STATUS.md: required section missing: ${marker}`);
 
-const requiredUiArchitectureSections = ['# 2. 5-Layer UI Model','# 3. Context Model','# 4. Single UI Root','# 5. Workspace State Machine','# 6. Route / Identity Change Policy','# 7. Workspace Navigation','# 10. Layout Manager','# 16. Feedback & Activity Layer','# 19. UI Read Model Boundary','# 20. UI State Ownership','# 22. Migration Plan','# 23. Acceptance / Definition of Done'];
-for (const heading of requiredUiArchitectureSections) if (!uiArchitectureText.includes(heading)) errors.push(`UI_ARCHITECTURE.md: required section missing: ${heading}`);
-if (!uiArchitectureText.includes('CONTENT') || !uiArchitectureText.includes('GLOBAL')) errors.push('UI_ARCHITECTURE.md: context modes missing');
-if (!uiArchitectureText.includes('CLOSED') || !uiArchitectureText.includes('COMPACT') || !uiArchitectureText.includes('EXPANDED')) errors.push('UI_ARCHITECTURE.md: workspace state machine markers missing');
-if (!uiArchitectureText.includes('active tab만 mount')) errors.push('UI_ARCHITECTURE.md: active-tab lazy mount rule missing');
-if (!uiArchitectureText.includes('브라우저 Back') && !uiArchitectureText.includes('browser Back')) errors.push('UI_ARCHITECTURE.md: browser navigation preservation rule missing');
+const requiredBaseline = [
+  'PRESERVE / REPLACE / REMOVE-APPROVED',
+  '## 2. Grid — Frozen',
+  '0–32%',
+  '32–59%',
+  '0–26%',
+  '25–51%',
+  '업데이트 바로가기',
+  'legacy `#ri3-reels-overlay`',
+  'silent default fallback 금지',
+  '## 8. Replacement gate'
+];
+for (const marker of requiredBaseline) if (!baselineText.includes(marker)) errors.push(`BASELINE.md: required marker missing: ${marker}`);
 
-if (!workTrackText.includes('UI_BASELINE.md')) errors.push('WORK_TRACK.md: UI_BASELINE.md reference missing');
-if (!workTrackText.includes('UI_ARCHITECTURE.md')) errors.push('WORK_TRACK.md: UI_ARCHITECTURE.md reference missing');
-if (!workTrackText.includes('UI-B — Primitive + Layout + Workspace State Foundation')) errors.push('WORK_TRACK.md: UI-B checkpoint missing');
-if (!workTrackText.includes('UI-C — Global RI Launcher visual restoration')) errors.push('WORK_TRACK.md: UI-C checkpoint missing');
-if (!workTrackText.includes('UI-D — Contextual Research Workspace')) errors.push('WORK_TRACK.md: UI-D checkpoint missing');
-if (!workTrackText.includes('UI-E — Feedback / Activity — source 완료')) errors.push('WORK_TRACK.md: UI-E checkpoint missing');
-if (!workTrackText.includes('UI-F — Reel identity + Metrics Overlay — 다음 작업')) errors.push('WORK_TRACK.md: next UI-F execution step missing');
+const requiredArchitecture = [
+  '## 3. Owner map',
+  'CLOSED | COMPACT | EXPANDED',
+  'GLOBAL | CONTENT',
+  'migration/reel-context-adapter.js',
+  'ui/reel-overlay.js',
+  'legacy-runtime.js',
+  '## 7. Build / architecture gate'
+];
+for (const marker of requiredArchitecture) if (!architectureText.includes(marker)) errors.push(`ARCHITECTURE.md: required marker missing: ${marker}`);
 
-const requiredUiFiles = ['src/ui/ri-primitives.js','src/ui/layout.js','src/ui/workspace-state.js','src/ui/research-workspace.js','src/core/activity.js','src/ui/activity-indicator.js','src/ui/ri-settings.js'];
-const sourceRelative = new Set(sourceFiles.map(rel));
-for (const filename of requiredUiFiles) if (!sourceRelative.has(filename)) errors.push(`${filename}: required UI/Foundation owner missing`);
+if (!planText.includes('발굴') || !planText.includes('STT / OCR') || !planText.includes('## 9. Roadmap')) errors.push('PROJECT_PLAN.md: product flow/analysis roadmap missing');
+if (!readmeText.includes('문서 — 5개만 기준으로 사용') || !readmeText.includes('STATUS.md') || !readmeText.includes('BASELINE.md')) errors.push('README.md: compact document map missing');
+if (!testsReadmeText.includes('Active Reel / Overlay gate') || !testsReadmeText.includes('Android Edge device acceptance')) errors.push('tests/README.md: acceptance summary missing');
 
-const workspaceSource = sourceRelative.has('src/ui/research-workspace.js') ? await readFile(path.join(root, 'src/ui/research-workspace.js'), 'utf8') : '';
-if (workspaceSource) {
-  if (!workspaceSource.includes('ri32-update-shortcut')) errors.push('src/ui/research-workspace.js: preserved update shortcut slot missing');
-  if (!workspaceSource.includes("current.detent === 'expanded'")) errors.push('src/ui/research-workspace.js: compact/expanded binding missing');
-  if (!workspaceSource.includes("tabsNode.hidden = !contentMode")) errors.push('src/ui/research-workspace.js: CONTENT/GLOBAL tab policy missing');
-  if (!workspaceSource.includes('ri32-activity-host')) errors.push('src/ui/research-workspace.js: Activity host missing');
+const canonicalDocs = [readmePath, planPath, statusPath, architecturePath, baselinePath, testsReadmePath];
+let docBytes = 0;
+for (const file of canonicalDocs) {
+  const info = await stat(file);
+  docBytes += info.size;
+  if (info.size > 20000) addError(file, `${info.size} bytes; canonical docs should stay compact (<20KB each)`);
 }
+if (docBytes > 60000) errors.push(`canonical docs total ${docBytes} bytes; keep documentation under 60KB`);
 
-const activitySource = sourceRelative.has('src/core/activity.js') ? await readFile(path.join(root, 'src/core/activity.js'), 'utf8') : '';
-if (activitySource && (!activitySource.includes("'running'") || !activitySource.includes("'success'") || !activitySource.includes("'error'"))) errors.push('src/core/activity.js: activity lifecycle states missing');
+const obsoleteDocs = ['WORK_TRACK.md', 'CODE_STRUCTURE.md', 'UI_BASELINE.md', 'UI_ARCHITECTURE.md', 'GRID_BASELINE.md', 'PRESERVATION_BASELINE.md'];
+const rootNames = new Set(await readdir(root));
+for (const name of obsoleteDocs) if (rootNames.has(name)) errors.push(`${name}: obsolete duplicate doc; merge into STATUS/ARCHITECTURE/BASELINE`);
 
-const requiredWorkSections = ['# 2. Current Objective','# 4. Preserve — 건드리면 안 되는 승인 개선','# 5. Current Known Issues / Unverified','# 7. Next Execution Order','# 8. Work Update Protocol','# 9. Definition of Done for Each Step'];
-for (const heading of requiredWorkSections) if (!workTrackText.includes(heading)) errors.push(`WORK_TRACK.md: required section missing: ${heading}`);
+const sourceRelative = new Set(sourceFiles.map(rel));
+const requiredSources = [
+  'src/core/activity.js',
+  'src/migration/legacy-store-adapter.js',
+  'src/migration/reel-context-adapter.js',
+  'src/metrics/metrics.js',
+  'src/media/download-manager.js',
+  'src/ui/layout.js',
+  'src/ui/workspace-state.js',
+  'src/ui/research-workspace.js',
+  'src/ui/activity-indicator.js',
+  'src/ui/metric-format.js',
+  'src/ui/reel-overlay.js',
+  'src/ui/ri-settings.js'
+];
+for (const filename of requiredSources) if (!sourceRelative.has(filename)) errors.push(`${filename}: required owner missing`);
+
+const workspaceSource = await readFile(path.join(root, 'src/ui/research-workspace.js'), 'utf8');
+if (!workspaceSource.includes('ri32-update-shortcut')) errors.push('src/ui/research-workspace.js: update shortcut slot missing');
+if (!workspaceSource.includes("current.detent === 'expanded'")) errors.push('src/ui/research-workspace.js: compact/expanded binding missing');
+if (!workspaceSource.includes('ri32-activity-host')) errors.push('src/ui/research-workspace.js: Activity host missing');
+
+const activitySource = await readFile(path.join(root, 'src/core/activity.js'), 'utf8');
+if (!activitySource.includes("'running'") || !activitySource.includes("'success'") || !activitySource.includes("'error'")) errors.push('src/core/activity.js: activity lifecycle states missing');
 
 if (/^\/\/ @require\s+/m.test(generated)) errors.push('ri-retry.user.js: runtime @require is forbidden');
 const rootStat = await stat(generatedPath);
@@ -205,4 +234,4 @@ if (errors.length) {
   for (const error of errors) console.error(`ERROR ${error}`);
   process.exit(1);
 }
-console.log(`Architecture check passed (${sourceFiles.length} source files, ${warnings.length} warnings)`);
+console.log(`Architecture check passed (${sourceFiles.length} source files, ${warnings.length} warnings, ${docBytes} doc bytes)`);
