@@ -253,14 +253,13 @@ function safeRect(element) {
   try {
     const rect = element?.getBoundingClientRect?.();
     if (!rect) return null;
-    return {
-      top: Number(rect.top) || 0,
-      right: Number(rect.right) || 0,
-      bottom: Number(rect.bottom) || 0,
-      left: Number(rect.left) || 0,
-      width: Number(rect.width) || 0,
-      height: Number(rect.height) || 0
-    };
+    const top = Number(rect.top) || 0;
+    const right = Number(rect.right) || 0;
+    const bottom = Number(rect.bottom) || 0;
+    const left = Number(rect.left) || 0;
+    const width = Number(rect.width) || 0;
+    const height = Number(rect.height) || 0;
+    return { top, right, bottom, left, width, height };
   } catch {
     return null;
   }
