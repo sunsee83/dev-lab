@@ -5,7 +5,7 @@ import { addAction, addRow, createSection, renderEmpty } from './ri-primitives.j
 import { createResearchWorkspaceView } from './research-workspace.js';
 import { createWorkspaceState } from './workspace-state.js';
 import { injectStyles } from './styles.js';
-import { showResult, showToast } from './toast.js';
+import { showToast } from './toast.js';
 import { renderRiSummary } from './ri-summary.js';
 
 const TABS = [
@@ -81,6 +81,18 @@ export function mountRiPanel({
     workspace.open();
     ensureWorkspaceView();
     syncWorkspaceView();
+    renderBody();
+    layout?.schedule?.();
+  }
+
+  function openSettings() {
+    if (destroyed) return;
+    workspace.rebindContext(currentIdentity());
+    workspace.setActiveTab('settings');
+    if (!isOpen()) workspace.open();
+    ensureWorkspaceView();
+    syncWorkspaceView();
+    workspaceView?.resetScroll();
     renderBody();
     layout?.schedule?.();
   }
@@ -264,17 +276,15 @@ export function mountRiPanel({
   }
 
   async function save(request) {
-    if (!downloads) return;
-    showToast(doc, '저장 준비 중…');
-    showResult(doc, await downloads.download(request));
+    if (!downloads) return null;
+    return downloads.download(request);
   }
 
   async function saveBatch(post) {
     const requests = post.carouselImages.map((url, index) => ({
       kind: 'carousel-slide', shortcode: post.shortcode, url, slideIndex: index + 1
     }));
-    showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
-    showResult(doc, await downloads.downloadBatch(requests));
+    return downloads?.downloadBatch(requests);
   }
 
   async function copyCurrentLink(post) {
@@ -322,6 +332,7 @@ export function mountRiPanel({
 
   return {
     open: openPanel,
+    openSettings,
     close: closePanel,
     destroy,
     getState: () => workspace.getState()
