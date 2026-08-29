@@ -120,7 +120,7 @@ ER 0.55%
 - missing line 숨김
 - caption/right action rail 침범 금지
 - 기존 가벼운 geometry를 시작점으로 사용
-- new overlay device gate 전 legacy overlay를 먼저 hide/delete하지 않음
+- new overlay device gate 전 legacy `#ri3-reels-overlay`를 먼저 hide/delete하지 않음
 
 ## 5. Metrics / 상태 의미
 
