@@ -15,6 +15,12 @@
 (() => {
   // src/version.js
   var VERSION = "3.2.2";
+  var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
+  function updateInstallUrl(cacheBust = Date.now()) {
+    const value = Number(cacheBust);
+    const stamp = Number.isFinite(value) ? Math.trunc(value) : Date.now();
+    return `${UPDATE_URL}?ri=${stamp}`;
+  }
 
   // src/core/app.js
   var EVENTS = Object.freeze({
@@ -1590,7 +1596,7 @@
   (function() {
     "use strict";
     var VERSION2 = "3.1.6";
-    var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
+    var UPDATE_URL2 = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
     var CACHE_KEY2 = "ri311:items:v1";
     var SNAP_KEY2 = "ri311:snap:v1";
     var POST_KEY2 = "ri311:posts:v1";
@@ -2790,7 +2796,7 @@
           copyText2(text);
         }],
         ["새 버전", function() {
-          window.open(UPDATE_URL + "?ri=" + Date.now(), "_blank");
+          window.open(UPDATE_URL2 + "?ri=" + Date.now(), "_blank");
         }]
       ];
       entries.forEach(function(entry) {
