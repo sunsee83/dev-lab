@@ -136,14 +136,17 @@ for (const file of graph.keys()) visit(file);
 
 const generatedPath = path.join(root, 'ri-retry.user.js');
 const statusPath = path.join(root, 'STATUS.md');
+const workTrackPath = path.join(root, 'WORK_TRACK.md');
 const versionPath = path.join(srcRoot, 'version.js');
 const generated = await readFile(generatedPath, 'utf8');
 const statusText = await readFile(statusPath, 'utf8');
+const workTrackText = await readFile(workTrackPath, 'utf8');
 const versionText = await readFile(versionPath, 'utf8');
 const sourceVersion = versionText.match(/VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1];
 const generatedVersion = generated.match(/^\/\/ @version\s+([^\s]+)\s*$/m)?.[1];
 const generatedBuildVersion = generated.match(/^\/\/ Build version:\s*([^\s]+)\s*$/m)?.[1];
 const statusVersion = statusText.match(/버전:\s*\*\*v([^*]+)\*\*/)?.[1];
+const workTrackVersion = workTrackText.match(/Current version:\s*\*\*v([^*]+)\*\*/)?.[1];
 
 if (!sourceVersion) errors.push('src/version.js: missing VERSION');
 if (!generatedVersion) errors.push('ri-retry.user.js: missing @version');
@@ -151,6 +154,21 @@ if (!generated.includes('// GENERATED FILE — DO NOT EDIT DIRECTLY.')) errors.p
 if (sourceVersion && generatedVersion && sourceVersion !== generatedVersion) errors.push(`version mismatch: source=${sourceVersion}, generated=${generatedVersion}`);
 if (sourceVersion && generatedBuildVersion && sourceVersion !== generatedBuildVersion) errors.push(`build header mismatch: source=${sourceVersion}, build=${generatedBuildVersion}`);
 if (generatedVersion && statusVersion && generatedVersion !== statusVersion) errors.push(`version mismatch: generated=${generatedVersion}, STATUS=${statusVersion}`);
+if (!workTrackVersion) errors.push('WORK_TRACK.md: missing Current version');
+if (sourceVersion && workTrackVersion && sourceVersion !== workTrackVersion) errors.push(`version mismatch: source=${sourceVersion}, WORK_TRACK=${workTrackVersion}`);
+
+const requiredWorkSections = [
+  '# 2. Current Objective',
+  '# 4. Preserve — 건드리면 안 되는 승인 개선',
+  '# 5. Current Known Issues / Unverified',
+  '# 7. Next Execution Order',
+  '# 8. Work Update Protocol',
+  '# 9. Definition of Done for Each Step'
+];
+for (const heading of requiredWorkSections) {
+  if (!workTrackText.includes(heading)) errors.push(`WORK_TRACK.md: required section missing: ${heading}`);
+}
+
 if (/^\/\/ @require\s+/m.test(generated)) errors.push('ri-retry.user.js: runtime @require is forbidden');
 
 const rootStat = await stat(generatedPath);
