@@ -6,21 +6,33 @@
 
 ```text
 PROJECT_PLAN.md          = 제품/데이터/장기 기능
-UI_BASELINE.md           = 사용자가 보게 되는 모바일 UI 기준
+UI_BASELINE.md           = 사용자에게 보이는 모바일 UI 기준
 UI_ARCHITECTURE.md       = UI 계층/상태/컴포넌트/데이터 흐름
 GRID_BASELINE.md         = Grid Frozen UI
 PRESERVATION_BASELINE.md = 기존 기능/외형 보존·교체 gate
-CODE_STRUCTURE.md        = 현재 소스 owner/dependency
-WORK_TRACK.md            = 지금 구현할 순서
+CODE_STRUCTURE.md        = 실제 소스 owner/dependency
+WORK_TRACK.md            = 현재 구현 순서
 ```
 
-UI 구조를 바꿀 때는 기존 좋은 점을 먼저 보존하고, 새 구조가 동등 이상의 접근성을 확보한 뒤 기존 구현을 교체합니다.
+기존 좋은 점을 먼저 보존하고, 새 구조가 동등 이상의 접근성을 확보한 뒤 기존 구현을 교체합니다.
+
+## 현재 구현 상태
+
+- UI-A Architecture Freeze: **완료**
+- UI-B Primitive + Layout + Workspace State Foundation: **코드/CI 완료, 실기기 미확인**
+- UI-C Global Launcher Replacement: **다음 작업**
+- UI-D Contextual Research Workspace: 예정
+- UI-E Feedback/Activity: 예정
+- UI-F Reel Overlay Unification: 예정
+- UI-G Data Engine/Research Tabs: 예정
+
+현재 v3.2.3의 right floating panel과 막대+돋보기 launcher visual은 Foundation UI이며 최종 baseline이 아닙니다.
 
 ---
 
 # 1. 목표
 
-사용 흐름은 다음을 가장 짧게 이어야 합니다.
+사용 흐름:
 
 ```text
 발굴
@@ -32,25 +44,24 @@ UI 구조를 바꿀 때는 기존 좋은 점을 먼저 보존하고, 새 구조�
 → 참고 소재 저장
 ```
 
-모바일 UI의 핵심 목표:
+모바일 UI 목표:
 
-1. Instagram 자체 탐색을 방해하지 않는다.
-2. 자주 보는 정보는 화면 위에 가볍게, 긴 정보는 열었을 때만 보여준다.
-3. 같은 기능을 Grid/Reel/Post마다 중복 구현하지 않는다.
-4. 한 손으로 열고 닫고 이동하기 쉽다.
-5. 현재 콘텐츠 identity가 바뀌면 이전 콘텐츠 UI 상태가 섞이지 않는다.
-6. 저장/분석 같은 비동기 작업 상태를 한 곳에서 보여준다.
-7. 기존 승인 기능을 새 UI 때문에 잃지 않는다.
+1. Instagram 자체 탐색 방해 최소화
+2. 자주 보는 정보는 가볍게, 긴 정보는 열었을 때만
+3. Grid/Reel/Post별 기능 중복 금지
+4. 한 손으로 열기/닫기/이동 용이
+5. identity change 시 stale UI 혼입 금지
+6. 저장/분석 async 상태의 공용 표현
+7. 기존 승인 기능/외형 손실 금지
+8. UI가 parser/storage/network/domain formula를 소유하지 않음
 
 ---
 
 # 2. 5-Layer UI Model
 
-UI는 다섯 층으로 나눕니다.
-
 ```text
 L0 Instagram Native
-   좋아요/댓글/공유/nav/feed/reel 자체 UI
+   좋아요/댓글/공유/nav/feed/reel
 
 L1 Ambient Intelligence
    Grid 8-slot / Reel 핵심지표 overlay
@@ -62,24 +73,22 @@ L3 Research Workspace
    Context Header / Navigation / Active Tab / Settings / Media
 
 L4 Feedback & Activity
-   Toast / download progress / error / future STT·OCR·AI job state
+   Toast / download progress / error / future STT·OCR·AI job
 ```
 
 규칙:
 
-- L1은 항상 가볍고 읽기 전용에 가깝게 유지합니다.
-- L2는 진입점만 담당하고 상세 데이터를 쌓지 않습니다.
-- L3에서만 긴 조사 UI를 보여줍니다.
-- L4는 기능별로 따로 만들지 않고 공용 상태 표현을 사용합니다.
-- Instagram native UI를 제거하거나 우리 UI로 복제하지 않습니다.
+- L1은 항상 가볍고 read-oriented
+- L2는 진입점만 담당
+- L3에서 긴 조사 UI 제공
+- L4는 공용 상태표현
+- Instagram native UI 제거/복제 금지
 
 ---
 
 # 3. Context Model
 
-Global RI는 모든 화면에 존재하지만, 모든 화면에서 억지로 같은 내용을 보여주지는 않습니다.
-
-UI context는 최소 다음 두 종류로 구분합니다.
+Global RI는 모든 화면에 존재하지만 모든 화면에서 같은 빈 UI를 강제하지 않습니다.
 
 ```text
 CONTENT
@@ -90,41 +99,31 @@ CONTENT
 - Post detail
 
 GLOBAL
-- Search/Explore 등 현재 콘텐츠 identity가 없는 화면
-- 콘텐츠를 특정할 수 없는 Profile/Grid 상태
+- Search/Explore 등 current content identity가 없음
+- content를 특정할 수 없는 Profile/Grid 상태
 ```
 
-향후 account 성과 모델이 준비되면 `ACCOUNT` context를 추가할 수 있지만, 데이터 모델 없이 UI만 먼저 만들지 않습니다.
+향후 account model이 준비되면 `ACCOUNT` context 검토. 데이터 없이 UI만 먼저 만들지 않습니다.
 
-## CONTENT context
-
-기존에 합의한 6개 리서치 탭을 그대로 사용합니다.
+## CONTENT
 
 ```text
 요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정
 ```
 
-## GLOBAL context
+6탭은 그대로 보존합니다.
 
-현재 콘텐츠가 없는데 6개 빈 탭을 보여주지 않습니다.
+## GLOBAL
 
-가벼운 `RI Home`을 보여줍니다.
+빈 6탭 대신 가벼운 `RI Home`:
 
-초기 제공:
-
-- 현재 콘텐츠가 없다는 명확한 안내
-- 전역 설정 진입
+- 현재 콘텐츠 없음 안내
+- 전역 설정
 - 업데이트 바로가기
-
-향후 account/discovery 데이터가 준비되면 같은 Workspace shell 안에 확장합니다.
-
-**6탭을 삭제하는 것이 아니라 CONTENT research mode의 정보구조로 고정합니다.**
 
 ---
 
-# 4. Single UI Root
-
-전역 UI는 여러 mount 함수가 document에 각자 루트를 만들지 않습니다.
+# 4. Single UI Root 목표
 
 논리 구조:
 
@@ -143,21 +142,22 @@ UIRoot
    └ Toast
 ```
 
-초기 migration에서는 기존 파일을 한꺼번에 분해하지 않습니다. 그러나 상태와 lifecycle은 최종적으로 한 `UIRoot/WorkspaceController`에서 조정합니다.
-
 목표:
 
 - launcher 1개
 - workspace 1개
 - toast owner 1개
 - layout owner 1개
-- 동일 route/store event를 컴포넌트마다 중복 subscribe하지 않음
+- workspace state owner 1개
+- route/store event 중복 subscribe 최소화
+
+현재 migration에서는 기존 파일을 한꺼번에 분해하지 않고 ownership부터 순차적으로 이동합니다.
 
 ---
 
 # 5. Workspace State Machine
 
-Research Workspace는 명확한 상태 기계를 사용합니다.
+현재 `ui/workspace-state.js`가 state owner입니다.
 
 ```text
 CLOSED
@@ -165,103 +165,111 @@ CLOSED
 
 COMPACT
   ├ expand → EXPANDED
-  ├ close/outside tap → CLOSED
-  └ route/context change → COMPACT 유지 + 새 context rebind
+  ├ close → CLOSED
+  └ route/context change → detent 유지 + context rebind
 
 EXPANDED
   ├ collapse → COMPACT
   ├ close → CLOSED
-  └ route/context change → EXPANDED 유지 + 새 context rebind
+  └ route/context change → detent 유지 + context rebind
 ```
 
-## COMPACT
+state:
 
-- 기본 진입 상태
+```text
+open
+detent: closed | compact | expanded
+mode: content | global
+activeTab
+contextKey
+contextEpoch
+```
+
+현재 Foundation panel이 실제로 이 owner에서 open/tab/context를 읽습니다. Compact/Expanded의 bottom-sheet visual은 UI-D에서 적용합니다.
+
+## COMPACT target
+
 - 약 48~56vh
-- non-modal에 가깝게 동작
-- Instagram 화면을 상당 부분 계속 볼 수 있음
-- 요약/미디어/설정의 빠른 사용에 적합
+- soft non-modal
+- Instagram을 상당 부분 계속 볼 수 있음
+- summary/media/settings 빠른 사용
 
-## EXPANDED
+## EXPANDED target
 
-- 긴 Caption/댓글/분석 읽기
 - 약 78~84vh
+- 긴 Caption/댓글/분석
 - soft scrim 허용
-- 배경 accidental tap을 줄임
 - full screen 강제 금지
 
-## 조작 규칙
+조작:
 
-- `×` 닫기 항상 존재
-- expand/collapse 명시적 버튼 제공
-- drag handle은 보조 수단이며 유일한 조작법이 아님
-- body 전체 swipe로 dismiss하지 않음
-- Instagram 좌우 swipe와 충돌하는 탭 swipe navigation 금지
-- 브라우저 Back을 가로채기 위해 임의 history entry를 만들지 않음
+- `×` 항상 존재
+- explicit expand/collapse
+- drag handle은 보조
+- body swipe-dismiss 금지
+- tab swipe navigation 금지
+- browser Back용 임의 history entry 금지
 
 ---
 
 # 6. Route / Identity Change Policy
 
-Workspace가 열린 상태에서 Instagram SPA가 다른 콘텐츠로 이동할 수 있습니다.
-
-이때 가장 중요한 것은 stale content를 잠깐이라도 확정값처럼 보여주지 않는 것입니다.
-
 정책:
 
 1. route/identity change 감지
-2. 이전 content view model 즉시 invalidation
-3. context header 먼저 새 identity 또는 `확인 중`으로 전환
-4. 현재 detent(COMPACT/EXPANDED)는 유지
-5. CONTENT → CONTENT이면 active tab은 지원되는 경우 유지
-6. body scroll은 새 콘텐츠에서 top으로 reset
-7. CONTENT → GLOBAL이면 `RI Home`으로 전환
-8. 새 데이터 도착 시 필요한 active view만 render
+2. 이전 content state invalidation
+3. new identity/contextKey rebind
+4. contextEpoch 증가
+5. detent 유지
+6. CONTENT→CONTENT에서 지원되는 active tab 유지
+7. CONTENT→GLOBAL은 RI Home
+8. 새 body는 top으로 reset
+9. active view만 render
 
-이전 shortcode의 미디어/댓글/지표를 새 shortcode와 혼합하지 않습니다.
+현재 UI-B에서 `workspace.rebindContext(identity)` 기반을 panel route/identity/store scheduling에 연결했습니다.
+
+이전 shortcode의 media/comments/metrics를 새 shortcode와 혼합하지 않습니다.
 
 ---
 
 # 7. Workspace Navigation
 
-CONTENT mode의 6탭은 유지하되 모바일 조작성을 개선합니다.
+CONTENT 6탭:
 
 ```text
 요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정
 ```
 
-규칙:
+Target:
 
 - sticky header 아래 sticky tab rail
-- 가로 스크롤 가능
-- 현재 탭은 자동으로 보이는 위치까지 scrollIntoView
-- 탭 touch target 높이 약 44px 권장
-- 색만으로 선택 상태를 구분하지 않음
-- 좌우 swipe gesture로 탭 변경하지 않음
+- horizontal scroll
+- selected tab scrollIntoView
+- touch target 약 44px
+- color만으로 selected 표시 금지
+- swipe tab navigation 금지
 
-## Active Tab Host
+## Active Tab Host target
 
-성능과 상태 혼입을 막기 위해 **active tab만 mount**합니다.
+- active tab만 mount
+- inactive heavy DOM 유지 금지
+- Content/Comments/Analysis lazy render
+- tab listener unmount cleanup
+- context change 시 이전 content scroll/cache 재사용 금지
 
-- 비활성 탭의 무거운 DOM을 동시에 유지하지 않음
-- 콘텐츠/댓글/분석은 필요할 때만 lazy render
-- tab별 listener는 unmount cleanup
-- 같은 context 안에서는 필요 시 scroll position을 기억할 수 있음
-- context가 바뀌면 이전 content tab scroll/cache를 재사용하지 않음
+이 부분은 UI-D에서 실제 구현합니다.
 
 ---
 
 # 8. Context Header
 
-상단 header는 정보를 과도하게 넣지 않습니다.
-
-CONTENT 예:
+CONTENT target:
 
 ```text
 RI · @username    REEL    v3.2.x    ⇱  ×
 ```
 
-GLOBAL 예:
+GLOBAL target:
 
 ```text
 RI Research              v3.2.x    ×
@@ -269,61 +277,68 @@ RI Research              v3.2.x    ×
 
 우선순위:
 
-1. 현재 context
-2. 닫기
+1. current context
+2. close
 3. expand/collapse
-4. version은 보조 정보
+4. version 보조정보
 
-shortcode 전체는 항상 header에 노출하지 않습니다.
+shortcode 전체를 항상 header에 노출하지 않습니다.
 
 ---
 
 # 9. Global RI Launcher
 
-Global Launcher는 기존 Reel RI visual identity를 계승합니다.
-
-역할:
+기존 Reel RI visual identity를 계승합니다.
 
 ```text
-CLOSED에서 tap → Workspace COMPACT
-열린 상태에서 tap → Workspace CLOSED
+CLOSED tap → COMPACT
+OPEN tap   → CLOSED
 ```
 
 규칙:
 
 - 화면당 1개
-- 시각 크기 약 32~36px
-- 실제 touch target 약 44×44px
-- Instagram native action보다 더 강하게 튀지 않음
-- 별도 설정 gear를 Grid/header에 추가하지 않음
-- 현재 v3.2.3 임시 막대+돋보기 icon은 replacement 대상
+- visual 32~36px
+- touch target 약 44×44px
+- Instagram native보다 과도하게 튀지 않음
+- 별도 settings gear를 Grid/header에 추가하지 않음
+- current v3.2.3 막대+돋보기 icon은 REPLACE 대상
 
-향후 비동기 작업이 실행 중일 때 작은 status dot/badge를 붙일 수 있지만, 숫자 badge를 상시 표시해 시각 소음을 만들지 않습니다.
+UI-C에서 기존 Reel RI source를 다시 확인한 뒤 교체합니다.
 
 ---
 
 # 10. Layout Manager
 
-위치 계산은 `ui/layout.js` 한 owner가 담당합니다.
+현재 `ui/layout.js`가 단일 owner입니다.
 
-입력:
+순수 API:
 
 ```text
-LayoutSnapshot
-- viewport width/height
-- visualViewport height/offset
-- safe-area inset
-- bottom blockers[]
-- right blockers[]
-- keyboardVisible
+computeLayoutSnapshot(input)
 ```
 
-blocker 예:
+runtime API:
 
-- Instagram bottom navigation
-- 앱 사용/Open app/Use app banner
-- Reel right action rail
-- browser keyboard로 줄어든 visual viewport
+```text
+createLayoutManager({ app, doc, env })
+getSnapshot()
+measure()
+schedule()
+subscribe()
+destroy()
+```
+
+입력 개념:
+
+```text
+viewportWidth / viewportHeight
+visualViewport
+safeBottom
+bottomBlockers[]
+rightBlockers[]
+keyboardVisible
+```
 
 출력:
 
@@ -334,43 +349,52 @@ sheetMetrics
 feedbackAnchor
 ```
 
-## 계산 전략
+## UI-B 현재 구현
 
-단순히 하나의 `bottom: 88px`을 모든 화면에 적용하지 않습니다.
+기존 v3.2.3 geometry를 기본값으로 유지하면서 CSS variable에 연결:
 
-1. preferred anchor를 정함
-2. 현재 blocker rect와 overlap 계산
-3. 최소 이동으로 충돌을 피하는 candidate 선택
-4. 동일 frame/layout 변화는 dedupe
+```text
+--ri-launcher-right
+--ri-launcher-bottom
+--ri-panel-bottom
+--ri-feedback-bottom
+--ri-sheet-compact-height
+--ri-sheet-expanded-height
+```
 
-## 트리거
+현재 blocker candidate는 제한된 visible fixed/sticky element를 사용합니다.
+
+Trigger:
 
 - route change
 - resize/orientation
-- visualViewport resize
-- 관련 fixed UI 변화
+- visualViewport resize/scroll
 
-일반 DOM mutation마다 전체 layout scan을 실행하지 않습니다.
+일반 DOM mutation마다 전체 layout scan하지 않습니다.
+
+## 향후 보강
+
+- UI-C: 실제 Global Launcher와 bottom nav/banner collision 검증
+- UI-F: Reel native right rail lane 보강
+- UI-D: keyboard/sheet visualViewport 실기기 검증
 
 ---
 
 # 11. Grid UI — Preserve
 
-Grid는 새 Workspace 때문에 재설계하지 않습니다.
+Grid는 Workspace 전환 때문에 재설계하지 않습니다.
 
 유지:
 
-- Instagram 3열
+- 3열
 - 하단 2줄 8-slot
 - no-flicker/renderKey
-- Photo/Carousel 잘못된 views 차단
-- native media type icon
-- 카드당 media action 1개
-- 실제 Video/Reel cover
+- Photo/Carousel bogus views 차단
+- native media-type icon
+- 카드당 action 1개
+- actual Video/Reel cover
 - music/album/avatar 제외
-- Carousel 개별 batch 저장
-
-역할:
+- Carousel individual batch
 
 ```text
 Grid = 비교
@@ -378,13 +402,9 @@ Grid media action = 빠른 저장
 Global RI = 상세 조사
 ```
 
-Grid 카드에 상세 탭/전역 settings/update를 추가하지 않습니다.
-
 ---
 
 # 12. Reel Overlay — Preserve + Adaptive Position
-
-표현은 기존 좋은 방향을 유지합니다.
 
 ```text
 ▶ 42.9만
@@ -395,27 +415,28 @@ ER 0.55%
 ```
 
 - box/blur 없음
-- 작은 white/gray text
-- shadow 정도만
+- white/gray text + shadow
 - missing line 숨김
 - native likes/comments/reposts/share 중복 금지
 - caption/right rail 비침범
+- 기존 안정적 geometry 시작점
+- Layout Manager `reelOverlayLane` 사용 목표
 
-기존 안정적 위치를 시작점으로 사용하고 Layout Manager가 충돌 시 lane을 이동합니다.
+실제 Metrics owner 전환은 UI-F.
 
 ---
 
 # 13. Summary UX
 
-목표는 **10초 안에 성과 판단**입니다.
+목표: **10초 안에 성과 판단**.
 
 identity strip:
 
 - username
 - media type
-- published date
+- date
 
-metric layout:
+모바일 metric layout target:
 
 ```text
 조회        좋아요
@@ -425,9 +446,9 @@ ER          24h
 계정대비     게시일
 ```
 
-작은 8열 table은 사용하지 않습니다.
+작은 8-column table 금지.
 
-상태 표현:
+상태:
 
 ```text
 loading      확인 중
@@ -437,48 +458,46 @@ conflict     검증 중
 verified     실제 값
 ```
 
-Grid의 단순 `-`와 상세 research 상태를 구분합니다.
+현재 Foundation Summary는 Metrics Engine과 연결돼 있고 UI-D에서 mobile summary layout을 개선합니다.
 
 ---
 
 # 14. Content / Comments / Analysis UX
 
-## 콘텐츠
-
-긴 Caption/STT/OCR을 section 단위로 구성합니다.
+## Content
 
 - Caption
 - hashtags/mentions
 - STT
 - OCR
 - corrected transcript
-- Carousel slide별 OCR
+- Carousel slide OCR
 
-복사 action은 해당 section 가까이에 둡니다.
+copy action은 section 가까이에 둡니다.
 
-## 댓글
-
-필터 chip:
+## Comments
 
 ```text
 유용 | 질문 | 구매의도 | 후기 | 불만 | 반론 | 팁 | 아이디어
 ```
 
-- horizontal scroll 허용
-- thread 관계 보존
-- AI 전에 deterministic 후보 선별
+- horizontal filter scroll
+- thread 보존
+- AI 전 deterministic candidate selection
 
-## 분석
+## Analysis
 
 - Hook
-- 고정 제목
+- fixed title
 - CTA
-- 강조어
-- 숫자/가격
-- 콘텐츠 구조
-- 발화/속도
+- emphasis
+- numbers/prices
+- structure
+- speech rate
 
-결과가 없을 때 빈 카드 여러 개를 만들지 않고 하나의 clear empty state를 사용합니다.
+결과 없으면 빈 card 여러 개 대신 하나의 clear empty state.
+
+실제 데이터 연결은 UI-G 이후.
 
 ---
 
@@ -486,38 +505,34 @@ Grid의 단순 `-`와 상세 research 상태를 구분합니다.
 
 ## Media
 
-원본 확보 중심입니다.
-
 - Reel/Video: video + actual cover
 - Photo: original image
-- Carousel: count + 대표 + whole batch + 향후 slide별
+- Carousel: count + representative + whole batch + future per-slide
 
-주요 download button height 약 44px 권장.
+주요 button 약 44px target.
 
-모든 저장은 Download Manager 사용.
+모든 저장은 Download Manager.
 
 ## Settings
 
-전역 설정만 둡니다.
+전역 설정:
 
 - 지정 폴더
 - 기본 Downloads
 - 매번 선택
-- 현재 폴더 이름
-- 권한
-- 폴더 선택/변경
+- 현재 폴더
+- permission
+- folder select/change
 
 큰 `업데이트 바로가기`를 Settings 하단에서 항상 접근 가능하게 유지합니다.
 
-version label shortcut을 추가할 수 있어도 큰 버튼을 대체하지 않습니다.
+version shortcut은 보조이며 큰 버튼을 대체하지 않습니다.
 
 ---
 
 # 16. Feedback & Activity Layer
 
-Toast만으로 긴 작업 상태를 표현하지 않습니다.
-
-상태 owner 개념:
+Target model:
 
 ```text
 Activity
@@ -528,46 +543,38 @@ Activity
 - message
 ```
 
-초기에는 Download Manager 결과를 사용하고, 향후 STT/OCR/AI job도 같은 activity presentation을 사용합니다.
-
 표현:
 
-- 짧은 성공: Toast
-- 사용자가 조치해야 하는 오류: Workspace 내 persistent message
-- Carousel batch 같은 진행: `3/8 저장 중` activity strip
-- 같은 toast 중복 생성 금지
+- 짧은 성공 → Toast
+- actionable error → Workspace persistent message
+- batch → `3/8 저장 중`
+- toast dedupe
 
-Launcher badge는 activity layer의 보조 표시이며 필수 UI가 아닙니다.
+UI-E에서 실제 owner/presentation을 도입합니다.
 
 ---
 
 # 17. Non-modal / Modal Policy
 
-COMPACT와 EXPANDED를 같은 방식으로 취급하지 않습니다.
+COMPACT:
 
-## COMPACT
+- soft non-modal
+- 불필요한 full scrim 없음
+- outside tap close 가능
 
-- 기본적으로 soft non-modal
-- Instagram 배경이 보임
-- 불필요한 전체 scrim 없음
-- outside tap으로 닫을 수 있음
+EXPANDED:
 
-## EXPANDED
-
-- 긴 읽기/분석 작업
-- 약한 scrim 허용
+- weak scrim 허용
 - background accidental action 방지
-- sheet 자체 scroll 우선
+- sheet scroll 우선
 
-브라우저 navigation/back 동작은 가로채지 않습니다.
+browser navigation/back 가로채지 않음.
 
 ---
 
 # 18. Mobile Design Tokens
 
-UI 크기를 파일마다 제각각 지정하지 않도록 CSS variable/token으로 통일합니다.
-
-권장 초기 token:
+Target tokens:
 
 ```text
 --ri-touch: 44px
@@ -581,26 +588,26 @@ UI 크기를 파일마다 제각각 지정하지 않도록 CSS variable/token으
 
 텍스트:
 
-- 핵심 metric 11~13px 이상
-- body 12~14px 수준
-- 9px 이하를 핵심 정보에 사용하지 않음
-- tabular numeric 사용
+- 핵심 metric 11~13px+
+- body 12~14px
+- 9px 이하 핵심정보 금지
+- tabular numeric
 
 색상:
 
-- Instagram보다 강한 브랜드 색을 상시 사용하지 않음
-- dark/light 환경을 CSS variable로 대응 가능하게 설계
-- 상태를 색만으로 구분하지 않음
+- Instagram보다 강한 브랜드색 상시 사용 금지
+- dark/light 대응 가능
+- 상태를 color만으로 구분 금지
+
+UI-D에서 실제 token 적용 범위를 확장합니다.
 
 ---
 
 # 19. UI Read Model Boundary
 
-현재 `ri-panel.js`가 legacy adapter를 직접 읽는 구조는 migration 단계에서는 허용되지만 최종 구조는 아닙니다.
+현재 `ri-panel.js`가 migration adapter를 읽는 것은 임시 허용입니다.
 
-UI가 원하는 것은 Instagram parser가 아니라 **읽기용 context snapshot**입니다.
-
-목표 contract:
+최종 contract:
 
 ```text
 ResearchReadModel
@@ -611,66 +618,54 @@ ResearchReadModel
 - subscribe(listener)
 ```
 
-UI는 이 contract만 보고 render합니다.
-
-현재 migration에서는 adapter-backed 구현을 주입할 수 있고, 향후 Identity/Verified Store가 완성되면 provider만 교체합니다.
-
 효과:
 
-- tab마다 legacy store parsing 복제 금지
-- route/identity stale 처리 한 곳
-- UI가 Data Engine 교체에 덜 결합
-- Account mode를 나중에 추가할 때 panel 전체 재작성 방지
+- tab별 legacy parsing 복제 금지
+- stale 처리 한 곳
+- Data Engine 교체와 UI 분리
+- 향후 ACCOUNT mode 확장
 
-`ResearchReadModel` 구현 파일은 실제 Data Engine migration 시점에 필요가 생겼을 때만 생성합니다.
+실제 구현 파일은 Data Engine migration 시 필요가 생겼을 때 생성합니다.
 
 ---
 
 # 20. UI State Ownership
 
-Workspace UI state:
+현재 owner:
 
 ```text
-WorkspaceState
-- open
-- detent: compact | expanded
-- mode: content | global
-- activeTab
-- contextKey
-- keyboardVisible
+Workspace State → ui/workspace-state.js
+Layout State    → ui/layout.js
 ```
-
-owner는 WorkspaceController입니다.
 
 금지:
 
-- launcher가 별도 `open` state 소유
-- tab renderer가 sheet height 소유
-- toast가 layout bottom offset 직접 계산
-- route마다 새 global listener 추가
+- launcher separate open state
+- tab renderer sheet height ownership
+- toast direct bottom offset calculation
+- route마다 new global listener
 
-각 tab은 자신의 로컬 presentation state만 소유합니다.
+각 tab은 local presentation state만 소유합니다.
 
 ---
 
-# 21. Target File Ownership
+# 21. Current / Target File Ownership
 
-한꺼번에 파일을 만들지 않습니다.
-
-필요가 생기는 순서:
+현재 실제 UI:
 
 ```text
 ui/
-├ ri-panel.js           # 현재 migration shell
-├ ri-summary.js
-├ ri-primitives.js      # UI-1에서 실제 중복 해결 시 생성
-├ layout.js             # UI-1에서 생성
 ├ grid.js
+├ layout.js
+├ workspace-state.js
+├ ri-primitives.js
+├ ri-panel.js
+├ ri-summary.js
 ├ toast.js
 └ styles.js
 ```
 
-Workspace 책임이 실제로 커지면 다음처럼 분리합니다.
+실제 책임이 커질 때만 target 분리:
 
 ```text
 ui/
@@ -679,6 +674,7 @@ ui/
 ├ research-workspace.js
 ├ workspace-navigation.js
 ├ layout.js
+├ workspace-state.js
 ├ ri-primitives.js
 ├ ri-summary.js
 ├ grid.js
@@ -687,58 +683,75 @@ ui/
 └ styles.js
 ```
 
-처음부터 빈 `tabs/summary.js`, `tabs/comments.js` 등을 만들지 않습니다.
+처음부터 빈 `tabs/*`를 만들지 않습니다.
 
 ---
 
-# 22. Improved Migration Plan
+# 22. Migration Plan
 
-## UI-A — Architecture Freeze — 완료 조건
+## UI-A — Architecture Freeze — 완료
 
-- `UI_BASELINE.md` 유지/수정점 확인
-- 이 `UI_ARCHITECTURE.md` 작성
-- 기존 기능/visual preservation 재확인
-- current v3.2.3 ↔ target gap 문서화
+- baseline/architecture/preservation 정리
+- current↔target gap 문서화
 
-runtime visual 변경 없음.
+## UI-B — Primitive + Layout + Workspace State — 코드 완료
 
-## UI-B — Primitive + Layout + Workspace State Foundation
+실제 완료:
 
-1. RI section/row/empty/action 중복을 `ri-primitives.js`로 통합
-2. `layout.js` 도입
-3. WorkspaceState/transition을 한 owner로 정리
-4. route/context rebind 규칙 구현
-5. 기존 화면은 가능한 한 동일하게 유지
+1. `ri-primitives.js`
+2. `layout.js`
+3. `workspace-state.js`
+4. panel/summary primitive 공통화
+5. main composition injection
+6. panel open/tab/context state owner 연결
+7. styles offsets → layout CSS variables
+8. route/resize/visualViewport layout scheduling
+9. unit coverage
+10. architecture duplicate warning 0
 
-## UI-C — Launcher Replacement
+자동검증:
 
-1. 기존 Reel RI visual identity 확인
-2. 새 Global Launcher에 적용
-3. Layout Manager anchor 적용
-4. 화면당 1개/44px touch target 확인
-5. 새 launcher 검증 후 임시 v3.2.3 visual 제거
+- 18/18 unit pass
+- build pass
+- architecture/syntax pass
+- 19 source files / 0 warnings
+
+Android Edge visual/touch는 Unverified.
+
+## UI-C — Launcher Replacement — 다음
+
+1. 기존 v3.1 Reel RI icon/visual 재확인
+2. Global Launcher에 적용
+3. 44px touch target
+4. Layout Manager anchor
+5. 화면당 1개
+6. collision 실기기 검토
+7. 새 launcher 검증 후 임시 visual 제거
 
 ## UI-D — Research Workspace Replacement
 
-1. 기존 panel 모든 action inventory
-2. bottom sheet COMPACT/EXPANDED 구현
-3. CONTENT 6탭 유지
-4. GLOBAL RI Home 추가
-5. active tab lazy mount
-6. settings/update/media/summary 완전 이관
-7. 새 workspace 검증 후 right floating panel 제거
+1. old panel action inventory
+2. bottom sheet COMPACT/EXPANDED
+3. CONTENT 6탭
+4. GLOBAL RI Home
+5. sticky header/tabs
+6. explicit expand/collapse
+7. active tab lazy mount
+8. summary/media/settings/update 완전 이관
+9. new workspace 검증 후 right floating panel 제거
 
 ## UI-E — Feedback / Activity
 
 - toast dedupe
-- batch download progress strip
-- persistent actionable error
-- future analysis job extension point
+- batch progress
+- persistent error
+- analysis job extension
 
 ## UI-F — Reel Overlay Unification
 
-- Reel identity/native metrics 정확도
-- Metrics owner 사용
+- current Reel identity
+- native metrics
+- Metrics owner
 - Layout Manager lane
 - legacy metric renderer 제거
 
@@ -747,82 +760,79 @@ runtime visual 변경 없음.
 - Identity
 - Extractor
 - Verified Store
-- common history
+- history
 - media[]
-- Content/Comments/Analysis 실제 데이터 연결
-- 이후 STT/OCR/AI
+- Content/Comments/Analysis
+- STT/OCR/AI
 
 ---
 
 # 23. Acceptance / Definition of Done
 
-UI 단계는 아래를 만족하기 전 완료가 아닙니다.
+## Preserve
 
-## 보존
+- Grid Frozen UI
+- 업데이트 바로가기
+- 기존 Reel RI visual identity
+- native Instagram actions
+- cover/no-flicker/media improvements
 
-- Grid Frozen UI 유지
-- 업데이트 바로가기 유지
-- 기존 Reel RI visual identity 유지
-- native Instagram actions 유지
-- 기존 cover/no-flicker/media 개선 유지
-
-## 구조
+## Structure
 
 - Global Launcher 1개
 - Workspace 1개
 - layout owner 1개
-- active tab만 mount
-- stale context 즉시 invalidate
-- UI가 storage/network/metric formula 직접 구현하지 않음
+- workspace state owner 1개
+- stale context invalidation
+- active heavy tab only mount target
+- UI storage/network/metrics formula 금지
 
-## 모바일
+## Mobile
 
 - 주요 touch target 약 44px
-- close 항상 접근 가능
-- COMPACT가 화면을 과도하게 덮지 않음
-- EXPANDED에서 긴 글 읽기 가능
-- keyboard/visualViewport 충돌 검토
-- bottom nav/banner/right rail 심각한 overlap 없음
-- swipe gesture가 Instagram navigation과 충돌하지 않음
+- close 항상 접근
+- Compact 과도한 화면 가림 없음
+- Expanded 긴 글 가능
+- keyboard/visualViewport 검토
+- bottom nav/banner/right rail serious overlap 없음
+- Instagram navigation과 swipe conflict 없음
 
-## 검증
+## Verification
 
-- unit/build/check 통과
-- Android Edge 실기기 확인 전 시각/터치 동작을 Verified로 기록하지 않음
-- 기존 component 제거는 replacement gate 이후에만 수행
+- unit/build/check pass
+- Android Edge 실기기 전 visual/touch Verified 금지
+- component 제거는 replacement gate 이후
 
 ---
 
-# 24. 이번 구조 개선에서 바뀐 점
+# 24. 현재 구조에서 개선된 점
 
-기존 `UI_BASELINE.md`의 좋은 방향은 유지하면서 다음을 더 구체화합니다.
-
-**유지**
+기존 좋은 방향 유지:
 
 - Grid 3열/8-slot
 - 기존 Reel RI visual identity
 - Reel 5개 파생지표
 - Global RI 1개
 - CONTENT 6탭
-- bottom Research Sheet
+- bottom Research Workspace target
 - Compact/Expanded
-- 업데이트 바로가기
-- 공용 Settings/Download Manager
+- 업데이트 shortcut
+- common Settings/Download Manager
 
-**추가/개선**
+구조적 개선:
 
-- CONTENT / GLOBAL context 분리
-- 현재 콘텐츠가 없을 때 빈 6탭 대신 RI Home
-- Single UIRoot
-- Workspace state machine
-- route identity rebind 규칙
-- active tab lazy mount
-- non-modal Compact / semi-modal Expanded 정책
-- 명시적 expand/collapse control
-- browser Back/history 비침범
-- LayoutSnapshot/collision owner
-- Feedback/Activity layer
+- CONTENT/GLOBAL context
+- RI Home
+- Workspace State owner 실제 도입
+- Layout owner 실제 도입
+- RI primitive duplicate 제거
+- route identity contextEpoch
+- active-tab lazy target
+- non-modal/semi-modal policy
+- explicit expand/collapse
+- browser history 비침범
+- Activity layer extension
 - Research Read Model boundary
-- token 기반 모바일 크기 체계
+- mobile tokens
 
-이 문서의 구조를 바꾸려면 기존 의도와 보존 항목을 먼저 검토하고 `WORK_TRACK.md` 실행순서를 먼저 갱신합니다.
+이 문서의 구조를 바꾸려면 기존 의도와 보존항목을 먼저 검토하고 `WORK_TRACK.md` 실행순서를 먼저 갱신합니다.
