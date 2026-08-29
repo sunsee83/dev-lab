@@ -4,7 +4,7 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.11**
+- Runtime version: **v3.2.12**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
@@ -26,26 +26,28 @@ Active:
 - 미디어별 저장: 영상 / 사진·표지 / 슬라이드 (`directory | default | prompt` 독립)
 - Grid quick-save / Global RI / Bottom Workspace / CONTENT 6탭
 - History Store + Verified Cache Store read/write owner
-- Data Engine: Verified Store + `media[]` + `ingest()` + `ingestPermalink()` + `ingestPatch()`
-- structured JSON capture: legacy scan → raw handoff → Extractor → Data Engine
-- **permalink HTML fallback: inline JSON raw scan → Data Engine permalink extractor → verified write**
+- Data Engine: Verified Store + `media[]` + structured/permalink/patch ingest
+- structured JSON capture → Extractor → Data Engine
+- permalink inline JSON → raw Extractor; HTML fallback → Permalink Extractor
 - Data Engine read facade: route identity + exact media URL lookup
 - Grid quick-save / RI Workspace / active Reel context read → Data Engine
+- **legacy Reel visual context → modern reel-context-adapter handoff**
+- **DOM owner/mediaType/canonical enrichment → Data Engine `ingestPatch()` once per stable Reel identity**
 
 Compatibility still active:
 
-- legacy `parsePermalink()`은 handoff 부재 시 emergency fallback으로만 유지
-- DOM/Reel identity patch는 `ingestPatch()` 경유
+- legacy `reelContext()` fuzzy/DOM branch는 context handoff 부재 시 emergency fallback
+- legacy `parsePermalink()`은 permalink handoff 부재 시 emergency fallback
 - legacy adapter는 cache/change-tracking migration boundary로만 유지
-- legacy runtime Grid metric renderer / Reel overlay는 in-memory compatibility read 유지
+- legacy runtime Grid metric renderer / Reel overlay visual body는 아직 유지
 - Android gate 전 새 Reel overlay mount 금지
 
 ## Automated Checkpoint
 
-- unit: **50 / 50 pass**
-- build: **v3.2.11 success**
+- unit: **52 / 52 pass**
+- build: **v3.2.12 success**
 - architecture/syntax: **success**
-- source files: **35**
+- source files: **36**
 - architecture warnings: **0**
 - generated userscript: current
 
@@ -70,6 +72,7 @@ Android Edge 실확인 필요:
 - Global RI touch/collision
 - COMPACT/EXPANDED, CONTENT/GLOBAL, keyboard/visualViewport
 - active Reel shortcode/native metrics/exact media mapping
+- **modern context handoff가 vertical Reel 전환마다 legacy visual과 동일 콘텐츠를 유지하는지**
 - staged Reel Overlay rail/caption placement
 - update shortcut → Tampermonkey
 - 영상 / 사진·표지 / 슬라이드별 mode·폴더 선택/복원
@@ -81,29 +84,23 @@ Android Edge 실확인 필요:
 ## Technical Debt
 
 - verified cache/history writer cutover 완료
-- structured JSON raw capture → Extractor cutover 완료
-- permalink HTML normal path → Data Engine extractor cutover 완료
+- structured JSON + permalink HTML normal capture cutover 완료
 - Grid quick-save / RI Workspace / Reel context Data Engine read cutover 완료
-- legacy permalink parser는 emergency fallback으로 남음
-- DOM/Reel compatibility patch와 legacy runtime Grid metric/Reel overlay body 남음
+- legacy Reel visual context normal path를 modern context owner로 통합 완료
+- legacy Reel fuzzy context branch / permalink parser는 emergency fallback으로 남음
+- legacy Grid metric renderer + Reel metric formula/visual body 남음
 - staged Reel overlay replacement 미완료
 - Research Content/Comments/Analysis data model 미연결
 
-Analysis 예정:
-
-- 포맷: 문제제기형 / 리스트형 / Before/After / 튜토리얼 / 리뷰 / 스토리 / 비교 / 뉴스·정보
-- 전환 장치: 댓글 유도 / 저장 유도 / 공유 유도 / 프로필 이동 / 링크 클릭 / 구매 / DM
-- 보조: 훅 / CTA 위치 / 신뢰 장치 / 감정·긴급성
-
 ## Next Execution Order
 
-1. **Device gate** — UI-C/D/E + Reel identity/native metrics + 저장설정
-2. **UI-F2 Reel Overlay replacement** — evidence → mount → parity → legacy visual 제거
-3. **UI-G1 DOM compatibility cleanup** — Reel identity patch를 active context owner와 합치고 fallback parser 제거 조건 정리
-4. **Legacy renderer migration** — Grid metric/Reel compatibility read → Data Engine → legacy formula/renderer 제거
+1. **Device gate** — UI-C/D/E + Reel identity/native metrics + 저장설정 + context handoff
+2. **UI-F2 Reel Overlay replacement** — evidence → mount → parity → legacy Reel visual/fuzzy fallback 제거
+3. **Legacy Grid metric renderer migration** — Data Engine/Metrics read → frozen parity → legacy formula 제거
+4. **Fallback cleanup** — device evidence 후 legacy permalink/Reel emergency parser 제거
 5. **Research data** — Content → Comments → Analysis → STT/OCR/AI
 
-Device gate와 독립적인 parser/renderer 준비는 진행 가능. Grid Frozen renderer는 먼저 제거하지 않습니다.
+Device gate와 독립적인 Grid renderer 준비는 진행 가능. Frozen visual은 parity 전 제거하지 않습니다.
 
 ## Work Protocol
 

@@ -11,6 +11,7 @@ import { createMetricsEngine } from './metrics/metrics.js';
 import { installLegacyCaptureHandoff } from './migration/capture-handoff.js';
 import { createLegacyStoreAdapter } from './migration/legacy-store-adapter.js';
 import { createReelContextAdapter } from './migration/reel-context-adapter.js';
+import { installLegacyReelContextHandoff } from './migration/reel-context-handoff.js';
 import { mountActivityIndicator } from './ui/activity-indicator.js';
 import { mountGridActions } from './ui/grid.js';
 import { createLayoutManager } from './ui/layout.js';
@@ -54,11 +55,12 @@ const data = createDataEngine({
 });
 const stopCaptureHandoff = installLegacyCaptureHandoff({ env: globalThis, data });
 const reelContext = createReelContextAdapter({ store: data, doc: document, env: globalThis });
+const reelContextHandoff = installLegacyReelContextHandoff({ env: globalThis, reelContext, data });
 const metrics = createMetricsEngine({ history });
 const workspace = createWorkspaceState();
 const storeTracker = legacyStore.createChangeTracker((change) => {
   data.syncLegacy();
-  const activeIdentity = reelContext.resolveActivityIdentity();
+  const activeIdentity = reelContextHandoff.getCurrent()?.identity;
   app.setCurrentIdentity(activeIdentity === undefined ? data.getIdentityFromUrl(globalThis.location?.href || '') : activeIdentity);
   app.emit(EVENTS.STORE_CHANGED, change);
 });
@@ -66,14 +68,15 @@ const storeTracker = legacyStore.createChangeTracker((change) => {
 app.services = { capabilities, settings, downloads, metrics, workspace, activity, history, data };
 app.adapters.legacyStore = legacyStore;
 app.adapters.reelContext = reelContext;
+app.adapters.reelContextHandoff = reelContextHandoff;
 
 const stopRouteTracking = app.startRouteTracking({
   env: globalThis,
   resolveIdentity(url) {
-    return reelContext.getCurrent()?.identity || data.getIdentityFromUrl(url);
+    return reelContextHandoff.getCurrent()?.identity || data.getIdentityFromUrl(url);
   },
   resolveActivityIdentity() {
-    return reelContext.resolveActivityIdentity();
+    return reelContextHandoff.getCurrent()?.identity || undefined;
   },
   onActivity(reason) {
     storeTracker.schedule(reason);
@@ -107,6 +110,7 @@ app.services.layout = layout;
 app.adapters.stopRouteTracking = stopRouteTracking;
 app.adapters.stopStoreTracking = () => storeTracker.destroy();
 app.adapters.stopCaptureHandoff = stopCaptureHandoff;
+app.adapters.stopReelContextHandoff = () => reelContextHandoff.destroy();
 app.adapters.stopData = () => data.destroy();
 app.adapters.stopLayout = () => layout.destroy();
 app.adapters.grid = grid;

@@ -15,7 +15,7 @@ src/
 ├ version.js main.js legacy-runtime.js
 ├ core/ activity.js app.js capability.js clipboard.js
 ├ data/ engine.js identity.js extractor.js permalink-extractor.js media-model.js
-├ migration/ capture-handoff.js legacy-store-adapter.js reel-context-adapter.js
+├ migration/ capture-handoff.js legacy-store-adapter.js reel-context-adapter.js reel-context-handoff.js
 ├ store/ history-store.js settings-store.js verified-cache-store.js verified-store.js
 ├ metrics/ metrics.js
 ├ media/ media-resolver.js download-manager.js
@@ -32,15 +32,16 @@ src/
 - route/shared SPA → `core/app.js`; activity → `core/activity.js`
 - identity → `data/identity.js`
 - structured Instagram payload extraction/evidence → `data/extractor.js`
-- **permalink HTML meta/near-metric fallback → `data/permalink-extractor.js`**
-- **verified ingest + renderer/context read facade → `data/engine.js`**
+- permalink HTML fallback → `data/permalink-extractor.js`
+- verified ingest + renderer/context read facade → `data/engine.js`
 - common `media[]` → `data/media-model.js`
 - provenance/rank/conflict → `store/verified-store.js`
 - compatibility cache persistence → `store/verified-cache-store.js`
 - snapshot/account history → `store/history-store.js`
-- **legacy raw/permalink/patch bridge → `migration/capture-handoff.js`**
+- legacy raw/permalink/patch bridge → `migration/capture-handoff.js`
 - legacy cache/change tracking only → `migration/legacy-store-adapter.js`
 - active Reel DOM evidence/context → `migration/reel-context-adapter.js`
+- **modern Reel context → legacy visual compatibility bridge + DOM enrichment → `migration/reel-context-handoff.js`**
 - ER/24h/account-relative → `metrics/metrics.js`
 - media resolution/filename → `media/media-resolver.js`; save → `media/download-manager.js`
 - Workspace/Layout/RI/UI → 각 `ui/*`
@@ -50,41 +51,48 @@ src/
 ### Data / metrics
 
 ```text
-structured JSON network/embedded scan
-→ raw capture handoff
-→ Extractor
-→ Data Engine
-→ Verified Store
+structured JSON
+→ raw capture handoff → Extractor → Data Engine → Verified Store
+
+permalink HTML
+├→ inline JSON → same raw path
+└→ HTML fallback → Permalink Extractor → Data Engine
+
+Verified Store
 ├→ Verified Cache Store
 ├→ History Store → Metrics
 ├→ common media[]
 └→ read facade → Grid quick-save / RI Workspace / Reel context
 ```
 
-Permalink fetch는 inline JSON을 먼저 같은 raw path로 흘린 뒤 HTML fallback만 별도 owner로 처리합니다.
+missing=`0` 금지, source rank=`legacy < permalink < dom < embedded < network`.
+
+### Active Reel / compatibility bridge
+
+정상 경로:
 
 ```text
-permalink HTML
-├→ inline JSON scan → raw handoff → Extractor
-└→ HTML meta/near metric → permalink handoff → Permalink Extractor → Data Engine
+shared SPA / route activity
+→ reel-context-adapter
+   scoped Reel link → Data Engine exact media → exact route
+   + scoped native likes/comments/reposts
+→ reel-context-handoff
+   ├→ owner/mediaType/canonical Data Engine DOM enrichment (stable identity당 1회)
+   ├→ App route identity
+   └→ legacy Reel visual context hook
+→ existing legacy Reel overlay visual body
 ```
 
-legacy `parsePermalink()`은 handoff 부재 시 emergency fallback일 뿐 normal owner가 아닙니다.
+legacy `reelContext()`의 fuzzy owner+metric 추측과 직접 DOM save patch는 hook 부재/실패 시 emergency fallback으로만 남습니다. 이 fallback은 Android parity 확인 후 legacy overlay replacement와 함께 제거 대상입니다.
 
-Data Engine read facade가 shortcode route identity와 normalized exact media URL lookup을 소유합니다. UI는 migration adapter의 `getPost()`/`getCurrentIdentity()`를 직접 호출하지 않습니다.
-
-Compatibility:
+### Permalink compatibility
 
 ```text
-DOM/Reel identity patch
-→ legacy saveItem
-→ patch handoff
-→ data.ingestPatch()
+normal: inline JSON scan → permalink handoff → Data Engine
+emergency only: legacy parsePermalink()
 ```
 
-모든 ongoing cache/history side effect는 Data Engine/Store owner이며 legacy 직접 write는 handoff 성공 시 실행되지 않습니다. missing=`0` 금지, source rank=`legacy < permalink < dom < embedded < network`.
-
-legacy adapter는 cache fingerprint/change tracking 및 external/compatibility sync 경계로만 남습니다. legacy runtime 내부 Grid metric/Reel overlay renderer는 아직 자체 in-memory `items`를 읽으므로 별도 migration 대상입니다.
+legacy adapter는 cache fingerprint/change tracking 및 external compatibility sync 경계로만 남습니다.
 
 ### common media[]
 
@@ -112,19 +120,18 @@ Workspace 내부 → header/tab/body/action/activity
 
 실제 placement=`ui/layout.js` + Android evidence.
 
-### Active Reel / Download
+### Download
 
 ```text
-shared SPA → reel-context-adapter → scoped → Data Engine exact media → route
 Grid/RI → Data Engine post → Download Manager → video|image|carousel policy → Activity
 ```
 
-fuzzy shortcode/별도 full DOM observer/silent directory fallback 금지.
+fuzzy shortcode 정상경로 사용/별도 full DOM observer/silent directory fallback 금지.
 
 ## 5. Staged Reel overlay replacement
 
 `ui/reel-overlay.js`: `▶ views → ER → 24h → × account-relative → date`.
-Android placement/identity 확인 뒤 mount, 이후에만 legacy `#ri3-reels-overlay` 제거.
+Android context handoff/placement 확인 뒤 mount, 이후에만 legacy `#ri3-reels-overlay`와 legacy fuzzy fallback 제거.
 
 ## 6. Migration boundary
 
@@ -132,11 +139,12 @@ Android placement/identity 확인 뒤 mount, 이후에만 legacy `#ri3-reels-ove
 [완료] Identity → Extractor → Verified Store
 [완료] History/media[]/runtime wiring
 [완료] cache/history writer handoff
-[완료] structured JSON raw capture → Extractor
+[완료] structured JSON + permalink normal capture → Data Engine
 [완료] Grid quick-save / RI Workspace / Reel context → Data Engine read
-[완료] permalink HTML normal fallback → Permalink Extractor
-[다음] DOM/Reel compatibility patch 정리
-→ legacy Grid metric/Reel renderer read 전환 → legacy-runtime 제거
+[완료] legacy Reel visual context normal path → modern context handoff
+[다음] Android context/placement evidence → Reel overlay replacement
+→ legacy Grid metric renderer Data Engine/Metrics read 전환
+→ emergency fallback 제거 → legacy-runtime 제거
 ```
 
 Analysis 목표: 포맷=`문제제기형|리스트형|Before/After|튜토리얼|리뷰|스토리|비교|뉴스·정보`; 전환=`댓글|저장|공유|프로필|링크|구매|DM`; 보조=`훅|CTA 위치|신뢰|감정·긴급성`. 근거 없으면 생성 금지.
