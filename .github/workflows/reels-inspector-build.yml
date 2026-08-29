@@ -8,6 +8,11 @@ on:
       - 'reels-inspector/scripts/**'
       - 'reels-inspector/tests/**'
       - 'reels-inspector/package.json'
+      - 'reels-inspector/README.md'
+      - 'reels-inspector/PROJECT_PLAN.md'
+      - 'reels-inspector/STATUS.md'
+      - 'reels-inspector/ARCHITECTURE.md'
+      - 'reels-inspector/BASELINE.md'
       - '.github/workflows/reels-inspector-build.yml'
   workflow_dispatch:
 
