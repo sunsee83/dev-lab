@@ -9,7 +9,7 @@ export function injectStyles(doc = globalThis.document) {
 }
 
 const CSS = `
-#ri3-tool,#ri3-panel,#ri3-reels-overlay{display:none!important}
+#ri3-tool,#ri3-panel{display:none!important}
 #ri32-tool{
   position:fixed;right:var(--ri-launcher-right,12px);bottom:var(--ri-launcher-bottom,max(88px,calc(env(safe-area-inset-bottom) + 78px)));z-index:2147483645;
   width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;
