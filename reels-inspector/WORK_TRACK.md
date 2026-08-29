@@ -30,12 +30,12 @@ WORK_TRACK.md            = 현재 목표/진행/다음 순서/차단요소
 
 # 1. Current Release
 
-- Current version: **v3.2.3**
+- Current version: **v3.2.4**
 - Source of truth: `src/*`
 - Deployment artifact: `ri-retry.user.js`
-- Current phase: **v3.2 Contextual Mobile Research Workspace 전환**
+- Current phase: **v3.2 Contextual Mobile Research Workspace + Feedback/Activity**
 
-현재 source는 UI-B Foundation, UI-C launcher restoration, **UI-D Contextual Research Workspace source**까지 반영했습니다.
+현재 source는 UI-B Foundation, UI-C launcher restoration, UI-D Contextual Research Workspace, **UI-E Feedback / Activity**까지 반영했습니다.
 
 자동검증과 source 구조는 확인하지만 **Android Edge 실제 시각/터치/Instagram collision은 실기기 확인 전 Unverified**입니다.
 
@@ -45,7 +45,7 @@ WORK_TRACK.md            = 현재 목표/진행/다음 순서/차단요소
 
 현재 최우선 목표:
 
-**기존 Grid/미디어/업데이트/RI visual identity를 보존하면서 모바일 한 손 조작에 적합한 Research Workspace를 안정화하고, 다음 UI-E Feedback/Activity로 이동한다.**
+**기존 Grid/미디어/업데이트/RI visual identity를 보존하면서 공용 Feedback/Activity 경로를 안정화했고, 다음 단계에서 Reel identity/native metrics를 같은 Metrics owner로 통합한다.**
 
 제품 흐름:
 
@@ -112,7 +112,7 @@ ui/layout.js
 v3.1.6 source audit:
 
 - SVG는 현재 `researchIcon()`과 동일
-- 실제 mismatch는 v3.2.3 wrapper styling
+- 실제 mismatch는 launcher wrapper styling
 
 복원 source:
 
@@ -130,7 +130,7 @@ v3.1.6 source audit:
 
 ## UI-D — Contextual Research Workspace — source 완료 / device validation pending
 
-신규 owner:
+owner:
 
 `ui/research-workspace.js`
 
@@ -166,12 +166,52 @@ Research Workspace View
 - browser history/back manipulation 추가 없음
 - 기존 Summary / Media / Settings action 보존
 
-자동 unit source guard:
+## UI-E — Feedback / Activity — source 완료 / device validation pending
 
-- launcher visual preservation
-- workspace Compact/Expanded structure
-- CONTENT/GLOBAL split
-- update shortcut preservation
+새 owner:
+
+```text
+core/activity.js         = async activity state/lifecycle
+ui/activity-indicator.js = running/persistent feedback presentation
+ui/toast.js              = transient feedback + duplicate suppression
+ui/ri-settings.js        = RI Settings presentation
+```
+
+현재 flow:
+
+```text
+Grid / Research Workspace
+        ↓
+Download Manager
+        ↓ structured activity event
+Activity Store
+        ↓
+Activity Indicator / Toast
+```
+
+구현:
+
+- `running | success | error` 공통 Activity state
+- `download | analysis | stt | ocr`로 확장 가능한 kind 구조
+- 동일 activity id progress update 병합
+- 짧은 success / non-actionable error는 Toast
+- 같은 toast 1.4초 내 중복 억제
+- Carousel batch는 `1/N ... N/N 저장 중` 진행상태 제공
+- permission/directory/picker 계열 actionable error는 persistent message
+- persistent error에서 `설정 열기` action으로 RI Settings 연결
+- Workspace가 닫혀 있으면 global feedback anchor 사용
+- Workspace가 열려 있으면 같은 Activity node를 `.ri32-activity-host`로 이동
+- cancel은 success/error로 오인하지 않고 activity 제거
+- 기존 designated-directory failure의 silent Downloads fallback 금지 유지
+- launcher badge는 필요 근거가 없어 추가하지 않음
+- `ri-panel.js` Settings rendering은 `ri-settings.js`로 분리해 size warning 제거
+
+UI-E 자동검증 checkpoint:
+
+- unit **26/26 pass**
+- build pass
+- architecture/syntax pass
+- **23 source files / 0 warnings**
 
 ---
 
@@ -207,6 +247,7 @@ Research Workspace View
 - Carousel individual files / no ZIP
 - directory failure silent fallback 금지
 - Grid menu global folder setting 금지
+- Carousel prompt destination 1회 선택
 
 기존 기능을 숨기거나 삭제하려면 replacement가 동등 이상인지 먼저 확인합니다.
 
@@ -227,6 +268,9 @@ Android Edge 실기기 확인 전:
 - keyboard/visualViewport
 - SPA route 후 stale context
 - live Store → open summary 갱신
+- Activity global/Workspace 위치와 가독성
+- Carousel `N/N 저장 중` 실제 표시
+- persistent error → `설정 열기` 실제 터치 흐름
 - update shortcut → Tampermonkey install/update intercept
 - directory photo/cover cross-origin save
 - prompt mode
@@ -244,18 +288,20 @@ photo/cover CORS가 실기기에서 확인되기 전 `@grant`/privileged transpo
 - RI section/row primitive duplicate
 - workspace state owner 부재
 - layout owner 부재
-- v3.2.3 launcher wrapper visual drift
+- launcher wrapper visual drift
 - right floating workspace shell → bottom sheet source로 교체
 - GLOBAL에서 빈 6탭 문제
+- Feedback/Activity owner 부재
+- batch progress toast-only 구조
+- persistent actionable directory/permission error UI 부재
+- `ri-panel.js` size warning
 
 남음:
 
-- Feedback/Activity owner 미구현
-- batch progress는 toast 중심
-- persistent actionable error UI 미구현
 - `ri-panel.js` → legacy adapter 직접 read coupling
 - Reel legacy metric compatibility functions
 - Reel native metrics/identity accuracy
+- Reel renderer가 Metrics owner를 완전히 사용하지 않음
 
 Read Model implementation은 Data Engine migration 시 실제 필요가 생길 때 생성합니다.
 
@@ -265,28 +311,18 @@ Read Model implementation은 Data Engine migration 시 실제 필요가 생길 �
 
 순서를 바꾸려면 관련 문서를 먼저 갱신합니다.
 
-## UI-E — Feedback / Activity — 다음 작업
+## UI-F — Reel identity + Metrics Overlay — 다음 작업
 
-1. Download Manager event/result inventory
-2. 짧은 success toast와 long-running activity 분리
-3. duplicate toast suppression
-4. Carousel batch `3/8 저장 중` 표현 구조
-5. 사용자 조치가 필요한 directory/permission error persistent message
-6. 향후 STT/OCR/AI job에 재사용 가능한 Activity model
-7. launcher badge는 필요할 때만 optional
-8. UI-D Workspace action과 연결
-9. 기존 download policy/실패 semantics 보존
-
-## UI-F — Reel identity + Metrics Overlay
-
-1. current Reel identity 정확도
-2. native likes/comments/reposts 결합
-3. Metrics owner 사용
-4. `▶ / ER / 24h / × / date`
-5. Layout Manager reel lane
-6. native rail/caption collision
-7. legacy metric renderer 제거
-8. compatibility functions regression 후 제거
+1. current Reel identity 정확도 audit
+2. native likes/comments/reposts source 결합 audit
+3. Reel overlay 계산을 `metrics/metrics.js` owner로 전환
+4. target `▶ / ER / 24h / × / date`
+5. Layout Manager `reelOverlayLane` 연결
+6. native rail/caption collision 보존
+7. 기존 안정적 Reel visual geometry에서 시작
+8. 새 경로 검증 후 legacy metric renderer/callsite 제거
+9. compatibility formula body는 regression 확인 후 제거
+10. Android Edge 실기기 전 accuracy/placement Verified 금지
 
 ## UI-G — Data Engine / Research Tabs
 
@@ -367,6 +403,7 @@ Deferred   = 현재 범위 밖
 - baseline/architecture 대조
 - owner 위반 없음
 - 불필요한 duplicate 없음
+- architecture warning 0 목표
 - PRESERVE/REPLACE 접근경로 유지
 - 주요 touch target 검토
 - Instagram native UI collision 검토
@@ -377,4 +414,4 @@ Deferred   = 현재 범위 밖
 - Android Edge 항목은 실제 확인 전 Verified 금지
 - 다음 작업이 이 문서에 명확히 남음
 
-현재 다음 정확한 구현 작업은 **UI-E Feedback / Activity**입니다.
+현재 다음 정확한 구현 작업은 **UI-F Reel identity + Metrics Overlay**입니다.
