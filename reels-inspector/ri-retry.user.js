@@ -2136,8 +2136,46 @@
 @media (prefers-reduced-motion:reduce){#ri32-panel{transition:none}.ri32-tabs{scroll-behavior:auto}.ri32-activity-progress span{transition:none}}
 `;
 
-  // src/ui/ri-summary.js
+  // src/ui/metric-format.js
   var COUNT_FORMATTER = new Intl.NumberFormat("ko-KR");
+  function countLabel(value, { missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return missing;
+    return COUNT_FORMATTER.format(number);
+  }
+  function compactCountLabel(value, { missing = "" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return missing;
+    if (number >= 1e8) return `${trimFixed(number / 1e8, 1)}억`;
+    if (number >= 1e4) return `${trimFixed(number / 1e4, 1)}만`;
+    if (number >= 1e3) return `${trimFixed(number / 1e3, 1)}K`;
+    return String(Math.round(number));
+  }
+  function percentLabel(value, { sign = false, missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return missing;
+    const digits = Math.abs(number) >= 10 ? 1 : 2;
+    const prefix = sign && number >= 0 ? "+" : "";
+    return `${prefix}${trimFixed(number, digits)}%`;
+  }
+  function multipleLabel(value, { missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return missing;
+    return `×${trimFixed(number, number >= 10 ? 1 : 2)}`;
+  }
+  function shortDateLabel(value, { missing = "" } = {}) {
+    const text = String(value || "").trim();
+    const match = text.match(/^(?:\d{4}-)?(\d{1,2})-(\d{1,2})/);
+    if (match) return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}`;
+    const slash = text.match(/^(?:\d{4}\/)?(\d{1,2})\/(\d{1,2})/);
+    if (slash) return `${slash[1].padStart(2, "0")}/${slash[2].padStart(2, "0")}`;
+    return missing;
+  }
+  function trimFixed(value, digits) {
+    return Number(value).toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
+  }
+
+  // src/ui/ri-summary.js
   function renderRiSummary({ body, post, metrics: metrics2, doc = globalThis.document } = {}) {
     if (!body || !doc) return;
     if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.", doc);
@@ -2158,24 +2196,6 @@
     note.className = "ri32-note";
     note.textContent = "ER은 검증된 조회수·좋아요·댓글·리포스트가 모두 있을 때만 계산합니다. 24h는 실제 18~32시간 snapshot, 계정 대비는 최근 비교 표본 5개 이상일 때만 표시합니다.";
     section.appendChild(note);
-  }
-  function countLabel(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number < 0) return "—";
-    return COUNT_FORMATTER.format(number);
-  }
-  function percentLabel(value, { sign = false } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return "—";
-    const digits = Math.abs(number) >= 10 ? 1 : 2;
-    const text = number.toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
-    return `${sign && number >= 0 ? "+" : ""}${text}%`;
-  }
-  function multipleLabel(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return "—";
-    const digits = number >= 10 ? 1 : 2;
-    return `×${number.toFixed(digits).replace(/0+$/, "").replace(/\.$/, "")}`;
   }
 
   // src/ui/ri-panel.js
