@@ -2002,170 +2002,6 @@
     return Math.min(Math.max(value, min), max);
   }
 
-  // src/ui/metric-format.js
-  var COUNT_FORMATTER = new Intl.NumberFormat("ko-KR");
-  function countLabel(value, { missing = "—" } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number < 0) return missing;
-    return COUNT_FORMATTER.format(number);
-  }
-  function compactCountLabel(value, { missing = "" } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return missing;
-    if (number >= 1e8) return `${trimFixed(number / 1e8, 1)}억`;
-    if (number >= 1e4) return `${trimFixed(number / 1e4, 1)}만`;
-    if (number >= 1e3) return `${trimFixed(number / 1e3, 1)}K`;
-    return String(Math.round(number));
-  }
-  function percentLabel(value, { sign = false, missing = "—" } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return missing;
-    const digits = Math.abs(number) >= 10 ? 1 : 2;
-    const prefix = sign && number >= 0 ? "+" : "";
-    return `${prefix}${trimFixed(number, digits)}%`;
-  }
-  function multipleLabel(value, { missing = "—" } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return missing;
-    return `×${trimFixed(number, number >= 10 ? 1 : 2)}`;
-  }
-  function shortDateLabel(value, { missing = "" } = {}) {
-    const text = String(value || "").trim();
-    const match = text.match(/^(?:\d{4}-)?(\d{1,2})-(\d{1,2})/);
-    if (match) return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}`;
-    const slash = text.match(/^(?:\d{4}\/)?(\d{1,2})\/(\d{1,2})/);
-    if (slash) return `${slash[1].padStart(2, "0")}/${slash[2].padStart(2, "0")}`;
-    return missing;
-  }
-  function trimFixed(value, digits) {
-    return Number(value).toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
-  }
-
-  // src/ui/reel-overlay.js
-  var OVERLAY_ID = "ri32-reel-overlay";
-  var LEGACY_OVERLAY_ID = "ri3-reels-overlay";
-  function mountReelOverlay({
-    app: app2,
-    reelContext: reelContext2,
-    store,
-    metrics: metrics2,
-    layout: layout2,
-    doc = globalThis.document,
-    env = globalThis
-  } = {}) {
-    if (!doc?.documentElement || !reelContext2 || !store || !metrics2) {
-      throw new Error("Reel Overlay requires document, context adapter, store and Metrics Engine");
-    }
-    let destroyed = false;
-    let node = doc.getElementById(OVERLAY_ID);
-    let scheduled = false;
-    let frameId = 0;
-    let renderKey = "";
-    const cleanups = [];
-    doc.getElementById(LEGACY_OVERLAY_ID)?.remove();
-    function ensureNode() {
-      if (node) return node;
-      node = doc.createElement("div");
-      node.id = OVERLAY_ID;
-      node.setAttribute("aria-hidden", "true");
-      doc.documentElement.appendChild(node);
-      return node;
-    }
-    function render() {
-      scheduled = false;
-      frameId = 0;
-      if (destroyed) return;
-      doc.getElementById(LEGACY_OVERLAY_ID)?.remove();
-      const context = reelContext2.getCurrent();
-      if (!context?.shortcode) return hide();
-      const stored = store.getPost?.(context.shortcode) || context.post || { shortcode: context.shortcode };
-      const livePost = mergePost(stored, context);
-      const derived = metrics2.summarize(livePost) || {};
-      const lines = buildLines(livePost, derived);
-      if (!lines.length) return hide();
-      const overlay = ensureNode();
-      const nextKey = `${context.shortcode}|${lines.join("|")}`;
-      if (nextKey !== renderKey) {
-        overlay.replaceChildren(...lines.map((text) => {
-          const row = doc.createElement("div");
-          row.textContent = text;
-          return row;
-        }));
-        renderKey = nextKey;
-      }
-      overlay.style.display = "flex";
-    }
-    function hide() {
-      if (node) node.style.display = "none";
-      renderKey = "";
-    }
-    function schedule() {
-      if (destroyed || scheduled) return;
-      scheduled = true;
-      const raf = env.requestAnimationFrame || ((callback) => (env.setTimeout || setTimeout)(callback, 16));
-      frameId = raf(render);
-    }
-    function listen(target, eventName) {
-      if (!target?.addEventListener) return;
-      target.addEventListener(eventName, schedule, true);
-      cleanups.push(() => target.removeEventListener?.(eventName, schedule, true));
-    }
-    for (const eventName of [EVENTS.ROUTE_CHANGED, EVENTS.IDENTITY_CHANGED, EVENTS.STORE_CHANGED]) {
-      cleanups.push(app2?.on?.(eventName, schedule) || (() => {
-      }));
-    }
-    cleanups.push(layout2?.subscribe?.(schedule) || (() => {
-    }));
-    listen(doc, "play");
-    listen(doc, "loadedmetadata");
-    listen(env, "scroll");
-    listen(env, "resize");
-    schedule();
-    function destroy() {
-      if (destroyed) return;
-      destroyed = true;
-      scheduled = false;
-      for (const cleanup of cleanups.splice(0)) cleanup();
-      if (frameId && typeof env.cancelAnimationFrame === "function") env.cancelAnimationFrame(frameId);
-      frameId = 0;
-      node?.remove();
-      node = null;
-      renderKey = "";
-    }
-    return { render, schedule, destroy };
-  }
-  function buildReelOverlayLines(post, derived = {}) {
-    return buildLines(post, derived);
-  }
-  function mergePost(stored, context) {
-    return {
-      ...stored,
-      shortcode: context.shortcode,
-      username: context.username || stored?.username || "",
-      mediaType: stored?.mediaType || "REEL",
-      likes: liveMetric(context.native?.likes, stored?.likes),
-      comments: liveMetric(context.native?.comments, stored?.comments),
-      reposts: liveMetric(context.native?.reposts, stored?.reposts)
-    };
-  }
-  function liveMetric(nativeValue, storedValue) {
-    return nativeValue == null ? storedValue : nativeValue;
-  }
-  function buildLines(post, derived) {
-    const lines = [];
-    const views = compactCountLabel(post?.views, { missing: "" });
-    const engagement = percentLabel(derived?.engagementRate, { missing: "" });
-    const growth = percentLabel(derived?.growth24h, { sign: true, missing: "" });
-    const multiple = multipleLabel(derived?.accountMultiple, { missing: "" });
-    const date = shortDateLabel(post?.date, { missing: "" });
-    if (views) lines.push(`▶ ${views}`);
-    if (engagement) lines.push(`ER ${engagement}`);
-    if (growth) lines.push(`24h ${growth}`);
-    if (multiple) lines.push(multiple);
-    if (date) lines.push(date);
-    return lines;
-  }
-
   // src/ui/ri-primitives.js
   function createSection(body, title, doc = globalThis.document) {
     if (!body || !doc) return null;
@@ -2602,6 +2438,45 @@
 #ri32-toast{position:fixed;left:50%;bottom:var(--ri-feedback-bottom,max(134px,calc(env(safe-area-inset-bottom) + 124px)));transform:translateX(-50%);z-index:2147483647;max-width:82vw;padding:8px 12px;border-radius:16px;background:rgba(20,20,20,.94);color:#fff;font:650 11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;white-space:normal}
 @media (prefers-reduced-motion:reduce){#ri32-panel{transition:none}.ri32-tabs{scroll-behavior:auto}.ri32-activity-progress span{transition:none}}
 `;
+
+  // src/ui/metric-format.js
+  var COUNT_FORMATTER = new Intl.NumberFormat("ko-KR");
+  function countLabel(value, { missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return missing;
+    return COUNT_FORMATTER.format(number);
+  }
+  function compactCountLabel(value, { missing = "" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return missing;
+    if (number >= 1e8) return `${trimFixed(number / 1e8, 1)}억`;
+    if (number >= 1e4) return `${trimFixed(number / 1e4, 1)}만`;
+    if (number >= 1e3) return `${trimFixed(number / 1e3, 1)}K`;
+    return String(Math.round(number));
+  }
+  function percentLabel(value, { sign = false, missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return missing;
+    const digits = Math.abs(number) >= 10 ? 1 : 2;
+    const prefix = sign && number >= 0 ? "+" : "";
+    return `${prefix}${trimFixed(number, digits)}%`;
+  }
+  function multipleLabel(value, { missing = "—" } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return missing;
+    return `×${trimFixed(number, number >= 10 ? 1 : 2)}`;
+  }
+  function shortDateLabel(value, { missing = "" } = {}) {
+    const text = String(value || "").trim();
+    const match = text.match(/^(?:\d{4}-)?(\d{1,2})-(\d{1,2})/);
+    if (match) return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}`;
+    const slash = text.match(/^(?:\d{4}\/)?(\d{1,2})\/(\d{1,2})/);
+    if (slash) return `${slash[1].padStart(2, "0")}/${slash[2].padStart(2, "0")}`;
+    return missing;
+  }
+  function trimFixed(value, digits) {
+    return Number(value).toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
+  }
 
   // src/ui/ri-summary.js
   function renderRiSummary({ body, post, metrics: metrics2, doc = globalThis.document } = {}) {
@@ -4573,7 +4448,6 @@
   var reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
   var metrics = createMetricsEngine({ history: legacyStore });
   var workspace = createWorkspaceState();
-  var reelOverlay = null;
   var storeTracker = legacyStore.createChangeTracker((change) => {
     const activeIdentity = reelContext.resolveActivityIdentity();
     app.setCurrentIdentity(activeIdentity === void 0 ? legacyStore.getCurrentIdentity() : activeIdentity);
@@ -4592,7 +4466,6 @@
     },
     onActivity(reason) {
       storeTracker.schedule(reason);
-      reelOverlay?.schedule(reason);
     }
   });
   var layout = createLayoutManager({ app, doc: document, env: globalThis });
@@ -4610,15 +4483,6 @@
     doc: document,
     env: globalThis
   });
-  reelOverlay = mountReelOverlay({
-    app,
-    reelContext,
-    store: legacyStore,
-    metrics,
-    layout,
-    doc: document,
-    env: globalThis
-  });
   var activityIndicator = mountActivityIndicator({
     activity,
     workspace,
@@ -4633,7 +4497,6 @@
   app.adapters.stopLayout = () => layout.destroy();
   app.adapters.grid = grid;
   app.adapters.riPanel = riPanel;
-  app.adapters.reelOverlay = reelOverlay;
   app.adapters.activityIndicator = activityIndicator;
   void settings.init().catch((error) => {
     console.warn("[RI] settings initialization failed", error);
