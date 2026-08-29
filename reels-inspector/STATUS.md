@@ -4,7 +4,7 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.10**
+- Runtime version: **v3.2.11**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
@@ -26,25 +26,26 @@ Active:
 - 미디어별 저장: 영상 / 사진·표지 / 슬라이드 (`directory | default | prompt` 독립)
 - Grid quick-save / Global RI / Bottom Workspace / CONTENT 6탭
 - History Store + Verified Cache Store read/write owner
-- Data Engine: Verified Store + `media[]` + `ingest()` + `ingestPatch()`
+- Data Engine: Verified Store + `media[]` + `ingest()` + `ingestPermalink()` + `ingestPatch()`
 - structured JSON capture: legacy scan → raw handoff → Extractor → Data Engine
-- Extractor parity: `code|shortcode|short_code`, nested metrics, alternate media URLs, `carousel_media|carouselMedia|edge_sidecar_to_children`
-- **Data Engine read facade: route identity + exact media URL lookup**
-- **Grid quick-save / RI Workspace / active Reel context read → Data Engine**
+- **permalink HTML fallback: inline JSON raw scan → Data Engine permalink extractor → verified write**
+- Data Engine read facade: route identity + exact media URL lookup
+- Grid quick-save / RI Workspace / active Reel context read → Data Engine
 
 Compatibility still active:
 
-- DOM/Reel identity patch와 permalink HTML fallback은 `ingestPatch()` 경유
+- legacy `parsePermalink()`은 handoff 부재 시 emergency fallback으로만 유지
+- DOM/Reel identity patch는 `ingestPatch()` 경유
 - legacy adapter는 cache/change-tracking migration boundary로만 유지
 - legacy runtime Grid metric renderer / Reel overlay는 in-memory compatibility read 유지
 - Android gate 전 새 Reel overlay mount 금지
 
 ## Automated Checkpoint
 
-- unit: **47 / 47 pass**
-- build: **v3.2.10 success**
+- unit: **50 / 50 pass**
+- build: **v3.2.11 success**
 - architecture/syntax: **success**
-- source files: **34**
+- source files: **35**
 - architecture warnings: **0**
 - generated userscript: current
 
@@ -81,9 +82,10 @@ Android Edge 실확인 필요:
 
 - verified cache/history writer cutover 완료
 - structured JSON raw capture → Extractor cutover 완료
+- permalink HTML normal path → Data Engine extractor cutover 완료
 - Grid quick-save / RI Workspace / Reel context Data Engine read cutover 완료
-- permalink HTML parser / DOM compatibility patch 남음
-- legacy runtime Grid metric renderer + Reel overlay compatibility body 남음
+- legacy permalink parser는 emergency fallback으로 남음
+- DOM/Reel compatibility patch와 legacy runtime Grid metric/Reel overlay body 남음
 - staged Reel overlay replacement 미완료
 - Research Content/Comments/Analysis data model 미연결
 
@@ -97,7 +99,7 @@ Analysis 예정:
 
 1. **Device gate** — UI-C/D/E + Reel identity/native metrics + 저장설정
 2. **UI-F2 Reel Overlay replacement** — evidence → mount → parity → legacy visual 제거
-3. **UI-G1 remaining capture migration** — permalink/DOM compatibility 최소화 → parser 중복 제거
+3. **UI-G1 DOM compatibility cleanup** — Reel identity patch를 active context owner와 합치고 fallback parser 제거 조건 정리
 4. **Legacy renderer migration** — Grid metric/Reel compatibility read → Data Engine → legacy formula/renderer 제거
 5. **Research data** — Content → Comments → Analysis → STT/OCR/AI
 

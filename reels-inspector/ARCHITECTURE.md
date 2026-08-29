@@ -14,7 +14,7 @@
 src/
 ├ version.js main.js legacy-runtime.js
 ├ core/ activity.js app.js capability.js clipboard.js
-├ data/ engine.js identity.js extractor.js media-model.js
+├ data/ engine.js identity.js extractor.js permalink-extractor.js media-model.js
 ├ migration/ capture-handoff.js legacy-store-adapter.js reel-context-adapter.js
 ├ store/ history-store.js settings-store.js verified-cache-store.js verified-store.js
 ├ metrics/ metrics.js
@@ -32,13 +32,14 @@ src/
 - route/shared SPA → `core/app.js`; activity → `core/activity.js`
 - identity → `data/identity.js`
 - structured Instagram payload extraction/evidence → `data/extractor.js`
+- **permalink HTML meta/near-metric fallback → `data/permalink-extractor.js`**
 - **verified ingest + renderer/context read facade → `data/engine.js`**
 - common `media[]` → `data/media-model.js`
 - provenance/rank/conflict → `store/verified-store.js`
 - compatibility cache persistence → `store/verified-cache-store.js`
 - snapshot/account history → `store/history-store.js`
-- legacy raw/patch bridge → `migration/capture-handoff.js`
-- **legacy cache/change tracking only → `migration/legacy-store-adapter.js`**
+- **legacy raw/permalink/patch bridge → `migration/capture-handoff.js`**
+- legacy cache/change tracking only → `migration/legacy-store-adapter.js`
 - active Reel DOM evidence/context → `migration/reel-context-adapter.js`
 - ER/24h/account-relative → `metrics/metrics.js`
 - media resolution/filename → `media/media-resolver.js`; save → `media/download-manager.js`
@@ -60,14 +61,22 @@ structured JSON network/embedded scan
 └→ read facade → Grid quick-save / RI Workspace / Reel context
 ```
 
-Data Engine read facade가 shortcode route identity와 normalized exact media URL lookup을 소유합니다. UI는 migration adapter의 `getPost()`/`getCurrentIdentity()`를 직접 호출하지 않습니다.
+Permalink fetch는 inline JSON을 먼저 같은 raw path로 흘린 뒤 HTML fallback만 별도 owner로 처리합니다.
 
-Extractor는 `code|shortcode|short_code`, direct+nested metrics, media variants, `carousel_media|carouselMedia|edge_sidecar_to_children`를 처리합니다. evidence의 video/image URL은 legacy exact-media map parity용 bridge로 유지합니다.
+```text
+permalink HTML
+├→ inline JSON scan → raw handoff → Extractor
+└→ HTML meta/near metric → permalink handoff → Permalink Extractor → Data Engine
+```
+
+legacy `parsePermalink()`은 handoff 부재 시 emergency fallback일 뿐 normal owner가 아닙니다.
+
+Data Engine read facade가 shortcode route identity와 normalized exact media URL lookup을 소유합니다. UI는 migration adapter의 `getPost()`/`getCurrentIdentity()`를 직접 호출하지 않습니다.
 
 Compatibility:
 
 ```text
-DOM/Reel identity patch + permalink HTML fallback
+DOM/Reel identity patch
 → legacy saveItem
 → patch handoff
 → data.ingestPatch()
@@ -125,7 +134,8 @@ Android placement/identity 확인 뒤 mount, 이후에만 legacy `#ri3-reels-ove
 [완료] cache/history writer handoff
 [완료] structured JSON raw capture → Extractor
 [완료] Grid quick-save / RI Workspace / Reel context → Data Engine read
-[다음] permalink/DOM compatibility parser 최소화
+[완료] permalink HTML normal fallback → Permalink Extractor
+[다음] DOM/Reel compatibility patch 정리
 → legacy Grid metric/Reel renderer read 전환 → legacy-runtime 제거
 ```
 

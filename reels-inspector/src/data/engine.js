@@ -1,5 +1,6 @@
 import { mediaUrlKey, normalizeIdentity, shortcodeFromUrl } from './identity.js';
 import { extractInstagramMedia } from './extractor.js';
+import { extractPermalinkHtml } from './permalink-extractor.js';
 import { createVerifiedStore } from '../store/verified-store.js';
 
 export function createDataEngine({ legacyAdapter, history, persistence, now = () => Date.now(), onChange } = {}) {
@@ -72,6 +73,12 @@ export function createDataEngine({ legacyAdapter, history, persistence, now = ()
     return result ? { ...result, evidence: extracted.evidence } : null;
   }
 
+  function ingestPermalink(html, { pageUrl = '', source = 'permalink', confidence = 'medium', fetched = now() } = {}) {
+    const extracted = extractPermalinkHtml(html, { pageUrl, fetched });
+    if (!extracted?.shortcode) return null;
+    return applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
+  }
+
   function flush() {
     return persistence?.flush?.(verified.snapshot()) ?? false;
   }
@@ -91,6 +98,7 @@ export function createDataEngine({ legacyAdapter, history, persistence, now = ()
     getAccountPosts: history?.getAccountPosts,
     syncLegacy,
     ingest,
+    ingestPermalink,
     ingestPatch,
     flush,
     destroy,
