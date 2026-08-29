@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.4
+// @version      3.2.5
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.4
+// Build version: 3.2.5
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.4";
+  var VERSION = "3.2.5";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -351,20 +351,19 @@
   }
 
   // src/store/settings-store.js
-  var STORAGE_KEY = "ri32:settings:v1";
+  var STORAGE_KEY = "ri32:settings:v2";
+  var LEGACY_STORAGE_KEY = "ri32:settings:v1";
   var DB_NAME = "ri32";
   var DB_VERSION = 1;
   var HANDLE_STORE = "handles";
-  var DIRECTORY_KEY = "download-directory";
+  var LEGACY_DIRECTORY_KEY = "download-directory";
+  var POLICY_KEYS = ["video", "image", "carousel"];
   var MODES = /* @__PURE__ */ new Set(["default", "directory", "prompt"]);
   function createSettingsStore({ env = globalThis, capabilities: capabilities2, onChange } = {}) {
     const listeners = /* @__PURE__ */ new Set();
     let state = {
-      downloadMode: "default",
-      directoryName: null,
-      directoryHandle: null,
-      directoryPermission: capabilities2?.directoryPicker ? "prompt" : "unavailable",
-      schemaVersion: 1
+      downloadPolicies: createPolicies(capabilities2),
+      schemaVersion: 2
     };
     function notify() {
       const snapshot = getState();
@@ -378,40 +377,57 @@
       }
     }
     function getState() {
-      return { ...state };
+      const video = state.downloadPolicies.video;
+      return {
+        downloadPolicies: Object.fromEntries(POLICY_KEYS.map((key) => [key, { ...state.downloadPolicies[key] }])),
+        downloadMode: video.downloadMode,
+        directoryName: video.directoryName,
+        directoryHandle: video.directoryHandle,
+        directoryPermission: video.directoryPermission,
+        schemaVersion: state.schemaVersion
+      };
     }
     async function init() {
       const persisted = readJson(env.localStorage, STORAGE_KEY);
-      if (persisted && MODES.has(persisted.downloadMode)) state.downloadMode = persisted.downloadMode;
-      if (typeof persisted?.directoryName === "string") state.directoryName = persisted.directoryName || null;
+      const legacy = persisted ? null : readJson(env.localStorage, LEGACY_STORAGE_KEY);
+      applyPersistedPolicies(persisted, legacy);
       if (capabilities2?.indexedDB) {
         try {
-          const handle = await readHandle(env.indexedDB);
-          if (handle) {
-            state.directoryHandle = handle;
-            state.directoryName = handle.name || state.directoryName;
-            state.directoryPermission = await queryHandlePermission(handle);
-          }
+          await restoreDirectoryHandles(env.indexedDB, { migrateLegacy: !!legacy });
         } catch (error) {
           console.warn("[RI] directory handle restore failed", error);
         }
       }
-      if (state.downloadMode === "directory" && !state.directoryHandle) {
-        state.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
+      for (const key of POLICY_KEYS) normalizeDirectoryState(state.downloadPolicies[key], capabilities2);
+      persistScalarState();
+      notify();
+      return getState();
+    }
+    function setDownloadMode(profileKey, mode) {
+      if (mode === void 0 && MODES.has(profileKey)) {
+        mode = profileKey;
+        let changed = false;
+        for (const key of POLICY_KEYS) {
+          if (state.downloadPolicies[key].downloadMode === mode) continue;
+          state.downloadPolicies[key].downloadMode = mode;
+          changed = true;
+        }
+        if (!changed) return getState();
+        persistScalarState();
+        notify();
+        return getState();
       }
-      persistScalarState();
-      notify();
-      return getState();
-    }
-    function setDownloadMode(mode) {
+      const policy = getPolicy(profileKey);
       if (!MODES.has(mode)) throw new Error(`Unsupported download mode: ${mode}`);
-      if (state.downloadMode === mode) return getState();
-      state.downloadMode = mode;
+      if (policy.downloadMode === mode) return getState();
+      policy.downloadMode = mode;
       persistScalarState();
       notify();
       return getState();
     }
-    async function selectDirectory() {
+    async function selectDirectory(profileKey = null) {
+      const targetKeys = profileKey ? [profileKey] : POLICY_KEYS;
+      const policy = getPolicy(targetKeys[0]);
       if (!capabilities2?.directoryPicker || typeof env.showDirectoryPicker !== "function") {
         return { ok: false, code: "unsupported", message: "폴더 선택을 지원하지 않는 환경입니다." };
       }
@@ -419,38 +435,42 @@
         const handle = await env.showDirectoryPicker({ mode: "readwrite" });
         const permission = await requestHandlePermission(handle);
         if (permission !== "granted") {
-          state.directoryPermission = permission;
+          policy.directoryPermission = permission;
           notify();
           return { ok: false, code: "permission-denied", message: "저장 폴더 쓰기 권한이 필요합니다." };
         }
-        state.directoryHandle = handle;
-        state.directoryName = handle.name || null;
-        state.directoryPermission = permission;
-        state.downloadMode = "directory";
+        for (const key of targetKeys) {
+          const target = getPolicy(key);
+          target.directoryHandle = handle;
+          target.directoryName = handle.name || null;
+          target.directoryPermission = permission;
+          target.downloadMode = "directory";
+        }
         persistScalarState();
         if (capabilities2?.indexedDB) {
           try {
-            await writeHandle(env.indexedDB, handle);
+            for (const key of targetKeys) await writeHandle(env.indexedDB, handleKey(key), handle);
           } catch (error) {
             console.warn("[RI] directory handle persistence failed", error);
           }
         }
         notify();
-        return { ok: true, code: "selected", folderName: state.directoryName };
+        return { ok: true, code: "selected", folderName: policy.directoryName, profileKey: profileKey || "all" };
       } catch (error) {
         if (error?.name === "AbortError") return { ok: false, code: "cancelled", message: "폴더 선택을 취소했습니다." };
         return { ok: false, code: "picker-failed", message: "폴더를 선택하지 못했습니다.", error };
       }
     }
-    async function clearDirectory() {
-      state.directoryHandle = null;
-      state.directoryName = null;
-      state.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
-      if (state.downloadMode === "directory") state.downloadMode = "default";
+    async function clearDirectory(profileKey) {
+      const policy = getPolicy(profileKey);
+      policy.directoryHandle = null;
+      policy.directoryName = null;
+      policy.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
+      if (policy.downloadMode === "directory") policy.downloadMode = "default";
       persistScalarState();
       if (capabilities2?.indexedDB) {
         try {
-          await deleteHandle(env.indexedDB);
+          await deleteHandle(env.indexedDB, handleKey(profileKey));
         } catch (error) {
           console.warn("[RI] directory handle delete failed", error);
         }
@@ -458,15 +478,16 @@
       notify();
       return getState();
     }
-    async function refreshDirectoryPermission({ request = false } = {}) {
-      if (!state.directoryHandle) {
-        state.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
+    async function refreshDirectoryPermission(profileKey, { request = false } = {}) {
+      const policy = getPolicy(profileKey);
+      if (!policy.directoryHandle) {
+        policy.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
         notify();
-        return state.directoryPermission;
+        return policy.directoryPermission;
       }
-      state.directoryPermission = request ? await requestHandlePermission(state.directoryHandle) : await queryHandlePermission(state.directoryHandle);
+      policy.directoryPermission = request ? await requestHandlePermission(policy.directoryHandle) : await queryHandlePermission(policy.directoryHandle);
       notify();
-      return state.directoryPermission;
+      return policy.directoryPermission;
     }
     function subscribe(listener) {
       if (typeof listener !== "function") return () => {
@@ -474,12 +495,62 @@
       listeners.add(listener);
       return () => listeners.delete(listener);
     }
+    function getPolicy(profileKey) {
+      if (!POLICY_KEYS.includes(profileKey)) throw new Error(`Unsupported download profile: ${profileKey}`);
+      return state.downloadPolicies[profileKey];
+    }
+    function applyPersistedPolicies(persisted, legacy) {
+      if (persisted?.downloadPolicies) {
+        for (const key of POLICY_KEYS) applyScalarPolicy(state.downloadPolicies[key], persisted.downloadPolicies[key]);
+        return;
+      }
+      if (!legacy || !MODES.has(legacy.downloadMode)) return;
+      for (const key of POLICY_KEYS) {
+        applyScalarPolicy(state.downloadPolicies[key], {
+          downloadMode: legacy.downloadMode,
+          directoryName: legacy.directoryName
+        });
+      }
+    }
+    async function restoreDirectoryHandles(indexedDB, { migrateLegacy = false } = {}) {
+      let legacyHandle = null;
+      if (migrateLegacy) legacyHandle = await readHandle(indexedDB, LEGACY_DIRECTORY_KEY);
+      for (const key of POLICY_KEYS) {
+        const policy = state.downloadPolicies[key];
+        const storedHandle = await readHandle(indexedDB, handleKey(key));
+        const handle = storedHandle || legacyHandle;
+        if (!handle) continue;
+        policy.directoryHandle = handle;
+        policy.directoryName = handle.name || policy.directoryName;
+        policy.directoryPermission = await queryHandlePermission(handle);
+        if (!storedHandle && legacyHandle) await writeHandle(indexedDB, handleKey(key), legacyHandle);
+      }
+    }
     function persistScalarState() {
       writeJson(env.localStorage, STORAGE_KEY, {
-        downloadMode: state.downloadMode,
-        directoryName: state.directoryName,
+        downloadPolicies: Object.fromEntries(POLICY_KEYS.map((key) => [key, {
+          downloadMode: state.downloadPolicies[key].downloadMode,
+          directoryName: state.downloadPolicies[key].directoryName
+        }])),
         schemaVersion: state.schemaVersion
       });
+      const first = state.downloadPolicies.video;
+      const globalCompatible = POLICY_KEYS.every((key) => {
+        const policy = state.downloadPolicies[key];
+        return policy.downloadMode === first.downloadMode && policy.directoryName === first.directoryName;
+      });
+      if (globalCompatible) {
+        writeJson(env.localStorage, LEGACY_STORAGE_KEY, {
+          downloadMode: first.downloadMode,
+          directoryName: first.directoryName,
+          schemaVersion: 1
+        });
+      } else {
+        try {
+          env.localStorage?.removeItem?.(LEGACY_STORAGE_KEY);
+        } catch {
+        }
+      }
     }
     return {
       init,
@@ -490,6 +561,26 @@
       refreshDirectoryPermission,
       subscribe
     };
+  }
+  function createPolicies(capabilities2) {
+    return Object.fromEntries(POLICY_KEYS.map((key) => [key, {
+      downloadMode: "default",
+      directoryName: null,
+      directoryHandle: null,
+      directoryPermission: capabilities2?.directoryPicker ? "prompt" : "unavailable"
+    }]));
+  }
+  function applyScalarPolicy(policy, persisted) {
+    if (MODES.has(persisted?.downloadMode)) policy.downloadMode = persisted.downloadMode;
+    if (typeof persisted?.directoryName === "string") policy.directoryName = persisted.directoryName || null;
+  }
+  function normalizeDirectoryState(policy, capabilities2) {
+    if (policy.downloadMode === "directory" && !policy.directoryHandle) {
+      policy.directoryPermission = capabilities2?.directoryPicker ? "prompt" : "unavailable";
+    }
+  }
+  function handleKey(profileKey) {
+    return `download-directory:${profileKey}`;
   }
   function readJson(storage, key) {
     if (!storage) return null;
@@ -533,14 +624,14 @@
       db.close();
     }
   }
-  function readHandle(indexedDB) {
-    return withHandleStore(indexedDB, "readonly", (store) => store.get(DIRECTORY_KEY));
+  function readHandle(indexedDB, key) {
+    return withHandleStore(indexedDB, "readonly", (store) => store.get(key));
   }
-  function writeHandle(indexedDB, handle) {
-    return withHandleStore(indexedDB, "readwrite", (store) => store.put(handle, DIRECTORY_KEY));
+  function writeHandle(indexedDB, key, handle) {
+    return withHandleStore(indexedDB, "readwrite", (store) => store.put(handle, key));
   }
-  function deleteHandle(indexedDB) {
-    return withHandleStore(indexedDB, "readwrite", (store) => store.delete(DIRECTORY_KEY));
+  function deleteHandle(indexedDB, key) {
+    return withHandleStore(indexedDB, "readwrite", (store) => store.delete(key));
   }
 
   // src/media/media-resolver.js
@@ -647,7 +738,7 @@
         emitResultActivity(activityId, label, normalized.result);
         return normalized.result;
       }
-      const destination = destinationOverride || await resolveDestination(false);
+      const destination = destinationOverride || await resolveDestination(false, normalized.request.kind);
       if (!destination.ok) {
         emitResultActivity(activityId, label, destination.result);
         return destination.result;
@@ -669,7 +760,7 @@
       const activityId = nextActivityId("download-batch");
       const label = `캐러셀 ${total}장 저장`;
       emitActivity(runningActivity(activityId, label, { current: 0, total }, `${total}장 저장 준비 중…`));
-      const destination = await resolveDestination(true);
+      const destination = await resolveDestination(true, normalizedRequests[0].kind);
       if (!destination.ok) {
         emitResultActivity(activityId, label, destination.result, { current: 0, total });
         return destination.result;
@@ -697,20 +788,20 @@
       emitResultActivity(activityId, label, batchResult, { current: total, total }, failed);
       return batchResult;
     }
-    async function resolveDestination(batch) {
-      const state = settings2.getState();
-      const mode = state.downloadMode || "default";
+    async function resolveDestination(batch, kind) {
+      const policy = resolveDownloadPolicy(settings2.getState(), kind);
+      const mode = policy.downloadMode || "default";
       if (mode === "default") return { ok: true, mode: "default", folderName: null };
       if (mode === "directory") {
-        const handle = state.directoryHandle;
+        const handle = policy.directoryHandle;
         if (!handle) {
-          return failure("permission-denied", "저장 폴더를 다시 연결해야 합니다.", mode, state.directoryName);
+          return failure("permission-denied", "저장 폴더를 다시 연결해야 합니다.", mode, policy.directoryName);
         }
         const permission = await requestHandlePermission(handle);
         if (permission !== "granted") {
-          return failure("permission-denied", "저장 폴더 쓰기 권한이 필요합니다.", mode, state.directoryName);
+          return failure("permission-denied", "저장 폴더 쓰기 권한이 필요합니다.", mode, policy.directoryName);
         }
-        return { ok: true, mode, handle, folderName: handle.name || state.directoryName || null };
+        return { ok: true, mode, handle, folderName: handle.name || policy.directoryName || null };
       }
       if (mode === "prompt") {
         if (batch) {
@@ -865,6 +956,19 @@
       return `${prefix}:${activitySeq}`;
     }
     return { download, downloadBatch };
+  }
+  function resolveDownloadPolicy(state, kind) {
+    const profileKey = profileKeyForKind(kind);
+    const policy = profileKey ? state?.downloadPolicies?.[profileKey] : null;
+    if (policy) return policy;
+    if (state && ("downloadMode" in state || "directoryHandle" in state)) return state;
+    return { downloadMode: "default", directoryHandle: null, directoryName: null };
+  }
+  function profileKeyForKind(kind) {
+    if (kind === "video") return "video";
+    if (kind === "cover" || kind === "photo") return "image";
+    if (kind === "carousel-slide") return "carousel";
+    return null;
   }
   function runningActivity(id, label, progress, message) {
     return { id, kind: "download", state: "running", label, progress, message };
@@ -2050,6 +2154,11 @@
   }
 
   // src/ui/ri-settings.js
+  var SAVE_GROUPS = [
+    ["video", "영상"],
+    ["image", "사진 · 표지"],
+    ["carousel", "슬라이드"]
+  ];
   function renderRiSettings({
     body,
     settings: settings2,
@@ -2059,42 +2168,50 @@
   } = {}) {
     if (!body || !settings2 || !doc) return;
     const state = settingsState || settings2.getState();
-    const section = createSection(body, "저장 방식", doc);
-    const options = doc.createElement("div");
-    options.className = "ri32-options";
-    addModeOption(options, "directory", "지정 폴더", !!capabilities2?.directoryPicker);
-    addModeOption(options, "default", "기본 Downloads", true);
-    addModeOption(options, "prompt", "매번 선택", !!(capabilities2?.saveFilePicker || capabilities2?.directoryPicker));
-    section.appendChild(options);
-    const folder = createSection(body, "저장 폴더", doc);
-    addRow(folder, "현재 폴더", state.directoryName || "선택 안 됨", doc);
-    addRow(folder, "권한", permissionLabel(state.directoryPermission), doc);
-    const action = addAction(folder, state.directoryHandle ? "폴더 변경" : "폴더 선택", async () => {
-      action.disabled = true;
-      const result2 = await settings2.selectDirectory();
-      if (result2.ok) showToast(doc, `저장 폴더: ${result2.folderName || "선택 완료"}`);
-      else if (result2.code !== "cancelled") showToast(doc, result2.message || "폴더를 선택하지 못했습니다.");
-    }, { doc, className: "ri32-action", disabled: !capabilities2?.directoryPicker });
+    for (const [profileKey, label] of SAVE_GROUPS) {
+      renderSaveGroup(profileKey, label, state.downloadPolicies?.[profileKey]);
+    }
     const note = doc.createElement("div");
     note.className = "ri32-note";
-    note.textContent = "영상 · 썸네일 · 사진 · 캐러셀 전체에 같은 저장 정책을 적용합니다. 지정 폴더 저장 실패 시 기본 Downloads로 몰래 전환하지 않습니다.";
-    folder.appendChild(note);
-    function addModeOption(parent, mode, label, enabled) {
+    note.textContent = "미디어 유형별로 저장 정책을 독립 적용합니다. 지정 폴더 저장 실패 시 기본 Downloads로 몰래 전환하지 않습니다.";
+    body.appendChild(note);
+    function renderSaveGroup(profileKey, label, policy = {}) {
+      const section = createSection(body, `${label} 저장`, doc);
+      const options = doc.createElement("div");
+      options.className = "ri32-options";
+      addModeOption(options, profileKey, policy, "directory", "지정 폴더", !!capabilities2?.directoryPicker);
+      addModeOption(options, profileKey, policy, "default", "기본 Downloads", true);
+      addModeOption(options, profileKey, policy, "prompt", "매번 선택", !!(capabilities2?.saveFilePicker || capabilities2?.directoryPicker));
+      section.appendChild(options);
+      addRow(section, "현재 폴더", policy.directoryName || "선택 안 됨", doc);
+      addRow(section, "권한", permissionLabel(policy.directoryPermission), doc);
+      const action = addAction(section, policy.directoryHandle ? "폴더 변경" : "폴더 선택", async () => {
+        action.disabled = true;
+        try {
+          const result2 = await settings2.selectDirectory(profileKey);
+          if (result2.ok) showToast(doc, `${label} 저장 폴더: ${result2.folderName || "선택 완료"}`);
+          else if (result2.code !== "cancelled") showToast(doc, result2.message || "폴더를 선택하지 못했습니다.");
+        } finally {
+          if (action.isConnected) action.disabled = !capabilities2?.directoryPicker;
+        }
+      }, { doc, className: "ri32-action", disabled: !capabilities2?.directoryPicker });
+    }
+    function addModeOption(parent, profileKey, policy, mode, label, enabled) {
       const option = doc.createElement("button");
       option.type = "button";
       option.className = "ri32-option";
       option.disabled = !enabled;
-      option.setAttribute("aria-pressed", String(state.downloadMode === mode));
+      option.setAttribute("aria-pressed", String(policy.downloadMode === mode));
       option.innerHTML = '<span class="ri32-dot"></span><span></span>';
       option.lastElementChild.textContent = label;
       option.addEventListener("click", async () => {
-        if (mode === "directory" && !state.directoryHandle) {
-          const result2 = await settings2.selectDirectory();
+        if (mode === "directory" && !policy.directoryHandle) {
+          const result2 = await settings2.selectDirectory(profileKey);
           if (!result2.ok && result2.code !== "cancelled") showToast(doc, result2.message || "폴더를 선택하지 못했습니다.");
           return;
         }
-        settings2.setDownloadMode(mode);
-        showToast(doc, `저장 방식: ${label}`);
+        settings2.setDownloadMode(profileKey, mode);
+        showToast(doc, `${SAVE_GROUPS.find(([key]) => key === profileKey)?.[1] || "미디어"} 저장 방식: ${label}`);
       });
       parent.appendChild(option);
     }
