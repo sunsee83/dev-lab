@@ -2186,8 +2186,8 @@
     function openPanel() {
       if (destroyed || isOpen()) return;
       workspace2.rebindContext(currentIdentity());
-      workspace2.open();
       ensureWorkspaceView();
+      workspace2.open();
       syncWorkspaceView();
       renderBody();
       layout2?.schedule?.();
@@ -2196,8 +2196,8 @@
       if (destroyed) return;
       workspace2.rebindContext(currentIdentity());
       workspace2.setActiveTab("settings");
-      if (!isOpen()) workspace2.open();
       ensureWorkspaceView();
+      if (!isOpen()) workspace2.open();
       syncWorkspaceView();
       workspaceView?.resetScroll();
       renderBody();
