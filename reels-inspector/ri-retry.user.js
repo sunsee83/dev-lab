@@ -1374,9 +1374,11 @@
         '<button type="button" class="ri32-close" aria-label="닫기">×</button>',
         "</div>",
         '<div class="ri32-tabs" role="tablist"></div>',
-        '<div class="ri32-body"></div>'
+        '<div class="ri32-body"></div>',
+        '<button type="button" class="ri32-update-shortcut">업데이트 바로가기</button>'
       ].join("");
       panel.querySelector(".ri32-close").addEventListener("click", closePanel);
+      panel.querySelector(".ri32-update-shortcut").addEventListener("click", openUpdateShortcut);
       doc.documentElement.appendChild(panel);
     }
     function renderTabs() {
@@ -1517,6 +1519,14 @@
       const text = post.canonicalUrl || `https://www.instagram.com/${post.mediaType === "REEL" ? "reel" : "p"}/${post.shortcode}/`;
       const ok = await copyText(text, { env, doc, capabilities: capabilities2 });
       showToast(doc, ok ? "링크를 복사했습니다." : "링크 복사에 실패했습니다.");
+    }
+    function openUpdateShortcut() {
+      const url = updateInstallUrl(Date.now());
+      if (typeof env.open === "function") {
+        env.open(url, "_blank");
+        return;
+      }
+      if (env.location) env.location.href = url;
     }
     function syncCurrentIdentity() {
       const identity = adapter?.getCurrentIdentity?.() || null;
