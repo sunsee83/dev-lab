@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const workspaceView = await readFile(new URL('../../src/ui/research-workspace.js', import.meta.url), 'utf8');
+const activityView = await readFile(new URL('../../src/ui/activity-indicator.js', import.meta.url), 'utf8');
 const panel = await readFile(new URL('../../src/ui/ri-panel.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../../src/ui/styles.js', import.meta.url), 'utf8');
 
@@ -28,4 +29,16 @@ test('Research Workspace separates CONTENT six-tab research from GLOBAL RI Home 
   assert.match(panel, /renderGlobalHome\(body\);\s*renderSettings\(body\);/);
   assert.match(workspaceView, /tabsNode\.hidden = !contentMode/);
   assert.match(panel, /onUpdate:\s*openUpdateShortcut/);
+});
+
+test('Feedback activity moves into the open Workspace and keeps actionable errors persistent', () => {
+  assert.match(workspaceView, /ri32-activity-host/);
+  assert.match(activityView, /activity\.getVisible\(\)/);
+  assert.match(activityView, /doc\.querySelector\('#ri32-panel \.ri32-activity-host'\)/);
+  assert.match(activityView, /item\.state === 'success'[\s\S]*?showToast/);
+  assert.match(activityView, /item\.state === 'error' && !item\.persistent/);
+  assert.match(activityView, /onAction\?\.\(item\)/);
+  assert.match(panel, /function openSettings\(\)/);
+  assert.match(styles, /#ri32-activity\{[\s\S]*?var\(--ri-feedback-bottom/);
+  assert.match(styles, /#ri32-activity\[data-embedded="true"\]/);
 });
