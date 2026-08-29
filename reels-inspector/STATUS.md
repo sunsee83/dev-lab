@@ -130,7 +130,7 @@ node --check ri-retry.user.js
 - `ui/workspace-state.js` — Workspace state owner
 - `ui/layout.js` — mobile layout owner foundation
 - `ui/toast.js`
-- `ui/styles.js`
+- `ui/styles.js` — shared CSS + restored Global RI visual/touch geometry
 
 ---
 
@@ -216,11 +216,11 @@ Context:
 - CONTENT → 6-tab research
 - GLOBAL → RI Home / Settings / Update
 
-현재 v3.2.3 right floating panel과 막대+돋보기 launcher visual은 최종 target이 아닙니다.
+현재 right floating panel은 최종 target이 아닙니다. Global RI launcher는 UI-C source에서 기존 Reel RI visual identity 쪽으로 복원했지만 Android Edge 실기기 확인 전입니다.
 
 ---
 
-# 7. UI-B Foundation — 이번 source checkpoint
+# 7. UI-B Foundation — source checkpoint
 
 ## 7.1 RI primitive 공통화
 
@@ -296,7 +296,7 @@ runtime trigger:
 --ri-sheet-expanded-height
 ```
 
-기본값은 기존 v3.2.3 geometry를 최대한 유지하고 blocker가 확인되면 최소 이동하도록 설계했습니다.
+기본값은 기존 geometry를 최대한 유지하고 blocker가 확인되면 최소 이동하도록 설계했습니다.
 
 Android Edge 실제 blocker detection은 아직 Unverified.
 
@@ -306,9 +306,39 @@ Android Edge 실제 blocker detection은 아직 Unverified.
 
 ---
 
-# 8. 자동 검증 결과
+# 8. UI-C Global RI Launcher Restoration — source checkpoint
 
-UI-B source checkpoint CI:
+v3.1.6 legacy source를 다시 대조해 확인한 사실:
+
+- `ri3-tool` icon SVG는 현재 `researchIcon()`과 동일합니다.
+- 기존 visual은 `34×34`, border 없음, `rgba(0,0,0,.12)` 원형 배경, drop-shadow, `21×21` research icon이었습니다.
+- v3.2.3 Foundation에서 달라졌던 것은 icon path 자체가 아니라 36px dark background/border/box-shadow 등의 외곽 styling이었습니다.
+
+이번 source 변경:
+
+```text
+44×44 실제 touch target
+└ 34×34 legacy-style visual circle
+  └ 21×21 기존 research icon
+```
+
+유지:
+
+- Global RI toggle 동작
+- `aria-expanded`
+- Layout Manager anchor
+- 업데이트 바로가기
+- CONTENT 6탭
+- Grid action
+- Download/Settings owner
+
+새 visual은 코드 기준으로 legacy identity를 복원했지만 **Android Edge 실제 크기/위치/체감 parity는 아직 Unverified**입니다.
+
+---
+
+# 9. 자동 검증 결과
+
+UI-B 완료 checkpoint:
 
 - unit tests: **18 / 18 pass**
 - build: success
@@ -317,18 +347,21 @@ UI-B source checkpoint CI:
 - warnings: **0**
 - generated userscript syntax: success
 
-이 결과는 **코드/CI 검증**이며 Android Edge 시각/터치 검증을 의미하지 않습니다.
+UI-C source 변경 후 최종 CI 결과는 별도로 확인해 기록합니다.
+
+자동 검증은 Android Edge 시각/터치 검증을 의미하지 않습니다.
 
 ---
 
-# 9. 현재 실기기 검증 필요
+# 10. 현재 실기기 검증 필요
 
 ## Global RI / Layout
 
-- 현재 launcher가 화면당 1개인지
-- UI-B blocker 계산 후 bottom nav/app banner와 겹치지 않는지
+- Global RI가 화면당 1개로 보이는지
+- 34px visual + 44px touch target이 실제로 편한지
+- bottom nav/app banner와 겹치지 않는지
 - Reel right rail collision
-- launcher/panel close touch usability
+- 기존 Reel RI visual identity가 체감상 유지되는지
 
 ## Context / Store
 
@@ -355,15 +388,13 @@ UI-B source checkpoint CI:
 
 ---
 
-# 10. 다음 개발 순서
+# 11. 다음 개발 순서
 
 정확한 순서는 `WORK_TRACK.md`가 owner입니다.
 
 현재 다음:
 
 ```text
-UI-C  Global RI Launcher Replacement
-↓
 UI-D  Contextual Mobile Research Workspace
 ↓
 UI-E  Feedback / Activity
@@ -373,14 +404,17 @@ UI-F  Reel identity/native metrics + Metrics Overlay
 UI-G  Data Engine / Research tabs
 ```
 
-UI-C에서:
+UI-D에서:
 
-- 기존 v3.1 Reel RI visual/icon source 재확인
-- 현재 임시 launcher와 비교
-- 기존 visual identity 복원
-- 44px touch target
-- Layout Manager anchor
-- 새 launcher 검증 전 기존/임시 접근경로를 성급히 제거하지 않음
+- 기존 panel action inventory
+- bottom Research Sheet
+- Compact / Expanded
+- CONTENT / GLOBAL presentation 분리
+- close / explicit expand-collapse
+- sticky tabs/header
+- active tab lazy mount
+- summary/media/settings/update 완전 이관
+- 새 Workspace 동등성 확인 후에만 old floating panel 제거
 
 Data Engine 순서:
 
