@@ -2,6 +2,7 @@ import { EVENTS } from '../core/app.js';
 import { copyText } from '../core/clipboard.js';
 import { injectStyles } from './styles.js';
 import { showResult, showToast } from './toast.js';
+import { renderRiSummary } from './ri-summary.js';
 
 const TABS = [
   ['summary', '요약'],
@@ -12,7 +13,7 @@ const TABS = [
   ['settings', '설정']
 ];
 
-export function mountRiPanel({ app, settings, capabilities, downloads, adapter, version = '', doc = globalThis.document, env = globalThis } = {}) {
+export function mountRiPanel({ app, settings, capabilities, downloads, metrics, adapter, version = '', doc = globalThis.document, env = globalThis } = {}) {
   if (!doc?.documentElement || !settings) throw new Error('RI Panel requires document and Settings Store');
   injectStyles(doc);
 
@@ -41,6 +42,7 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
   });
   const unsubscribeRoute = app?.on?.(EVENTS.ROUTE_CHANGED, scheduleContextRender) || (() => {});
   const unsubscribeIdentity = app?.on?.(EVENTS.IDENTITY_CHANGED, scheduleContextRender) || (() => {});
+  const unsubscribeStore = app?.on?.(EVENTS.STORE_CHANGED, scheduleContextRender) || (() => {});
 
   button.addEventListener('click', toggle);
 
@@ -132,20 +134,7 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
   }
 
   function renderSummary(body, post) {
-    if (!post?.shortcode) return renderEmpty(body, '현재 콘텐츠가 선택되지 않았습니다.');
-    const section = createSection(body, '현재 콘텐츠');
-    addRow(section, '계정', post.username ? `@${post.username}` : '—');
-    addRow(section, 'Shortcode', post.shortcode);
-    addRow(section, '유형', post.mediaType || '확인 중');
-    addRow(section, '조회수', countLabel(post.views));
-    addRow(section, '좋아요', countLabel(post.likes));
-    addRow(section, '댓글', countLabel(post.comments));
-    addRow(section, '리포스트', countLabel(post.reposts));
-    addRow(section, '게시일', post.date || '—');
-    const note = doc.createElement('div');
-    note.className = 'ri32-note';
-    note.textContent = '현재는 legacy Verified Store의 검증값을 읽습니다. ER · 24h · 계정 대비는 Metrics migration에서 같은 Store 기준으로 연결합니다.';
-    section.appendChild(note);
+    renderRiSummary({ body, post, metrics, doc });
   }
 
   function renderMedia(body, post) {
@@ -313,6 +302,7 @@ export function mountRiPanel({ app, settings, capabilities, downloads, adapter, 
     unsubscribeSettings();
     unsubscribeRoute();
     unsubscribeIdentity();
+    unsubscribeStore();
     button?.removeEventListener('click', toggle);
     panel?.remove();
     button?.remove();
@@ -332,12 +322,6 @@ function permissionLabel(permission) {
   if (permission === 'prompt') return '확인 필요';
   if (permission === 'denied') return '거부됨';
   return '사용 불가';
-}
-
-function countLabel(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) return '—';
-  return new Intl.NumberFormat('ko-KR').format(number);
 }
 
 function researchIcon() {
