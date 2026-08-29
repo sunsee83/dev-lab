@@ -1227,6 +1227,54 @@
 #ri32-toast{position:fixed;left:50%;bottom:max(134px,calc(env(safe-area-inset-bottom) + 124px));transform:translateX(-50%);z-index:2147483647;max-width:82vw;padding:8px 12px;border-radius:16px;background:rgba(20,20,20,.94);color:#fff;font:650 11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;white-space:normal}
 `;
 
+  // src/ui/ri-primitives.js
+  function createSection(body, title, doc = globalThis.document) {
+    if (!body || !doc) return null;
+    const section = doc.createElement("section");
+    section.className = "ri32-section";
+    const heading = doc.createElement("div");
+    heading.className = "ri32-section-title";
+    heading.textContent = title;
+    section.appendChild(heading);
+    body.appendChild(section);
+    return section;
+  }
+  function addRow(parent, label, value, doc = globalThis.document) {
+    if (!parent || !doc) return null;
+    const row = doc.createElement("div");
+    row.className = "ri32-setting-row";
+    const left = doc.createElement("span");
+    const right = doc.createElement("strong");
+    left.textContent = label;
+    right.textContent = value ?? "—";
+    row.append(left, right);
+    parent.appendChild(row);
+    return row;
+  }
+  function addAction(parent, label, action, {
+    doc = globalThis.document,
+    className = "ri32-action",
+    disabled = false
+  } = {}) {
+    if (!parent || !doc) return null;
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.disabled = !!disabled;
+    button.textContent = label;
+    if (typeof action === "function") button.addEventListener("click", () => void action());
+    parent.appendChild(button);
+    return button;
+  }
+  function renderEmpty(body, text, doc = globalThis.document) {
+    if (!body || !doc) return null;
+    const empty = doc.createElement("div");
+    empty.className = "ri32-empty";
+    empty.textContent = text;
+    body.appendChild(empty);
+    return empty;
+  }
+
   // src/ui/ri-summary.js
   var COUNT_FORMATTER = new Intl.NumberFormat("ko-KR");
   function renderRiSummary({ body, post, metrics: metrics2, doc = globalThis.document } = {}) {
@@ -1249,32 +1297,6 @@
     note.className = "ri32-note";
     note.textContent = "ER은 검증된 조회수·좋아요·댓글·리포스트가 모두 있을 때만 계산합니다. 24h는 실제 18~32시간 snapshot, 계정 대비는 최근 비교 표본 5개 이상일 때만 표시합니다.";
     section.appendChild(note);
-  }
-  function createSection(body, title, doc) {
-    const section = doc.createElement("section");
-    section.className = "ri32-section";
-    const heading = doc.createElement("div");
-    heading.className = "ri32-section-title";
-    heading.textContent = title;
-    section.appendChild(heading);
-    body.appendChild(section);
-    return section;
-  }
-  function addRow(parent, label, value, doc) {
-    const row = doc.createElement("div");
-    row.className = "ri32-setting-row";
-    const left = doc.createElement("span");
-    const right = doc.createElement("strong");
-    left.textContent = label;
-    right.textContent = value ?? "—";
-    row.append(left, right);
-    parent.appendChild(row);
-  }
-  function renderEmpty(body, text, doc) {
-    const empty = doc.createElement("div");
-    empty.className = "ri32-empty";
-    empty.textContent = text;
-    body.appendChild(empty);
   }
   function countLabel(value) {
     const number = Number(value);
@@ -1424,24 +1446,24 @@
       const type = String(post.mediaType || "").toUpperCase();
       let actionCount = 0;
       if ((type === "REEL" || type === "VIDEO") && post.videoUrl) {
-        addAction(section, "영상 다운로드", () => save({ kind: "video", shortcode: post.shortcode, url: post.videoUrl }));
+        addAction2(section, "영상 다운로드", () => save({ kind: "video", shortcode: post.shortcode, url: post.videoUrl }));
         actionCount += 1;
       }
       if ((type === "REEL" || type === "VIDEO") && (post.coverUrl || post.thumbUrl)) {
         const url = post.coverUrl || post.thumbUrl;
-        addAction(section, "썸네일 다운로드", () => save({ kind: "cover", shortcode: post.shortcode, url }));
+        addAction2(section, "썸네일 다운로드", () => save({ kind: "cover", shortcode: post.shortcode, url }));
         actionCount += 1;
       }
       if (type === "PHOTO" && (post.coverUrl || post.thumbUrl)) {
         const url = post.coverUrl || post.thumbUrl;
-        addAction(section, "이미지 다운로드", () => save({ kind: "photo", shortcode: post.shortcode, url }));
+        addAction2(section, "이미지 다운로드", () => save({ kind: "photo", shortcode: post.shortcode, url }));
         actionCount += 1;
       }
       if (type === "CAROUSEL" && post.carouselImages?.length) {
-        addAction(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
+        addAction2(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
         actionCount += 1;
       }
-      addAction(section, "링크 복사", () => copyCurrentLink(post));
+      addAction2(section, "링크 복사", () => copyCurrentLink(post));
       if (!actionCount) {
         const note = doc.createElement("div");
         note.className = "ri32-note";
@@ -1559,7 +1581,7 @@
       row.append(left, right);
       parent.appendChild(row);
     }
-    function addAction(parent, label, action) {
+    function addAction2(parent, label, action) {
       const button2 = doc.createElement("button");
       button2.type = "button";
       button2.className = "ri32-action ri32-media-action";
