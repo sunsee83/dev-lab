@@ -92,6 +92,13 @@ CAROUSEL   → carousel-slide[] (원래 순서/개수 유지)
 
 ### Workspace / 위치
 
+Workspace State:
+
+```text
+CLOSED | COMPACT | EXPANDED
+GLOBAL | CONTENT
+```
+
 CONTENT=`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`, GLOBAL=`RI Home + Settings + 업데이트 바로가기`.
 
 ```text
