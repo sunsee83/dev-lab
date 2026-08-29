@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.5
+// @version      3.2.6
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.5
+// Build version: 3.2.6
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.5";
+  var VERSION = "3.2.6";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
