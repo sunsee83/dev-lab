@@ -35,8 +35,8 @@ test('Feedback activity moves into the open Workspace and keeps actionable error
   assert.match(workspaceView, /ri32-activity-host/);
   assert.match(activityView, /activity\.getVisible\(\)/);
   assert.match(activityView, /doc\.querySelector\('#ri32-panel \.ri32-activity-host'\)/);
-  assert.match(activityView, /item\.state === 'success'[\s\S]*?showToast/);
-  assert.match(activityView, /item\.state === 'error' && !item\.persistent/);
+  assert.match(activityView, /item\?\.state === 'success'[\s\S]*?showToast/);
+  assert.match(activityView, /item\?\.state === 'error' && !item\.persistent/);
   assert.match(activityView, /onAction\?\.\(item\)/);
   assert.match(panel, /function openSettings\(\)/);
   assert.match(styles, /#ri32-activity\{[\s\S]*?var\(--ri-feedback-bottom/);
