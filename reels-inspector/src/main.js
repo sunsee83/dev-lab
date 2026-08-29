@@ -10,7 +10,6 @@ import { createReelContextAdapter } from './migration/reel-context-adapter.js';
 import { mountActivityIndicator } from './ui/activity-indicator.js';
 import { mountGridActions } from './ui/grid.js';
 import { createLayoutManager } from './ui/layout.js';
-import { mountReelOverlay } from './ui/reel-overlay.js';
 import { mountRiPanel } from './ui/ri-panel.js';
 import { createWorkspaceState } from './ui/workspace-state.js';
 import './legacy-runtime.js';
@@ -38,7 +37,6 @@ const legacyStore = createLegacyStoreAdapter({ env: globalThis });
 const reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
 const metrics = createMetricsEngine({ history: legacyStore });
 const workspace = createWorkspaceState();
-let reelOverlay = null;
 const storeTracker = legacyStore.createChangeTracker((change) => {
   const activeIdentity = reelContext.resolveActivityIdentity();
   app.setCurrentIdentity(activeIdentity === undefined ? legacyStore.getCurrentIdentity() : activeIdentity);
@@ -59,7 +57,6 @@ const stopRouteTracking = app.startRouteTracking({
   },
   onActivity(reason) {
     storeTracker.schedule(reason);
-    reelOverlay?.schedule(reason);
   }
 });
 const layout = createLayoutManager({ app, doc: document, env: globalThis });
@@ -74,15 +71,6 @@ const riPanel = mountRiPanel({
   workspace,
   layout,
   version: VERSION,
-  doc: document,
-  env: globalThis
-});
-reelOverlay = mountReelOverlay({
-  app,
-  reelContext,
-  store: legacyStore,
-  metrics,
-  layout,
   doc: document,
   env: globalThis
 });
@@ -101,7 +89,6 @@ app.adapters.stopStoreTracking = () => storeTracker.destroy();
 app.adapters.stopLayout = () => layout.destroy();
 app.adapters.grid = grid;
 app.adapters.riPanel = riPanel;
-app.adapters.reelOverlay = reelOverlay;
 app.adapters.activityIndicator = activityIndicator;
 
 void settings.init().catch((error) => {
