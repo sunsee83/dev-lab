@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.14
+// @version      3.2.15
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.14
+// Build version: 3.2.15
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.14";
+  var VERSION = "3.2.15";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -439,6 +439,52 @@
     return value == null ? "" : String(value).trim();
   }
 
+  // src/data/content-model.js
+  function extractContentModel(media) {
+    const caption = captionText(media);
+    if (!caption) return {};
+    const entities = extractCaptionEntities(caption);
+    return {
+      caption,
+      hashtags: entities.hashtags,
+      mentions: entities.mentions
+    };
+  }
+  function captionText(media) {
+    if (!media || typeof media !== "object") return "";
+    const candidates = [
+      media.caption?.text,
+      media.caption?.caption_text,
+      media.caption_text,
+      media.edge_media_to_caption?.edges?.[0]?.node?.text
+    ];
+    for (const value of candidates) {
+      if (typeof value !== "string") continue;
+      const cleaned = value.replace(/\u0000/g, "");
+      if (cleaned.trim()) return cleaned;
+    }
+    return "";
+  }
+  function extractCaptionEntities(text) {
+    const source = String(text || "");
+    return {
+      hashtags: collectTokens(source, /#[\p{L}\p{N}_]+/gu),
+      mentions: collectTokens(source, /@[A-Za-z0-9._]+/g)
+    };
+  }
+  function collectTokens(source, pattern) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const match of source.matchAll(pattern)) {
+      const token = match[0];
+      const key = token.toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(token);
+    }
+    return out;
+  }
+
   // src/data/extractor.js
   var VIEW_KEYS = [
     "play_count",
@@ -463,6 +509,7 @@
     const user = media.user || media.owner || media.owner_user || {};
     const mediaType = detectMediaType(media);
     const evidence = collectMediaEvidence(media, shortcode);
+    const content = extractContentModel(media);
     const coverUrl = bestImageFromMedia(media) || evidence.imageUrls[0] || "";
     const videoUrl = bestVideoUrl(media, evidence.videoUrls);
     const canonicalUrl = media.permalink || media.canonical_url || pageUrl || "";
@@ -482,7 +529,10 @@
       videoUrl,
       coverUrl,
       thumbUrl: coverUrl,
-      carouselImages: carouselImagesFromMedia(media)
+      carouselImages: carouselImagesFromMedia(media),
+      caption: content.caption,
+      hashtags: content.hashtags,
+      mentions: content.mentions
     });
     const identity = normalizeIdentity({
       shortcode,
@@ -784,7 +834,15 @@
   // src/store/verified-store.js
   var SOURCE_RANK = Object.freeze({ legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 });
   var METRIC_FIELDS = /* @__PURE__ */ new Set(["views", "likes", "comments", "reposts"]);
-  var REPLACEABLE_FIELDS = /* @__PURE__ */ new Set(["videoUrl", "coverUrl", "thumbUrl", "carouselImages"]);
+  var REPLACEABLE_FIELDS = /* @__PURE__ */ new Set([
+    "videoUrl",
+    "coverUrl",
+    "thumbUrl",
+    "carouselImages",
+    "caption",
+    "hashtags",
+    "mentions"
+  ]);
   var FIELDS = [
     "views",
     "likes",
@@ -800,7 +858,10 @@
     "ownerId",
     "mediaType",
     "productType",
-    "canonicalUrl"
+    "canonicalUrl",
+    "caption",
+    "hashtags",
+    "mentions"
   ];
   function createVerifiedStore({ initialItems = {}, now = () => Date.now(), onChange } = {}) {
     let items = clone(initialItems) || {};
@@ -811,7 +872,7 @@
     function getPost(shortcode) {
       if (!shortcode) return null;
       const item = items[shortcode];
-      if (!item) return { shortcode, media: [] };
+      if (!item) return { shortcode, media: [], caption: "", hashtags: [], mentions: [], content: emptyContent() };
       const read = (key) => fieldValue(item, key);
       const post = { shortcode };
       post.mediaId = read("mediaId") || "";
@@ -829,7 +890,15 @@
       post.coverUrl = read("coverUrl") || "";
       post.thumbUrl = read("thumbUrl") || "";
       const carouselImages = read("carouselImages");
-      post.carouselImages = Array.isArray(carouselImages) ? [...carouselImages] : [];
+      post.carouselImages = arrayValue(carouselImages);
+      post.caption = read("caption") || "";
+      post.hashtags = arrayValue(read("hashtags"));
+      post.mentions = arrayValue(read("mentions"));
+      post.content = {
+        caption: post.caption,
+        hashtags: [...post.hashtags],
+        mentions: [...post.mentions]
+      };
       post.media = buildMediaList(post);
       return post;
     }
@@ -954,6 +1023,12 @@
   }
   function hasValue(value) {
     return value !== void 0 && value !== null && value !== "";
+  }
+  function arrayValue(value) {
+    return Array.isArray(value) ? [...value] : [];
+  }
+  function emptyContent() {
+    return { caption: "", hashtags: [], mentions: [] };
   }
   function cleanShortcode3(value) {
     return String(value || "").replace(/[^A-Za-z0-9_-]/g, "");
