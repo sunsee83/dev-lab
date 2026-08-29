@@ -18,27 +18,28 @@ export function createVerifiedStore({ initialItems = {}, now = () => Date.now(),
   }
 
   function getPost(shortcode) {
+    if (!shortcode) return null;
     const item = items[shortcode];
-    if (!item) return shortcode ? { shortcode } : null;
-    const value = (key) => fieldValue(item, key);
-    return {
-      shortcode,
-      mediaId: value('mediaId') || '',
-      ownerId: value('ownerId') || '',
-      username: value('owner') || '',
-      mediaType: String(value('mediaType') || '').toUpperCase(),
-      productType: value('productType') || '',
-      canonicalUrl: value('canonicalUrl') || item.pageUrl || '',
-      views: optional(value('views')),
-      likes: optional(value('likes')),
-      comments: optional(value('comments')),
-      reposts: optional(value('reposts')),
-      date: value('date') || '',
-      videoUrl: value('videoUrl') || '',
-      coverUrl: value('coverUrl') || '',
-      thumbUrl: value('thumbUrl') || '',
-      carouselImages: Array.isArray(value('carouselImages')) ? [...value('carouselImages')] : []
-    };
+    if (!item) return { shortcode };
+    const read = (key) => fieldValue(item, key);
+    const post = { shortcode };
+    post.mediaId = read('mediaId') || '';
+    post.ownerId = read('ownerId') || '';
+    post.username = read('owner') || '';
+    post.mediaType = String(read('mediaType') || '').toUpperCase();
+    post.productType = read('productType') || '';
+    post.canonicalUrl = read('canonicalUrl') || item.pageUrl || '';
+    post.views = optional(read('views'));
+    post.likes = optional(read('likes'));
+    post.comments = optional(read('comments'));
+    post.reposts = optional(read('reposts'));
+    post.date = read('date') || '';
+    post.videoUrl = read('videoUrl') || '';
+    post.coverUrl = read('coverUrl') || '';
+    post.thumbUrl = read('thumbUrl') || '';
+    const carouselImages = read('carouselImages');
+    post.carouselImages = Array.isArray(carouselImages) ? [...carouselImages] : [];
+    return post;
   }
 
   function getIdentity(shortcode) {

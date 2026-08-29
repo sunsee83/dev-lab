@@ -11,6 +11,17 @@ export function mediaTypeFromUrl(url) {
   return '';
 }
 
+export function mediaUrlKey(url) {
+  const text = String(url || '');
+  if (!text || /^blob:/i.test(text)) return '';
+  try {
+    const parsed = new URL(text.replace(/\\u0026/g, '&').replace(/\\\//g, '/'), 'https://www.instagram.com/');
+    return [parsed.hostname, parsed.pathname].join('');
+  } catch {
+    return '';
+  }
+}
+
 export function canonicalizeInstagramUrl(url, baseUrl = 'https://www.instagram.com/') {
   if (!url) return '';
   try {

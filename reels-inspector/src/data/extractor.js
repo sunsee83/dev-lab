@@ -1,4 +1,4 @@
-import { normalizeIdentity } from './identity.js';
+import { mediaUrlKey, normalizeIdentity } from './identity.js';
 
 const VIEW_KEYS = [
   'play_count', 'ig_play_count', 'video_play_count', 'video_view_count',
@@ -83,7 +83,7 @@ export function carouselImagesFromMedia(media) {
   const out = [];
   for (const slide of slides) {
     const url = bestImageFromMedia(slide);
-    const key = normalizeMediaUrl(url) || url;
+    const key = mediaUrlKey(url) || url;
     if (!url || seen.has(key)) continue;
     seen.add(key);
     out.push(url);
@@ -135,16 +135,6 @@ function compact(value) {
     if (item === undefined || item === null || item === '') return false;
     return !Array.isArray(item) || item.length > 0;
   }));
-}
-
-function normalizeMediaUrl(url) {
-  if (!url || /^blob:/i.test(String(url))) return '';
-  try {
-    const parsed = new URL(String(url), 'https://www.instagram.com/');
-    return `${parsed.hostname}${parsed.pathname}`;
-  } catch {
-    return '';
-  }
 }
 
 function cleanShortcode(value) {
