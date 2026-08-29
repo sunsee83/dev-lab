@@ -1179,54 +1179,6 @@
     return { closeMenu, destroy };
   }
 
-  // src/ui/styles.js
-  var STYLE_ID = "ri32-style";
-  function injectStyles(doc = globalThis.document) {
-    if (!doc?.documentElement || doc.getElementById(STYLE_ID)) return;
-    const style = doc.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = CSS;
-    (doc.head || doc.documentElement).appendChild(style);
-  }
-  var CSS = `
-#ri3-tool,#ri3-panel{display:none!important}
-#ri32-tool{
-  position:fixed;right:12px;bottom:max(88px,calc(env(safe-area-inset-bottom) + 78px));z-index:2147483605;
-  width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.18);border-radius:50%;
-  background:rgba(12,12,12,.72);color:#fff;display:flex;align-items:center;justify-content:center;
-  box-shadow:0 2px 8px rgba(0,0,0,.32);-webkit-tap-highlight-color:transparent
-}
-#ri32-tool[aria-expanded="true"]{background:rgba(38,38,38,.96)}
-#ri32-panel{
-  position:fixed;right:8px;bottom:max(132px,calc(env(safe-area-inset-bottom) + 122px));z-index:2147483646;
-  width:min(70vw,270px);max-height:min(64vh,540px);overflow:hidden;border:1px solid rgba(255,255,255,.13);
-  border-radius:15px;background:rgba(16,16,16,.94);color:#fff;box-shadow:0 12px 34px rgba(0,0,0,.40);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif
-}
-.ri32-head{min-height:42px;display:flex;align-items:center;gap:7px;padding:0 8px 0 11px;border-bottom:1px solid rgba(255,255,255,.08)}
-.ri32-head strong{flex:1;font-size:12px}.ri32-version{font-size:8px;opacity:.48}
-.ri32-close{width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:#fff;font-size:19px}
-.ri32-tabs{display:flex;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid rgba(255,255,255,.07)}
-.ri32-tabs::-webkit-scrollbar{display:none}
-.ri32-tab{flex:0 0 auto;height:35px;padding:0 9px;border:0;border-bottom:2px solid transparent;background:transparent;color:rgba(255,255,255,.58);font:650 10px/1 sans-serif}
-.ri32-tab[aria-selected="true"]{color:#fff;border-bottom-color:#fff}
-.ri32-body{max-height:calc(min(64vh,540px) - 130px);overflow-y:auto;padding:10px}
-.ri32-empty{min-height:78px;display:grid;place-items:center;color:rgba(255,255,255,.52);font-size:10px;line-height:1.45;text-align:center}
-.ri32-section+.ri32-section{margin-top:13px}.ri32-section-title{margin-bottom:7px;font-size:10.5px;font-weight:750}
-.ri32-options{display:grid;gap:6px}.ri32-option{min-height:38px;display:flex;align-items:center;gap:8px;padding:0 9px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.035);color:#fff;text-align:left;font-size:10px}
-.ri32-option[aria-pressed="true"]{border-color:rgba(255,255,255,.42);background:rgba(255,255,255,.09)}.ri32-option:disabled{opacity:.38}
-.ri32-dot{width:9px;height:9px;border:1px solid rgba(255,255,255,.5);border-radius:50%}.ri32-option[aria-pressed="true"] .ri32-dot{background:#fff}
-.ri32-setting-row{display:flex;align-items:center;gap:8px;min-height:32px;font-size:10px}.ri32-setting-row span:first-child{flex:1;opacity:.62}.ri32-setting-row strong{font-size:10px;text-align:right}
-.ri32-action{min-height:34px;padding:0 10px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.06);color:#fff;font-size:10px}
-.ri32-media-action{width:100%;margin-top:6px;text-align:left}.ri32-note{margin-top:7px;color:rgba(255,255,255,.46);font-size:9px;line-height:1.45}
-.ri32-update-shortcut{display:block;width:calc(100% - 20px);min-height:42px;margin:0 10px 10px;padding:0 12px;border:1px solid rgba(255,255,255,.24);border-radius:10px;background:rgba(255,255,255,.11);color:#fff;font:750 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;-webkit-tap-highlight-color:transparent}
-.ri32-update-shortcut:active{background:rgba(255,255,255,.19)}
-#ri32-grid-menu{position:fixed;z-index:2147483646;min-width:150px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
-#ri32-grid-menu button{height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#fff;text-align:left;font:650 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap}
-#ri32-grid-menu button:active{background:rgba(255,255,255,.12)}#ri32-grid-menu button:disabled{opacity:.38}
-#ri32-toast{position:fixed;left:50%;bottom:max(134px,calc(env(safe-area-inset-bottom) + 124px));transform:translateX(-50%);z-index:2147483647;max-width:82vw;padding:8px 12px;border-radius:16px;background:rgba(20,20,20,.94);color:#fff;font:650 11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;white-space:normal}
-`;
-
   // src/ui/ri-primitives.js
   function createSection(body, title, doc = globalThis.document) {
     if (!body || !doc) return null;
@@ -1274,6 +1226,146 @@
     body.appendChild(empty);
     return empty;
   }
+
+  // src/ui/workspace-state.js
+  var VALID_DETENTS = /* @__PURE__ */ new Set(["closed", "compact", "expanded"]);
+  var VALID_MODES = /* @__PURE__ */ new Set(["content", "global"]);
+  function createWorkspaceState({ initialTab = "summary" } = {}) {
+    let state = freezeState({
+      open: false,
+      detent: "closed",
+      mode: "global",
+      activeTab: initialTab,
+      contextKey: "",
+      contextEpoch: 0
+    });
+    const listeners = /* @__PURE__ */ new Set();
+    function commit(patch, reason) {
+      const next = normalizeState({ ...state, ...patch });
+      if (sameState(state, next)) return state;
+      const previous = state;
+      state = freezeState(next);
+      for (const listener of [...listeners]) listener({ previous, current: state, reason });
+      return state;
+    }
+    return {
+      getState() {
+        return state;
+      },
+      subscribe(listener) {
+        if (typeof listener !== "function") return () => {
+        };
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      open() {
+        return commit({ open: true, detent: "compact" }, "open");
+      },
+      close() {
+        return commit({ open: false, detent: "closed" }, "close");
+      },
+      toggle() {
+        return state.open ? this.close() : this.open();
+      },
+      expand() {
+        if (!state.open) return commit({ open: true, detent: "expanded" }, "expand");
+        return commit({ detent: "expanded" }, "expand");
+      },
+      collapse() {
+        if (!state.open) return commit({ open: true, detent: "compact" }, "collapse");
+        return commit({ detent: "compact" }, "collapse");
+      },
+      setActiveTab(activeTab) {
+        if (!activeTab) return state;
+        return commit({ activeTab: String(activeTab) }, "tab");
+      },
+      rebindContext(identity) {
+        const contextKey = identityKey2(identity);
+        const mode = contextKey ? "content" : "global";
+        if (contextKey === state.contextKey && mode === state.mode) return state;
+        return commit({
+          mode,
+          contextKey,
+          contextEpoch: state.contextEpoch + 1
+        }, "context");
+      }
+    };
+  }
+  function normalizeState(input) {
+    const detent = VALID_DETENTS.has(input.detent) ? input.detent : "closed";
+    const open = detent !== "closed" && !!input.open;
+    return {
+      open,
+      detent: open ? detent : "closed",
+      mode: VALID_MODES.has(input.mode) ? input.mode : "global",
+      activeTab: String(input.activeTab || "summary"),
+      contextKey: String(input.contextKey || ""),
+      contextEpoch: Number.isFinite(Number(input.contextEpoch)) ? Number(input.contextEpoch) : 0
+    };
+  }
+  function identityKey2(identity) {
+    if (!identity?.shortcode) return "";
+    return [
+      identity.shortcode,
+      identity.mediaId || "",
+      identity.childMediaId || "",
+      identity.slideIndex ?? ""
+    ].join("|");
+  }
+  function sameState(a, b) {
+    return a.open === b.open && a.detent === b.detent && a.mode === b.mode && a.activeTab === b.activeTab && a.contextKey === b.contextKey && a.contextEpoch === b.contextEpoch;
+  }
+  function freezeState(value) {
+    return Object.freeze({ ...value });
+  }
+
+  // src/ui/styles.js
+  var STYLE_ID = "ri32-style";
+  function injectStyles(doc = globalThis.document) {
+    if (!doc?.documentElement || doc.getElementById(STYLE_ID)) return;
+    const style = doc.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = CSS;
+    (doc.head || doc.documentElement).appendChild(style);
+  }
+  var CSS = `
+#ri3-tool,#ri3-panel{display:none!important}
+#ri32-tool{
+  position:fixed;right:12px;bottom:max(88px,calc(env(safe-area-inset-bottom) + 78px));z-index:2147483605;
+  width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.18);border-radius:50%;
+  background:rgba(12,12,12,.72);color:#fff;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.32);-webkit-tap-highlight-color:transparent
+}
+#ri32-tool[aria-expanded="true"]{background:rgba(38,38,38,.96)}
+#ri32-panel{
+  position:fixed;right:8px;bottom:max(132px,calc(env(safe-area-inset-bottom) + 122px));z-index:2147483646;
+  width:min(70vw,270px);max-height:min(64vh,540px);overflow:hidden;border:1px solid rgba(255,255,255,.13);
+  border-radius:15px;background:rgba(16,16,16,.94);color:#fff;box-shadow:0 12px 34px rgba(0,0,0,.40);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif
+}
+.ri32-head{min-height:42px;display:flex;align-items:center;gap:7px;padding:0 8px 0 11px;border-bottom:1px solid rgba(255,255,255,.08)}
+.ri32-head strong{flex:1;font-size:12px}.ri32-version{font-size:8px;opacity:.48}
+.ri32-close{width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:#fff;font-size:19px}
+.ri32-tabs{display:flex;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid rgba(255,255,255,.07)}
+.ri32-tabs::-webkit-scrollbar{display:none}
+.ri32-tab{flex:0 0 auto;height:35px;padding:0 9px;border:0;border-bottom:2px solid transparent;background:transparent;color:rgba(255,255,255,.58);font:650 10px/1 sans-serif}
+.ri32-tab[aria-selected="true"]{color:#fff;border-bottom-color:#fff}
+.ri32-body{max-height:calc(min(64vh,540px) - 130px);overflow-y:auto;padding:10px}
+.ri32-empty{min-height:78px;display:grid;place-items:center;color:rgba(255,255,255,.52);font-size:10px;line-height:1.45;text-align:center}
+.ri32-section+.ri32-section{margin-top:13px}.ri32-section-title{margin-bottom:7px;font-size:10.5px;font-weight:750}
+.ri32-options{display:grid;gap:6px}.ri32-option{min-height:38px;display:flex;align-items:center;gap:8px;padding:0 9px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.035);color:#fff;text-align:left;font-size:10px}
+.ri32-option[aria-pressed="true"]{border-color:rgba(255,255,255,.42);background:rgba(255,255,255,.09)}.ri32-option:disabled{opacity:.38}
+.ri32-dot{width:9px;height:9px;border:1px solid rgba(255,255,255,.5);border-radius:50%}.ri32-option[aria-pressed="true"] .ri32-dot{background:#fff}
+.ri32-setting-row{display:flex;align-items:center;gap:8px;min-height:32px;font-size:10px}.ri32-setting-row span:first-child{flex:1;opacity:.62}.ri32-setting-row strong{font-size:10px;text-align:right}
+.ri32-action{min-height:34px;padding:0 10px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.06);color:#fff;font-size:10px}
+.ri32-media-action{width:100%;margin-top:6px;text-align:left}.ri32-note{margin-top:7px;color:rgba(255,255,255,.46);font-size:9px;line-height:1.45}
+.ri32-update-shortcut{display:block;width:calc(100% - 20px);min-height:42px;margin:0 10px 10px;padding:0 12px;border:1px solid rgba(255,255,255,.24);border-radius:10px;background:rgba(255,255,255,.11);color:#fff;font:750 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;-webkit-tap-highlight-color:transparent}
+.ri32-update-shortcut:active{background:rgba(255,255,255,.19)}
+#ri32-grid-menu{position:fixed;z-index:2147483646;min-width:150px;padding:5px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(18,18,18,.96);box-shadow:0 6px 18px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+#ri32-grid-menu button{height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#fff;text-align:left;font:650 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap}
+#ri32-grid-menu button:active{background:rgba(255,255,255,.12)}#ri32-grid-menu button:disabled{opacity:.38}
+#ri32-toast{position:fixed;left:50%;bottom:max(134px,calc(env(safe-area-inset-bottom) + 124px));transform:translateX(-50%);z-index:2147483647;max-width:82vw;padding:8px 12px;border-radius:16px;background:rgba(20,20,20,.94);color:#fff;font:650 11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;white-space:normal}
+`;
 
   // src/ui/ri-summary.js
   var COUNT_FORMATTER = new Intl.NumberFormat("ko-KR");
@@ -1326,11 +1418,21 @@
     ["media", "미디어"],
     ["settings", "설정"]
   ];
-  function mountRiPanel({ app: app2, settings: settings2, capabilities: capabilities2, downloads: downloads2, metrics: metrics2, adapter, version = "", doc = globalThis.document, env = globalThis } = {}) {
+  function mountRiPanel({
+    app: app2,
+    settings: settings2,
+    capabilities: capabilities2,
+    downloads: downloads2,
+    metrics: metrics2,
+    adapter,
+    workspace = createWorkspaceState(),
+    layout,
+    version = "",
+    doc = globalThis.document,
+    env = globalThis
+  } = {}) {
     if (!doc?.documentElement || !settings2) throw new Error("RI Panel requires document and Settings Store");
     injectStyles(doc);
-    let open = false;
-    let activeTab = "summary";
     let settingsState = settings2.getState();
     let destroyed = false;
     let button = doc.getElementById("ri32-tool");
@@ -1345,9 +1447,11 @@
       button.innerHTML = researchIcon();
       doc.documentElement.appendChild(button);
     }
+    workspace.rebindContext(currentIdentity());
+    layout?.schedule?.();
     const unsubscribeSettings = settings2.subscribe((next) => {
       settingsState = next;
-      if (open && activeTab === "settings") renderBody();
+      if (isOpen() && activeTab() === "settings") renderBody();
     });
     const unsubscribeRoute = app2?.on?.(EVENTS.ROUTE_CHANGED, scheduleContextRender) || (() => {
     });
@@ -1355,32 +1459,39 @@
     });
     const unsubscribeStore = app2?.on?.(EVENTS.STORE_CHANGED, scheduleContextRender) || (() => {
     });
+    const unsubscribeWorkspace = workspace.subscribe(({ current, reason }) => {
+      button?.setAttribute("aria-expanded", String(current.open));
+      if (reason === "context") panel?.setAttribute("data-context-epoch", String(current.contextEpoch));
+    });
     button.addEventListener("click", toggle);
     function toggle() {
-      if (open) closePanel();
+      if (isOpen()) closePanel();
       else openPanel();
     }
     function openPanel() {
-      if (destroyed || open) return;
-      open = true;
-      syncCurrentIdentity();
-      button.setAttribute("aria-expanded", "true");
+      if (destroyed || isOpen()) return;
+      workspace.rebindContext(currentIdentity());
+      workspace.open();
       ensurePanel();
       renderTabs();
       renderBody();
+      layout?.schedule?.();
     }
     function closePanel() {
-      if (!open) return;
-      open = false;
-      button.setAttribute("aria-expanded", "false");
+      if (!isOpen()) return;
+      workspace.close();
       panel?.remove();
       panel = null;
+      layout?.schedule?.();
     }
     function scheduleContextRender() {
-      if (!open || activeTab === "settings") return;
+      const identity = currentIdentity();
+      workspace.rebindContext(identity);
+      layout?.schedule?.();
+      if (!isOpen() || activeTab() === "settings") return;
       if (app2?.scheduleRender) {
         app2.scheduleRender("ri32-panel-context", () => {
-          if (open && activeTab !== "settings") renderBody();
+          if (isOpen() && activeTab() !== "settings") renderBody();
         });
         return;
       }
@@ -1391,6 +1502,7 @@
       if (panel) return;
       panel = doc.createElement("aside");
       panel.id = "ri32-panel";
+      panel.setAttribute("data-context-epoch", String(workspace.getState().contextEpoch));
       panel.innerHTML = [
         '<div class="ri32-head">',
         "<strong>Instagram Research</strong>",
@@ -1415,12 +1527,12 @@
         tab.className = "ri32-tab";
         tab.dataset.tab = key;
         tab.setAttribute("role", "tab");
-        tab.setAttribute("aria-selected", String(activeTab === key));
+        tab.setAttribute("aria-selected", String(activeTab() === key));
         tab.textContent = label;
         tab.addEventListener("click", () => {
-          if (activeTab === key) return;
-          activeTab = key;
-          syncCurrentIdentity();
+          if (activeTab() === key) return;
+          workspace.setActiveTab(key);
+          workspace.rebindContext(currentIdentity());
           renderTabs();
           renderBody();
         });
@@ -1431,39 +1543,39 @@
       const body = panel?.querySelector(".ri32-body");
       if (!body) return;
       body.replaceChildren();
-      if (activeTab === "settings") return renderSettings(body);
+      if (activeTab() === "settings") return renderSettings(body);
       const post = currentPost();
-      if (activeTab === "summary") return renderSummary(body, post);
-      if (activeTab === "media") return renderMedia(body, post);
+      if (activeTab() === "summary") return renderSummary(body, post);
+      if (activeTab() === "media") return renderMedia(body, post);
       renderPlaceholder(body, post);
     }
     function renderSummary(body, post) {
       renderRiSummary({ body, post, metrics: metrics2, doc });
     }
     function renderMedia(body, post) {
-      if (!post?.shortcode) return renderEmpty2(body, "현재 콘텐츠가 선택되지 않았습니다.");
-      const section = createSection2(body, "미디어");
+      if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.", doc);
+      const section = createSection(body, "미디어", doc);
       const type = String(post.mediaType || "").toUpperCase();
       let actionCount = 0;
       if ((type === "REEL" || type === "VIDEO") && post.videoUrl) {
-        addAction2(section, "영상 다운로드", () => save({ kind: "video", shortcode: post.shortcode, url: post.videoUrl }));
+        addMediaAction(section, "영상 다운로드", () => save({ kind: "video", shortcode: post.shortcode, url: post.videoUrl }));
         actionCount += 1;
       }
       if ((type === "REEL" || type === "VIDEO") && (post.coverUrl || post.thumbUrl)) {
         const url = post.coverUrl || post.thumbUrl;
-        addAction2(section, "썸네일 다운로드", () => save({ kind: "cover", shortcode: post.shortcode, url }));
+        addMediaAction(section, "썸네일 다운로드", () => save({ kind: "cover", shortcode: post.shortcode, url }));
         actionCount += 1;
       }
       if (type === "PHOTO" && (post.coverUrl || post.thumbUrl)) {
         const url = post.coverUrl || post.thumbUrl;
-        addAction2(section, "이미지 다운로드", () => save({ kind: "photo", shortcode: post.shortcode, url }));
+        addMediaAction(section, "이미지 다운로드", () => save({ kind: "photo", shortcode: post.shortcode, url }));
         actionCount += 1;
       }
       if (type === "CAROUSEL" && post.carouselImages?.length) {
-        addAction2(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
+        addMediaAction(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
         actionCount += 1;
       }
-      addAction2(section, "링크 복사", () => copyCurrentLink(post));
+      addMediaAction(section, "링크 복사", () => copyCurrentLink(post));
       if (!actionCount) {
         const note = doc.createElement("div");
         note.className = "ri32-note";
@@ -1472,34 +1584,28 @@
       }
     }
     function renderPlaceholder(body, post) {
-      const label = tabLabel(activeTab);
-      renderEmpty2(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`);
+      const label = tabLabel(activeTab());
+      renderEmpty(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`, doc);
     }
     function renderSettings(body) {
-      const section = createSection2(body, "저장 방식");
+      const section = createSection(body, "저장 방식", doc);
       const options = doc.createElement("div");
       options.className = "ri32-options";
       addModeOption(options, "directory", "지정 폴더", !!capabilities2?.directoryPicker);
       addModeOption(options, "default", "기본 Downloads", true);
       addModeOption(options, "prompt", "매번 선택", !!(capabilities2?.saveFilePicker || capabilities2?.directoryPicker));
       section.appendChild(options);
-      const folder = createSection2(body, "저장 폴더");
-      addRow2(folder, "현재 폴더", settingsState.directoryName || "선택 안 됨");
-      addRow2(folder, "권한", permissionLabel(settingsState.directoryPermission));
-      const action = doc.createElement("button");
-      action.type = "button";
-      action.className = "ri32-action";
-      action.disabled = !capabilities2?.directoryPicker;
-      action.textContent = settingsState.directoryHandle ? "폴더 변경" : "폴더 선택";
-      action.addEventListener("click", async () => {
+      const folder = createSection(body, "저장 폴더", doc);
+      addRow(folder, "현재 폴더", settingsState.directoryName || "선택 안 됨", doc);
+      addRow(folder, "권한", permissionLabel(settingsState.directoryPermission), doc);
+      const action = addAction(folder, settingsState.directoryHandle ? "폴더 변경" : "폴더 선택", async () => {
         action.disabled = true;
         const result2 = await settings2.selectDirectory();
         settingsState = settings2.getState();
         renderBody();
         if (result2.ok) showToast(doc, `저장 폴더: ${result2.folderName || "선택 완료"}`);
         else if (result2.code !== "cancelled") showToast(doc, result2.message || "폴더를 선택하지 못했습니다.");
-      });
-      folder.appendChild(action);
+      }, { doc, className: "ri32-action", disabled: !capabilities2?.directoryPicker });
       const note = doc.createElement("div");
       note.className = "ri32-note";
       note.textContent = "영상 · 썸네일 · 사진 · 캐러셀 전체에 같은 저장 정책을 적용합니다. 지정 폴더 저장 실패 시 기본 Downloads로 몰래 전환하지 않습니다.";
@@ -1523,6 +1629,9 @@
         showToast(doc, `저장 방식: ${label}`);
       });
       parent.appendChild(option);
+    }
+    function addMediaAction(parent, label, action) {
+      return addAction(parent, label, action, { doc, className: "ri32-action ri32-media-action" });
     }
     async function save(request) {
       if (!downloads2) return;
@@ -1552,48 +1661,19 @@
       }
       if (env.location) env.location.href = url;
     }
-    function syncCurrentIdentity() {
-      const identity = adapter?.getCurrentIdentity?.() || null;
-      app2?.setCurrentIdentity?.(identity);
-      return identity;
+    function currentIdentity() {
+      return app2?.getCurrentIdentity?.() || adapter?.getCurrentIdentity?.() || null;
     }
     function currentPost() {
-      const identity = app2?.getCurrentIdentity?.() || syncCurrentIdentity();
+      const identity = currentIdentity();
+      workspace.rebindContext(identity);
       return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
     }
-    function createSection2(body, title) {
-      const section = doc.createElement("section");
-      section.className = "ri32-section";
-      const heading = doc.createElement("div");
-      heading.className = "ri32-section-title";
-      heading.textContent = title;
-      section.appendChild(heading);
-      body.appendChild(section);
-      return section;
+    function isOpen() {
+      return workspace.getState().open;
     }
-    function addRow2(parent, label, value) {
-      const row = doc.createElement("div");
-      row.className = "ri32-setting-row";
-      const left = doc.createElement("span");
-      const right = doc.createElement("strong");
-      left.textContent = label;
-      right.textContent = value ?? "—";
-      row.append(left, right);
-      parent.appendChild(row);
-    }
-    function addAction2(parent, label, action) {
-      const button2 = doc.createElement("button");
-      button2.type = "button";
-      button2.className = "ri32-action ri32-media-action";
-      button2.textContent = label;
-      button2.addEventListener("click", () => void action());
-      parent.appendChild(button2);
-    }
-    function renderEmpty2(body, text) {
-      const empty = doc.createElement("div");
-      empty.className = "ri32-empty";
-      empty.textContent = text;
-      body.appendChild(empty);
+    function activeTab() {
+      return workspace.getState().activeTab;
     }
     function destroy() {
       if (destroyed) return;
@@ -1602,13 +1682,19 @@
       unsubscribeRoute();
       unsubscribeIdentity();
       unsubscribeStore();
+      unsubscribeWorkspace();
       button?.removeEventListener("click", toggle);
       panel?.remove();
       button?.remove();
       panel = null;
       button = null;
     }
-    return { open: openPanel, close: closePanel, destroy, getState: () => ({ open, activeTab }) };
+    return {
+      open: openPanel,
+      close: closePanel,
+      destroy,
+      getState: () => workspace.getState()
+    };
   }
   function tabLabel(key) {
     return TABS.find(([tab]) => tab === key)?.[1] || key;
