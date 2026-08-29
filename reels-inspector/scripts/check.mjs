@@ -137,18 +137,24 @@ for (const file of graph.keys()) visit(file);
 const generatedPath = path.join(root, 'ri-retry.user.js');
 const statusPath = path.join(root, 'STATUS.md');
 const workTrackPath = path.join(root, 'WORK_TRACK.md');
+const preservationPath = path.join(root, 'PRESERVATION_BASELINE.md');
 const versionPath = path.join(srcRoot, 'version.js');
 const generated = await readFile(generatedPath, 'utf8');
 const statusText = await readFile(statusPath, 'utf8');
 const workTrackText = await readFile(workTrackPath, 'utf8');
+const preservationText = await readFile(preservationPath, 'utf8');
 const versionText = await readFile(versionPath, 'utf8');
 const sourceVersion = versionText.match(/VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1];
+const sourceUpdateUrl = versionText.match(/UPDATE_URL\s*=\s*['"]([^'"]+)['"]/)?.[1];
 const generatedVersion = generated.match(/^\/\/ @version\s+([^\s]+)\s*$/m)?.[1];
 const generatedBuildVersion = generated.match(/^\/\/ Build version:\s*([^\s]+)\s*$/m)?.[1];
+const generatedUpdateUrl = generated.match(/^\/\/ @updateURL\s+([^\s]+)\s*$/m)?.[1];
+const generatedDownloadUrl = generated.match(/^\/\/ @downloadURL\s+([^\s]+)\s*$/m)?.[1];
 const statusVersion = statusText.match(/버전:\s*\*\*v([^*]+)\*\*/)?.[1];
 const workTrackVersion = workTrackText.match(/Current version:\s*\*\*v([^*]+)\*\*/)?.[1];
 
 if (!sourceVersion) errors.push('src/version.js: missing VERSION');
+if (!sourceUpdateUrl) errors.push('src/version.js: missing UPDATE_URL');
 if (!generatedVersion) errors.push('ri-retry.user.js: missing @version');
 if (!generated.includes('// GENERATED FILE — DO NOT EDIT DIRECTLY.')) errors.push('ri-retry.user.js: generated warning missing; run npm run build');
 if (sourceVersion && generatedVersion && sourceVersion !== generatedVersion) errors.push(`version mismatch: source=${sourceVersion}, generated=${generatedVersion}`);
@@ -156,6 +162,10 @@ if (sourceVersion && generatedBuildVersion && sourceVersion !== generatedBuildVe
 if (generatedVersion && statusVersion && generatedVersion !== statusVersion) errors.push(`version mismatch: generated=${generatedVersion}, STATUS=${statusVersion}`);
 if (!workTrackVersion) errors.push('WORK_TRACK.md: missing Current version');
 if (sourceVersion && workTrackVersion && sourceVersion !== workTrackVersion) errors.push(`version mismatch: source=${sourceVersion}, WORK_TRACK=${workTrackVersion}`);
+if (sourceUpdateUrl && generatedUpdateUrl !== sourceUpdateUrl) errors.push(`update URL mismatch: source=${sourceUpdateUrl}, @updateURL=${generatedUpdateUrl || 'missing'}`);
+if (sourceUpdateUrl && generatedDownloadUrl !== sourceUpdateUrl) errors.push(`download URL mismatch: source=${sourceUpdateUrl}, @downloadURL=${generatedDownloadUrl || 'missing'}`);
+if (!generated.includes('ri32-update-shortcut') || !generated.includes('업데이트 바로가기')) errors.push('ri-retry.user.js: preserved update shortcut missing');
+if (!preservationText.includes('RI Panel의 업데이트 바로가기')) errors.push('PRESERVATION_BASELINE.md: update shortcut preservation rule missing');
 
 const requiredWorkSections = [
   '# 2. Current Objective',
