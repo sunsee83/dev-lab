@@ -1,9 +1,12 @@
 const CACHE_KEY = 'ri311:items:v1';
+const SNAP_KEY = 'ri311:snap:v1';
+const POST_KEY = 'ri311:posts:v1';
+const WATCH_KEYS = [CACHE_KEY, SNAP_KEY, POST_KEY];
 
 export function createLegacyStoreAdapter({ env = globalThis } = {}) {
-  function readItems() {
+  function readStore(key) {
     try {
-      const raw = env.localStorage?.getItem(CACHE_KEY);
+      const raw = env.localStorage?.getItem(key);
       const parsed = raw ? JSON.parse(raw) : null;
       return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
@@ -11,9 +14,17 @@ export function createLegacyStoreAdapter({ env = globalThis } = {}) {
     }
   }
 
+  function readRaw(key) {
+    try {
+      return String(env.localStorage?.getItem(key) || '');
+    } catch {
+      return '';
+    }
+  }
+
   function getItem(shortcode) {
     if (!shortcode) return null;
-    return readItems()[shortcode] || null;
+    return readStore(CACHE_KEY)[shortcode] || null;
   }
 
   function getPost(shortcode) {
@@ -59,7 +70,97 @@ export function createLegacyStoreAdapter({ env = globalThis } = {}) {
     };
   }
 
-  return { getItem, getPost, getCurrentIdentity, codeFromUrl };
+  function getSnapshots(shortcode) {
+    const list = readStore(SNAP_KEY)[shortcode];
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((entry) => ({ t: Number(entry?.t), v: Number(entry?.v) }))
+      .filter((entry) => Number.isFinite(entry.t) && entry.t > 0 && Number.isFinite(entry.v) && entry.v > 0);
+  }
+
+  function getAccountPosts(username) {
+    const owner = String(username || '').toLowerCase();
+    if (!owner) return [];
+    return Object.values(readStore(POST_KEY))
+      .filter((entry) => entry && String(entry.owner || '').toLowerCase() === owner)
+      .map((entry) => ({
+        code: String(entry.code || ''),
+        owner,
+        views: Number(entry.views),
+        t: Number(entry.t)
+      }))
+      .filter((entry) => entry.code && Number.isFinite(entry.views) && entry.views > 0 && Number.isFinite(entry.t) && entry.t > 0);
+  }
+
+  function createChangeTracker(listener, { delayMs = 360 } = {}) {
+    if (typeof listener !== 'function') return { schedule() {}, checkNow() {}, destroy() {} };
+    const last = new Map(WATCH_KEYS.map((key) => [key, readRaw(key)]));
+    let timer = 0;
+    let destroyed = false;
+    let pendingReason = '';
+
+    const checkNow = (reason = pendingReason || 'check') => {
+      if (destroyed) return false;
+      if (timer) {
+        (env.clearTimeout || clearTimeout)(timer);
+        timer = 0;
+      }
+      pendingReason = '';
+      const changedKeys = [];
+      for (const key of WATCH_KEYS) {
+        const raw = readRaw(key);
+        if (raw === last.get(key)) continue;
+        last.set(key, raw);
+        changedKeys.push(key);
+      }
+      if (!changedKeys.length) return false;
+      listener({ reason, changedKeys });
+      return true;
+    };
+
+    const schedule = (reason = 'activity') => {
+      if (destroyed) return;
+      pendingReason = reason;
+      if (timer) return;
+      const setTimer = env.setTimeout || setTimeout;
+      timer = setTimer(() => {
+        timer = 0;
+        checkNow(pendingReason || reason);
+      }, Math.max(0, Number(delayMs) || 0));
+    };
+
+    const onStorage = (event) => {
+      if (event?.key && !WATCH_KEYS.includes(event.key)) return;
+      checkNow('storage');
+    };
+    const onFocus = () => schedule('focus');
+    const onPageShow = () => schedule('pageshow');
+    env.addEventListener?.('storage', onStorage, true);
+    env.addEventListener?.('focus', onFocus, true);
+    env.addEventListener?.('pageshow', onPageShow, true);
+
+    const destroy = () => {
+      if (destroyed) return;
+      destroyed = true;
+      if (timer) (env.clearTimeout || clearTimeout)(timer);
+      timer = 0;
+      env.removeEventListener?.('storage', onStorage, true);
+      env.removeEventListener?.('focus', onFocus, true);
+      env.removeEventListener?.('pageshow', onPageShow, true);
+    };
+
+    return { schedule, checkNow, destroy };
+  }
+
+  return {
+    getItem,
+    getPost,
+    getCurrentIdentity,
+    getSnapshots,
+    getAccountPosts,
+    createChangeTracker,
+    codeFromUrl
+  };
 }
 
 export function codeFromUrl(url) {
