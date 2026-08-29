@@ -1098,24 +1098,33 @@
 
   // src/ui/toast.js
   var TOAST_ID = "ri32-toast";
+  var DEDUPE_WINDOW_MS = 1400;
   var timer = 0;
+  var lastText = "";
+  var lastShownAt = 0;
   function showToast(doc, text, duration = 2400) {
-    if (!doc?.documentElement || !text) return;
+    if (!doc?.documentElement || !text) return false;
+    const value = String(text);
+    const now = Date.now();
     const old = doc.getElementById(TOAST_ID);
+    if (old && value === lastText && now - lastShownAt < DEDUPE_WINDOW_MS) return false;
     if (old) old.remove();
     if (timer) clearTimeout(timer);
     const toast = doc.createElement("div");
     toast.id = TOAST_ID;
-    toast.textContent = String(text);
+    toast.textContent = value;
     doc.documentElement.appendChild(toast);
+    lastText = value;
+    lastShownAt = now;
     timer = setTimeout(() => {
       timer = 0;
       toast.remove();
     }, duration);
+    return true;
   }
   function showResult(doc, result2) {
-    if (!result2 || result2.code === "cancelled") return;
-    showToast(doc, result2.message || (result2.ok ? "완료했습니다." : "작업을 완료하지 못했습니다."));
+    if (!result2 || result2.code === "cancelled") return false;
+    return showToast(doc, result2.message || (result2.ok ? "완료했습니다." : "작업을 완료하지 못했습니다."));
   }
 
   // src/ui/grid.js
