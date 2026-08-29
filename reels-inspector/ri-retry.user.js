@@ -1224,10 +1224,7 @@
       menu.appendChild(button);
     }
     async function downloadSingle(request) {
-      showToast(doc, "저장 준비 중…");
-      const result2 = await downloads2.download(request);
-      showResult(doc, result2);
-      return result2;
+      return downloads2.download(request);
     }
     async function downloadCarousel(shortcode, images) {
       const requests = images.map((url, index) => ({
@@ -1236,10 +1233,7 @@
         url,
         slideIndex: index + 1
       }));
-      showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
-      const result2 = await downloads2.downloadBatch(requests);
-      showResult(doc, result2);
-      return result2;
+      return downloads2.downloadBatch(requests);
     }
     function positionMenu(menu, trigger) {
       const rect = trigger.getBoundingClientRect();
