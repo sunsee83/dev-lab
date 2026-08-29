@@ -8,11 +8,11 @@
 
 - 실행 환경: **Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹**
 - 배포 파일: `ri-retry.user.js`
-- 현재 배포 버전: **v3.2.3**
+- 현재 배포 버전: **v3.2.4**
 - 개발 원본: **`src/*`**
 - 배포 방식: 단일 self-contained userscript
 - runtime `@require` hotfix chain 없음
-- 현재 단계: **v3.2 UI/Foundation + Contextual Mobile Research Workspace 전환 + Data migration 준비**
+- 현재 단계: **v3.2 Contextual Mobile Research Workspace + Feedback/Activity + Data migration 준비**
 - Grid는 **Frozen UI + 누적 개선 원칙** 적용
 
 현재 UI 관련 기준 문서:
@@ -42,23 +42,31 @@ WORK_TRACK.md            = 지금 구현할 순서
 - legacy read adapter + store fingerprint live binding
 - Metrics Engine owner
 - RI Summary의 ER / 24h / 계정 대비
-- Global RI entry point / 6-tab Foundation panel
+- Global RI entry point / CONTENT 6-tab IA
 - Grid media action migration
 - 업데이트 바로가기 복구 + preservation gate
 - `UI_BASELINE.md` / `UI_ARCHITECTURE.md`
 - UI 공용 primitive owner
 - Workspace state owner
 - Layout Manager foundation
+- v3.1 RI launcher visual restoration source
+- Contextual bottom Research Workspace source
+- CONTENT / GLOBAL presentation split
+- Activity Store / Activity Indicator
+- Carousel batch progress
+- persistent actionable download error → Settings 연결
+- RI Settings presentation owner 분리
 
 아직 migration/실기기 검증 필요:
 
-- 기존 Reel RI visual identity를 Global Launcher로 복원
-- right floating Foundation panel → mobile Research Workspace
+- Global RI launcher actual Android Edge 위치/충돌
+- Contextual Research Workspace actual mobile usability
+- Activity global/Workspace feedback actual visibility/touch flow
 - Reel current identity/native metrics 정확도
 - Reel Overlay → Metrics owner 통합
 - Identity / Extractor / Verified Store / common `media[]`
 - photo/cover 지정폴더 cross-origin 저장 실기기 결과
-- Carousel batch 실기기 결과
+- Carousel batch 실제 destination/progress 결과
 
 ### 이미 확보한 v3.1 개선사항 — 계속 보존
 
@@ -143,6 +151,7 @@ STT / OCR / AI 파이프라인
 - Global RI / Research Workspace
 - 공용 설정
 - 공통 Download Manager
+- 공통 Activity/Feedback lifecycle
 - 정렬/필터
 - 로컬 snapshot/history
 - 분석 서버 요청/결과 표시
@@ -232,6 +241,7 @@ UI / Download Manager / Analysis Request
 10. 지정폴더 실패 시 silent fallback 금지
 11. UI는 storage/network/metric formula를 직접 소유하지 않음
 12. 장기적으로 UI는 parser 대신 `ResearchReadModel`만 읽음
+13. async progress/error를 각 UI가 별도 boolean/toast state로 복제하지 않고 Activity owner를 사용
 
 ---
 
@@ -571,7 +581,8 @@ Carousel video child도 최종 `media[]`에서 별도 video media로 처리합�
 - 실제 touch target 약 44×44px
 - 우측 하단 thumb zone
 - safe-area / bottom nav / app banner / Reel right rail 충돌 시 Layout Manager가 이동
-- 현재 v3.2.3 임시 막대+돋보기 icon은 최종 baseline이 아니며 UI-C에서 교체
+- 현재 source는 34px low-opacity circle + 44px touch target으로 기존 RI visual identity를 복원
+- Android Edge actual parity는 실기기 확인 전
 
 Grid media action과 역할을 분리합니다.
 
@@ -594,7 +605,7 @@ CLOSED
 - close 항상 접근 가능
 - drag는 보조, 명시적 expand/collapse control 제공
 - browser Back/history 임의 가로채기 금지
-- header/tab sticky, body만 scroll
+- header/tab/footer는 body scroll과 분리
 
 ## 13.1 CONTENT context
 
@@ -660,7 +671,7 @@ ER 0.55%
 
 ---
 
-# 15. 공통 Download Manager
+# 15. 공통 Download Manager / Activity
 
 ```text
 Grid / Workspace
@@ -668,10 +679,12 @@ Grid / Workspace
 Media Action
       ↓
 Download Manager
-      ↓
-Destination Policy
-      ↓
-지정 폴더 / 기본 Downloads / 매번 선택
+      ├ Destination Policy
+      └ Activity Event
+             ↓
+        Activity Store
+             ↓
+      Indicator / Toast
 ```
 
 모든 media에 같은 전역 정책:
@@ -698,6 +711,26 @@ Destination Policy
 
 - 지원 capability가 있을 때만
 - Carousel batch는 destination 1회 선택 후 전체 사용
+
+## Activity
+
+공통 상태:
+
+```text
+running | success | error
+progress { current, total }
+persistent
+action/actionLabel
+```
+
+- Carousel `1/N ... N/N 저장 중`
+- success/non-actionable error는 transient toast
+- 같은 toast 단시간 중복 억제
+- directory/permission/picker 계열 사용자가 조치할 오류는 persistent
+- `설정 열기` action으로 RI Settings 연결
+- Workspace open 시 같은 Activity view를 Workspace host로 이동
+- launcher badge는 근거가 있을 때만 추가
+- 향후 STT/OCR/AI job도 같은 Activity model 재사용
 
 플랫폼명으로 기능을 하드코딩하지 않고 runtime API/permission으로 판단합니다.
 
@@ -816,31 +849,27 @@ ri-retry.user.js
 - 새 기능을 legacy에 추가하지 않음
 - 새 owner로 이동한 책임은 검증 후 legacy 구현 제거
 
-현재 UI foundation의 실제 owner:
+현재 UI/Foundation의 실제 owner:
 
 ```text
+core/
+└ activity.js
+
 ui/
+├ activity-indicator.js
 ├ grid.js
 ├ layout.js
 ├ workspace-state.js
+├ research-workspace.js
 ├ ri-primitives.js
 ├ ri-panel.js
+├ ri-settings.js
 ├ ri-summary.js
 ├ toast.js
 └ styles.js
 ```
 
-향후 책임이 실제 커질 때만:
-
-```text
-ui-root.js
-launcher.js
-research-workspace.js
-workspace-navigation.js
-reel.js
-```
-
-등으로 분리합니다. 빈 tab 파일/placeholder를 미리 만들지 않습니다.
+빈 tab 파일/placeholder를 미리 만들지 않습니다. 실제 책임이 커질 때만 분리합니다.
 
 ## UI Read Model 목표
 
@@ -880,16 +909,17 @@ ResearchReadModel
 
 1. source-of-truth/build gate — 완료
 2. capability / Settings Store / Download Manager — 완료
-3. Global RI Foundation + 6-tab shell — 완료
+3. Global RI Foundation / CONTENT 6-tab IA — 완료
 4. Grid save action → common manager — 활성
 5. Metrics Engine + RI Summary — 활성
 6. update shortcut preservation — 완료
 7. UI baseline/architecture — 완료
-8. UI primitive + Workspace State + Layout foundation — 구현 완료, 실기기 검증 전
-9. 기존 Reel RI visual의 Global Launcher — 다음 UI-C
-10. Mobile Contextual Workspace — UI-D
-11. Reel identity/native metrics + overlay — UI-F
-12. Data Engine migration — 이후
+8. UI primitive + Workspace State + Layout foundation — source 완료, 실기기 검증 전
+9. 기존 Reel RI visual의 Global Launcher — source 완료, 실기기 검증 전
+10. Mobile Contextual Workspace — source 완료, 실기기 검증 전
+11. Feedback / Activity — source 완료, 실기기 검증 전
+12. Reel identity/native metrics + Metrics Overlay — 다음 UI-F
+13. Data Engine migration — 이후
 
 ## v3.3 — Content Types
 
