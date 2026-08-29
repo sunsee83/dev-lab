@@ -718,6 +718,88 @@
     return { ok: false, result: { ok: false, code, destinationMode, folderName, message, error } };
   }
 
+  // src/metrics/metrics.js
+  function createMetricsEngine({ history: history2, now = () => Date.now() } = {}) {
+    return {
+      summarize(post) {
+        if (!post?.shortcode) return emptySummary();
+        const engagementRate = calculateEngagementRate({
+          views: post.views,
+          likes: post.likes,
+          comments: post.comments,
+          reposts: post.reposts
+        });
+        const growth24h = calculateGrowth24h({
+          views: post.views,
+          snapshots: history2?.getSnapshots?.(post.shortcode) || [],
+          now: now()
+        });
+        const accountMultiple = calculateAccountMultiple({
+          shortcode: post.shortcode,
+          username: post.username,
+          views: post.views,
+          posts: history2?.getAccountPosts?.(post.username) || []
+        });
+        return { engagementRate, growth24h, accountMultiple };
+      }
+    };
+  }
+  function calculateEngagementRate({ views, likes, comments, reposts, requireComplete = true } = {}) {
+    const viewCount = positiveNumber(views);
+    if (viewCount == null) return void 0;
+    const raw = [likes, comments, reposts];
+    const values = raw.map(nonNegativeNumber);
+    if (requireComplete && values.some((value) => value == null)) return void 0;
+    const known = values.filter((value) => value != null);
+    if (!known.length) return void 0;
+    const total = known.reduce((sum, value) => sum + value, 0);
+    if (!requireComplete && total <= 0) return void 0;
+    return total / viewCount * 100;
+  }
+  function calculateGrowth24h({ views, snapshots, now = Date.now(), minAgeMs = 18 * 60 * 60 * 1e3, maxAgeMs = 32 * 60 * 60 * 1e3 } = {}) {
+    const current = positiveNumber(views);
+    if (current == null || !Array.isArray(snapshots)) return void 0;
+    let best = null;
+    let bestDelta = Infinity;
+    const targetAge = 24 * 60 * 60 * 1e3;
+    for (const snapshot of snapshots) {
+      const timestamp = positiveNumber(snapshot?.t);
+      const previous = positiveNumber(snapshot?.v);
+      if (timestamp == null || previous == null) continue;
+      const age = Number(now) - timestamp;
+      if (!Number.isFinite(age) || age < minAgeMs || age > maxAgeMs) continue;
+      const delta = Math.abs(age - targetAge);
+      if (delta >= bestDelta) continue;
+      best = previous;
+      bestDelta = delta;
+    }
+    if (best == null || current < best) return void 0;
+    return (current - best) / best * 100;
+  }
+  function calculateAccountMultiple({ shortcode, username, views, posts, maxRecent = 20, minSamples = 5 } = {}) {
+    const current = positiveNumber(views);
+    const owner = String(username || "").toLowerCase();
+    if (current == null || !owner || !Array.isArray(posts)) return void 0;
+    const samples = posts.filter((entry) => entry && String(entry.code || "") !== String(shortcode || "")).filter((entry) => String(entry.owner || "").toLowerCase() === owner).map((entry) => ({ views: positiveNumber(entry.views), t: Number(entry.t) })).filter((entry) => entry.views != null && Number.isFinite(entry.t)).sort((a, b) => b.t - a.t).slice(0, Math.max(1, Number(maxRecent) || 20));
+    if (samples.length < Math.max(1, Number(minSamples) || 5)) return void 0;
+    const values = samples.map((entry) => entry.views).sort((a, b) => a - b);
+    const mid = Math.floor(values.length / 2);
+    const median = values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+    return median > 0 ? current / median : void 0;
+  }
+  function emptySummary() {
+    return { engagementRate: void 0, growth24h: void 0, accountMultiple: void 0 };
+  }
+  function positiveNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : void 0;
+  }
+  function nonNegativeNumber(value) {
+    if (value == null || value === "") return void 0;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : void 0;
+  }
+
   // src/migration/legacy-store-adapter.js
   var CACHE_KEY = "ri311:items:v1";
   var SNAP_KEY = "ri311:snap:v1";
@@ -2484,21 +2566,21 @@
       return "";
     }
     function reelContext() {
-      var video = activeVideo(), r, code = "", metrics, owner, candidates = [], keys;
+      var video = activeVideo(), r, code = "", metrics2, owner, candidates = [], keys;
       if (!video) return null;
       r = video.getBoundingClientRect();
       if (Math.min(innerHeight, r.bottom) - Math.max(0, r.top) < innerHeight * 0.55) return null;
       if (isReelUrl(location.href)) code = codeFromUrl2(location.href);
       if (!code) code = mappedCode(video);
-      metrics = nativeMetrics();
+      metrics2 = nativeMetrics();
       owner = visibleUsername();
       if (!code) {
         keys = Object.keys(items);
         keys.forEach(function(key) {
           var d = items[key], score = 0, likes = fieldValue2(d, "likes"), comments = fieldValue2(d, "comments");
           if (owner && fieldValue2(d, "owner") === owner) score += 10;
-          if (metrics.likes != null && likes != null && Math.abs(metrics.likes - likes) <= Math.max(2, metrics.likes * 0.04)) score += 8;
-          if (metrics.comments != null && comments != null && Math.abs(metrics.comments - comments) <= Math.max(2, metrics.comments * 0.04)) score += 8;
+          if (metrics2.likes != null && likes != null && Math.abs(metrics2.likes - likes) <= Math.max(2, metrics2.likes * 0.04)) score += 8;
+          if (metrics2.comments != null && comments != null && Math.abs(metrics2.comments - comments) <= Math.max(2, metrics2.comments * 0.04)) score += 8;
           if (score >= 18) candidates.push({ code: key, score });
         });
         candidates.sort(function(a, b) {
@@ -2512,7 +2594,7 @@
         pageUrl: "https://www.instagram.com/reel/" + code + "/",
         canonicalUrl: "https://www.instagram.com/reel/" + code + "/"
       }, "dom", "high");
-      return { video, code: code || "", native: metrics, owner, status: code ? "IDENTIFIED" : "IDENTIFYING" };
+      return { video, code: code || "", native: metrics2, owner, status: code ? "IDENTIFIED" : "IDENTIFYING" };
     }
     function ensureOverlay() {
       var box = document.getElementById("ri3-reels-overlay");
@@ -3126,12 +3208,20 @@
     }
   });
   var legacyStore = createLegacyStoreAdapter({ env: globalThis });
-  app.services = { capabilities, settings, downloads };
+  var metrics = createMetricsEngine({ history: legacyStore });
+  var storeTracker = legacyStore.createChangeTracker((change) => {
+    app.setCurrentIdentity(legacyStore.getCurrentIdentity());
+    app.emit(EVENTS.STORE_CHANGED, change);
+  });
+  app.services = { capabilities, settings, downloads, metrics };
   app.adapters.legacyStore = legacyStore;
   var stopRouteTracking = app.startRouteTracking({
     env: globalThis,
     resolveIdentity(url) {
       return legacyStore.getCurrentIdentity(url);
+    },
+    onActivity(reason) {
+      storeTracker.schedule(reason);
     }
   });
   var grid = mountGridActions({ app, adapter: legacyStore, downloads, capabilities, doc: document, env: globalThis });
@@ -3140,12 +3230,14 @@
     settings,
     capabilities,
     downloads,
+    metrics,
     adapter: legacyStore,
     version: VERSION,
     doc: document,
     env: globalThis
   });
   app.adapters.stopRouteTracking = stopRouteTracking;
+  app.adapters.stopStoreTracking = () => storeTracker.destroy();
   app.adapters.grid = grid;
   app.adapters.riPanel = riPanel;
   void settings.init().catch((error) => {
