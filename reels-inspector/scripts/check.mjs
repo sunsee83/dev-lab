@@ -65,10 +65,7 @@ for (const file of sourceFiles) {
   const isLegacy = relative === 'src/legacy-runtime.js';
   const lineCount = source.split(/\r?\n/).length;
 
-  if (!isLegacy && /(^|[-_.])(old|backup|hotfix|final\d*|copy)([-_.]|$)/i.test(name)) {
-    addError(file, 'forbidden migration/backup-style filename');
-  }
-
+  if (!isLegacy && /(^|[-_.])(old|backup|hotfix|final\d*|copy)([-_.]|$)/i.test(name)) addError(file, 'forbidden migration/backup-style filename');
   if (!isLegacy && lineCount > 500) addError(file, `${lineCount} lines; source files over 500 lines require an explicit split`);
   else if (!isLegacy && lineCount > 350) addWarning(file, `${lineCount} lines; review responsibility split`);
 
@@ -78,28 +75,15 @@ for (const file of sourceFiles) {
     if (/\bnavigator\.clipboard\b|\bexecCommand\s*\(\s*['"]copy['"]/.test(source)) addError(file, 'UI must use core/clipboard.js instead of implementing clipboard fallback');
     if (/Instagram_/.test(source)) addError(file, 'UI must not own default media filename construction');
   }
+  if (relative.startsWith('src/metrics/') && /\b(?:document|window|MutationObserver|querySelector|getBoundingClientRect)\b/.test(source)) addError(file, 'metrics must remain DOM-independent');
+  if (relative.startsWith('src/store/') && (/from\s+["'][^"']*\/ui\//.test(source) || /import\s+["'][^"']*\/ui\//.test(source))) addError(file, 'store must not import UI');
+  if (!isLegacy && /\b(?:old|prev)\w*\s*=\s*\w+\s*;[\s\S]{0,500}?\b\w+\s*=\s*function\b/i.test(source)) addWarning(file, 'possible override-stack pattern; prefer owner API replacement');
 
-  if (relative.startsWith('src/metrics/')) {
-    if (/\b(?:document|window|MutationObserver|querySelector|getBoundingClientRect)\b/.test(source)) addError(file, 'metrics must remain DOM-independent');
-  }
-
-  if (relative.startsWith('src/store/')) {
-    if (/from\s+["'][^"']*\/ui\//.test(source) || /import\s+["'][^"']*\/ui\//.test(source)) addError(file, 'store must not import UI');
-  }
-
-  if (!isLegacy && /\b(?:old|prev)\w*\s*=\s*\w+\s*;[\s\S]{0,500}?\b\w+\s*=\s*function\b/i.test(source)) {
-    addWarning(file, 'possible override-stack pattern; prefer owner API replacement');
-  }
-
-  const imports = importTargets(source)
-    .map((specifier) => resolveImport(file, specifier))
-    .filter(Boolean);
+  const imports = importTargets(source).map((specifier) => resolveImport(file, specifier)).filter(Boolean);
   graph.set(file, imports);
 
   if (!isLegacy) {
-    const lines = source.split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('//'));
+    const lines = source.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('//'));
     for (let i = 0; i <= lines.length - 8; i += 1) {
       const block = lines.slice(i, i + 8).join('\n').replace(/\s+/g, ' ');
       if (block.length < 180) continue;
@@ -120,15 +104,12 @@ const visited = new Set();
 function visit(file, stack = []) {
   if (visiting.has(file)) {
     const start = stack.indexOf(file);
-    const cycle = [...stack.slice(start), file].map(rel).join(' -> ');
-    errors.push(`circular import: ${cycle}`);
+    errors.push(`circular import: ${[...stack.slice(start), file].map(rel).join(' -> ')}`);
     return;
   }
   if (visited.has(file)) return;
   visiting.add(file);
-  for (const next of graph.get(file) || []) {
-    if (graph.has(next)) visit(next, [...stack, file]);
-  }
+  for (const next of graph.get(file) || []) if (graph.has(next)) visit(next, [...stack, file]);
   visiting.delete(file);
   visited.add(file);
 }
@@ -176,39 +157,14 @@ if (sourceUpdateUrl && generatedDownloadUrl !== sourceUpdateUrl) errors.push(`do
 if (!generated.includes('ri32-update-shortcut') || !generated.includes('업데이트 바로가기')) errors.push('ri-retry.user.js: preserved update shortcut missing');
 if (!preservationText.includes('RI Panel/Research Sheet의 큰 업데이트 바로가기')) errors.push('PRESERVATION_BASELINE.md: update shortcut preservation rule missing');
 
-const requiredUiSections = [
-  '# 4. 전역 RI Launcher',
-  '# 5. Grid — Frozen UI 유지',
-  '# 6. Reel Overlay',
-  '# 7. RI Research Sheet — 모바일 상세 조사 UI',
-  '# 17. 현재 v3.2.3과 Target 비교',
-  '# 19. UI Upgrade Migration Plan',
-  '# 20. UI Definition of Done'
-];
-for (const heading of requiredUiSections) {
-  if (!uiBaselineText.includes(heading)) errors.push(`UI_BASELINE.md: required section missing: ${heading}`);
-}
+const requiredUiSections = ['# 4. 전역 RI Launcher','# 5. Grid — Frozen UI 유지','# 6. Reel Overlay','# 7. RI Research Sheet — 모바일 상세 조사 UI','# 17. 현재 v3.2.3과 Target 비교','# 19. UI Upgrade Migration Plan','# 20. UI Definition of Done'];
+for (const heading of requiredUiSections) if (!uiBaselineText.includes(heading)) errors.push(`UI_BASELINE.md: required section missing: ${heading}`);
 if (!uiBaselineText.includes('기존 Reel RI')) errors.push('UI_BASELINE.md: preserved Reel RI visual identity rule missing');
 if (!uiBaselineText.includes('업데이트 바로가기')) errors.push('UI_BASELINE.md: update shortcut rule missing');
 if (!uiBaselineText.includes('UI-3 — Mobile Research Workspace — source 완료')) errors.push('UI_BASELINE.md: UI-D source checkpoint not reflected');
 
-const requiredUiArchitectureSections = [
-  '# 2. 5-Layer UI Model',
-  '# 3. Context Model',
-  '# 4. Single UI Root',
-  '# 5. Workspace State Machine',
-  '# 6. Route / Identity Change Policy',
-  '# 7. Workspace Navigation',
-  '# 10. Layout Manager',
-  '# 16. Feedback & Activity Layer',
-  '# 19. UI Read Model Boundary',
-  '# 20. UI State Ownership',
-  '# 22. Migration Plan',
-  '# 23. Acceptance / Definition of Done'
-];
-for (const heading of requiredUiArchitectureSections) {
-  if (!uiArchitectureText.includes(heading)) errors.push(`UI_ARCHITECTURE.md: required section missing: ${heading}`);
-}
+const requiredUiArchitectureSections = ['# 2. 5-Layer UI Model','# 3. Context Model','# 4. Single UI Root','# 5. Workspace State Machine','# 6. Route / Identity Change Policy','# 7. Workspace Navigation','# 10. Layout Manager','# 16. Feedback & Activity Layer','# 19. UI Read Model Boundary','# 20. UI State Ownership','# 22. Migration Plan','# 23. Acceptance / Definition of Done'];
+for (const heading of requiredUiArchitectureSections) if (!uiArchitectureText.includes(heading)) errors.push(`UI_ARCHITECTURE.md: required section missing: ${heading}`);
 if (!uiArchitectureText.includes('CONTENT') || !uiArchitectureText.includes('GLOBAL')) errors.push('UI_ARCHITECTURE.md: context modes missing');
 if (!uiArchitectureText.includes('CLOSED') || !uiArchitectureText.includes('COMPACT') || !uiArchitectureText.includes('EXPANDED')) errors.push('UI_ARCHITECTURE.md: workspace state machine markers missing');
 if (!uiArchitectureText.includes('active tab만 mount')) errors.push('UI_ARCHITECTURE.md: active-tab lazy mount rule missing');
@@ -219,42 +175,28 @@ if (!workTrackText.includes('UI_ARCHITECTURE.md')) errors.push('WORK_TRACK.md: U
 if (!workTrackText.includes('UI-B — Primitive + Layout + Workspace State Foundation')) errors.push('WORK_TRACK.md: UI-B checkpoint missing');
 if (!workTrackText.includes('UI-C — Global RI Launcher visual restoration')) errors.push('WORK_TRACK.md: UI-C checkpoint missing');
 if (!workTrackText.includes('UI-D — Contextual Research Workspace')) errors.push('WORK_TRACK.md: UI-D checkpoint missing');
-if (!workTrackText.includes('UI-E — Feedback / Activity — 다음 작업')) errors.push('WORK_TRACK.md: next UI-E execution step missing');
+if (!workTrackText.includes('UI-E — Feedback / Activity — source 완료')) errors.push('WORK_TRACK.md: UI-E checkpoint missing');
+if (!workTrackText.includes('UI-F — Reel identity + Metrics Overlay — 다음 작업')) errors.push('WORK_TRACK.md: next UI-F execution step missing');
 
-const requiredUiFiles = [
-  'src/ui/ri-primitives.js',
-  'src/ui/layout.js',
-  'src/ui/workspace-state.js',
-  'src/ui/research-workspace.js'
-];
+const requiredUiFiles = ['src/ui/ri-primitives.js','src/ui/layout.js','src/ui/workspace-state.js','src/ui/research-workspace.js','src/core/activity.js','src/ui/activity-indicator.js','src/ui/ri-settings.js'];
 const sourceRelative = new Set(sourceFiles.map(rel));
-for (const filename of requiredUiFiles) {
-  if (!sourceRelative.has(filename)) errors.push(`${filename}: required UI owner missing`);
-}
+for (const filename of requiredUiFiles) if (!sourceRelative.has(filename)) errors.push(`${filename}: required UI/Foundation owner missing`);
 
-const workspaceSource = sourceRelative.has('src/ui/research-workspace.js')
-  ? await readFile(path.join(root, 'src/ui/research-workspace.js'), 'utf8')
-  : '';
+const workspaceSource = sourceRelative.has('src/ui/research-workspace.js') ? await readFile(path.join(root, 'src/ui/research-workspace.js'), 'utf8') : '';
 if (workspaceSource) {
   if (!workspaceSource.includes('ri32-update-shortcut')) errors.push('src/ui/research-workspace.js: preserved update shortcut slot missing');
   if (!workspaceSource.includes("current.detent === 'expanded'")) errors.push('src/ui/research-workspace.js: compact/expanded binding missing');
   if (!workspaceSource.includes("tabsNode.hidden = !contentMode")) errors.push('src/ui/research-workspace.js: CONTENT/GLOBAL tab policy missing');
+  if (!workspaceSource.includes('ri32-activity-host')) errors.push('src/ui/research-workspace.js: Activity host missing');
 }
 
-const requiredWorkSections = [
-  '# 2. Current Objective',
-  '# 4. Preserve — 건드리면 안 되는 승인 개선',
-  '# 5. Current Known Issues / Unverified',
-  '# 7. Next Execution Order',
-  '# 8. Work Update Protocol',
-  '# 9. Definition of Done for Each Step'
-];
-for (const heading of requiredWorkSections) {
-  if (!workTrackText.includes(heading)) errors.push(`WORK_TRACK.md: required section missing: ${heading}`);
-}
+const activitySource = sourceRelative.has('src/core/activity.js') ? await readFile(path.join(root, 'src/core/activity.js'), 'utf8') : '';
+if (activitySource && (!activitySource.includes("'running'") || !activitySource.includes("'success'") || !activitySource.includes("'error'"))) errors.push('src/core/activity.js: activity lifecycle states missing');
+
+const requiredWorkSections = ['# 2. Current Objective','# 4. Preserve — 건드리면 안 되는 승인 개선','# 5. Current Known Issues / Unverified','# 7. Next Execution Order','# 8. Work Update Protocol','# 9. Definition of Done for Each Step'];
+for (const heading of requiredWorkSections) if (!workTrackText.includes(heading)) errors.push(`WORK_TRACK.md: required section missing: ${heading}`);
 
 if (/^\/\/ @require\s+/m.test(generated)) errors.push('ri-retry.user.js: runtime @require is forbidden');
-
 const rootStat = await stat(generatedPath);
 if (!rootStat.size) errors.push('ri-retry.user.js: generated artifact is empty');
 
