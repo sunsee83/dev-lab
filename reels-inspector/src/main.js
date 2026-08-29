@@ -1,10 +1,12 @@
 import { VERSION } from './version.js';
+import { createActivityStore } from './core/activity.js';
 import { createApp, EVENTS } from './core/app.js';
 import { detectCapabilities } from './core/capability.js';
 import { createSettingsStore } from './store/settings-store.js';
 import { createDownloadManager } from './media/download-manager.js';
 import { createMetricsEngine } from './metrics/metrics.js';
 import { createLegacyStoreAdapter } from './migration/legacy-store-adapter.js';
+import { mountActivityIndicator } from './ui/activity-indicator.js';
 import { mountGridActions } from './ui/grid.js';
 import { createLayoutManager } from './ui/layout.js';
 import { mountRiPanel } from './ui/ri-panel.js';
@@ -13,6 +15,7 @@ import './legacy-runtime.js';
 
 const app = createApp({ version: VERSION });
 const capabilities = detectCapabilities(globalThis);
+const activity = createActivityStore();
 const settings = createSettingsStore({
   env: globalThis,
   capabilities,
@@ -24,8 +27,9 @@ const downloads = createDownloadManager({
   env: globalThis,
   capabilities,
   settings,
-  onChange(state) {
-    app.emit(EVENTS.DOWNLOAD_CHANGED, state);
+  onChange(change) {
+    if (change?.activity) activity.apply(change.activity);
+    app.emit(EVENTS.DOWNLOAD_CHANGED, change);
   }
 });
 const legacyStore = createLegacyStoreAdapter({ env: globalThis });
@@ -36,7 +40,7 @@ const storeTracker = legacyStore.createChangeTracker((change) => {
   app.emit(EVENTS.STORE_CHANGED, change);
 });
 
-app.services = { capabilities, settings, downloads, metrics, workspace };
+app.services = { capabilities, settings, downloads, metrics, workspace, activity };
 app.adapters.legacyStore = legacyStore;
 
 const stopRouteTracking = app.startRouteTracking({
@@ -63,6 +67,14 @@ const riPanel = mountRiPanel({
   doc: document,
   env: globalThis
 });
+const activityIndicator = mountActivityIndicator({
+  activity,
+  workspace,
+  doc: document,
+  onAction(item) {
+    if (item.action === 'open-settings') riPanel.openSettings();
+  }
+});
 
 app.services.layout = layout;
 app.adapters.stopRouteTracking = stopRouteTracking;
@@ -70,6 +82,7 @@ app.adapters.stopStoreTracking = () => storeTracker.destroy();
 app.adapters.stopLayout = () => layout.destroy();
 app.adapters.grid = grid;
 app.adapters.riPanel = riPanel;
+app.adapters.activityIndicator = activityIndicator;
 
 void settings.init().catch((error) => {
   console.warn('[RI] settings initialization failed', error);
