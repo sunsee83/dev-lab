@@ -54,13 +54,17 @@ scope 내부 shortcode
 
 ## Automated Checkpoint
 
-최근 source test/build 단계에서:
+문서 압축 이후 CI checkpoint:
 
 - unit: **32 / 32 pass**
-- build: v3.2.4 생성 성공
-- staged Reel context/overlay tests pass
+- build: **v3.2.4 success**
+- architecture/syntax: **success**
+- source files: **26**
+- architecture warnings: **0**
+- canonical docs: **27,145 bytes**
+- generated userscript: current
 
-직전 CI 실패 원인은 runtime 오류가 아니라 **문서가 v3.2.5로 먼저 올라가 source v3.2.4와 불일치한 것**이었습니다. 문서 체계를 이번 압축에서 `STATUS.md` 단일 version owner로 정리합니다. 최종 green CI가 다시 확인되기 전에는 architecture gate를 성공으로 기록하지 않습니다.
+문서 version drift는 제거했습니다. Runtime version은 이제 `src/version.js ↔ generated userscript ↔ STATUS.md`만 동기화하며, canonical 문서 변경도 CI를 실행합니다.
 
 ## Preserve
 
@@ -111,12 +115,11 @@ Android Edge에서 아직 실제 확인이 필요한 것:
 
 순서를 바꾸면 이 문서를 먼저 수정합니다.
 
-1. **Docs consolidation / CI recovery** — 5 canonical docs로 축소, version drift 제거
-2. **Device gate** — UI-C/D/E + active Reel identity/native metrics 확인
-3. **UI-F2 Reel Overlay replacement** — device evidence 후 new overlay mount → parity 확인 → legacy visual 제거
-4. **UI-G1 Data Engine foundation** — Identity → Extractor → Verified Store → history/media[] owner 이동
-5. **Renderer migration** — Grid/Reel callsite 전환 후 legacy formula/renderer 제거
-6. **Research data** — Content → Comments → Analysis → STT/OCR/AI
+1. **Device gate** — UI-C/D/E + active Reel identity/native metrics 확인
+2. **UI-F2 Reel Overlay replacement** — device evidence 후 new overlay mount → parity 확인 → legacy visual 제거
+3. **UI-G1 Data Engine foundation** — Identity → Extractor → Verified Store → history/media[] owner 이동
+4. **Renderer migration** — Grid/Reel callsite 전환 후 legacy formula/renderer 제거
+5. **Research data** — Content → Comments → Analysis → STT/OCR/AI
 
 Device gate가 막혀 있어도 Data Engine foundation처럼 visual switch와 독립적인 작업은 진행할 수 있습니다. 단 Grid Frozen renderer를 먼저 제거하지 않습니다.
 
