@@ -16,10 +16,13 @@ UI 기준:
 - `unit/foundation.test.mjs` — AppContext/capability/clipboard/settings/download/workspace/layout
 - `unit/migration.test.mjs` — legacy adapter/history/change tracker/media resolver
 - `unit/metrics.test.mjs` — ER/24h/account relative Metrics Engine
+- `unit/reel-context.test.mjs` — Reel shortcode evidence / native count parser / exact media mapping
+- `unit/reel-overlay.test.mjs` — staged Metrics Overlay output / owner / replacement gate
+- `unit/route-identity.test.mjs` — same-URL shared SPA activity identity refresh
 - `unit/ui-launcher.test.mjs` — v3.1 RI icon + 34px visual / 44px touch geometry preservation
 - `unit/ui-workspace.test.mjs` — Bottom Sheet / CONTENT-GLOBAL / Settings owner / Activity host / update preservation
 
-UI-E source checkpoint: **26 tests**.
+UI-F source checkpoint: **32 tests**.
 
 ---
 
@@ -171,7 +174,65 @@ UI-E source checkpoint: **26 tests**.
 
 ---
 
-# 6. Global RI Launcher
+# 6. UI-F Active Reel Context
+
+`migration/reel-context-adapter.js`, `migration/legacy-store-adapter.js`, `core/app.js` 기준:
+
+1. active video는 viewport 가시 영역과 playing state를 근거로 선택
+2. native metrics는 active video 주변의 Reel scope 안에서 읽음
+3. global page 전체 likes/comments/reposts를 current Reel로 간주하지 않음
+4. shortcode evidence priority = scoped Reel link → exact media map → exact Reel route
+5. owner + likes/comments 유사값 fuzzy shortcode 선택 금지
+6. exact media map은 CDN query string 차이를 무시하되 hostname/path가 다른 미디어를 추측하지 않음
+7. `천/만/억`, K/M/B, comma-grouped count parsing
+8. metric missing을 0으로 만들지 않음
+9. same URL DOM activity에서도 current Reel identity refresh 가능
+10. `resolveActivityIdentity()`가 `undefined`이면 현재 identity를 임의 clear하지 않음
+11. shared SPA MutationObserver 1개 유지
+12. Reel context 때문에 second full DOM observer 추가 금지
+
+자동 unit coverage:
+
+- scoped > media > route evidence priority
+- unresolved state
+- Korean/native count parser
+- grouped comma count
+- exact normalized media lookup
+- same-href activity identity update
+- observer count 1 유지
+
+---
+
+# 7. UI-F Staged Metrics Overlay / Replacement Gate
+
+`ui/metric-format.js`, `ui/reel-overlay.js`, `ui/layout.js` 기준:
+
+1. target output = `▶ / ER / 24h / × / date`
+2. missing line은 숨김
+3. views compact format / percent / multiple / short date는 shared formatter 사용
+4. ER/24h/account relative 계산은 `metrics.summarize()`만 사용
+5. overlay 자체 formula 재구현 금지
+6. same output renderKey rewrite 방지
+7. Layout Manager `--ri-reel-overlay-right` 사용 준비
+8. new Reel Overlay에 MutationObserver 금지
+9. existing visual baseline에서 시작
+10. native Instagram actions 삭제/중복 금지
+11. device replacement gate 전 `main.js`에 new overlay mount 금지
+12. device replacement gate 전 `#ri3-reels-overlay` 선제 hide/delete 금지
+13. legacy formula body는 renderer/Data Engine migration regression 전 제거 금지
+
+자동 source guard:
+
+- 5-line output
+- Metrics owner invocation
+- no MutationObserver
+- shared layout variable
+- main에서 staged overlay 미mount
+- legacy overlay 선제 hide 없음
+
+---
+
+# 8. Global RI Launcher
 
 1. v3.1.6 research SVG identity 보존
 2. visual circle 약 34×34
@@ -186,7 +247,7 @@ UI-E source checkpoint: **26 tests**.
 
 ---
 
-# 7. Layout Manager
+# 9. Layout Manager
 
 1. pure `computeLayoutSnapshot` 존재
 2. output = launcherAnchor / reelOverlayLane / sheetMetrics / feedbackAnchor
@@ -196,13 +257,14 @@ UI-E source checkpoint: **26 tests**.
 6. route/resize/orientation/visualViewport triggers
 7. ordinary DOM mutation마다 full layout scan 금지
 8. CSS custom properties shared
-9. sheet compact/expanded height owner는 layout
-10. Feedback global placement는 `feedbackAnchor` 사용
-11. Instagram actual blocker heuristic은 실기기 전 Verified 금지
+9. `--ri-reel-overlay-right`는 reelOverlayLane owner가 제공
+10. sheet compact/expanded height owner는 layout
+11. Feedback global placement는 `feedbackAnchor` 사용
+12. Instagram actual blocker heuristic은 실기기 전 Verified 금지
 
 ---
 
-# 8. Update Preservation
+# 10. Update Preservation
 
 1. 큰 `업데이트 바로가기` 존재
 2. overflow menu 안에만 숨기지 않음
@@ -213,7 +275,7 @@ UI-E source checkpoint: **26 tests**.
 
 ---
 
-# 9. Download Manager
+# 11. Download Manager
 
 1. video/cover/photo/carousel same manager
 2. save mode = global
@@ -229,7 +291,7 @@ UI-E source checkpoint: **26 tests**.
 
 ---
 
-# 10. Metrics
+# 12. Metrics
 
 ## ER
 
@@ -258,7 +320,7 @@ UI-E source checkpoint: **26 tests**.
 
 ---
 
-# 11. Detailed State
+# 13. Detailed State
 
 Grid는 last verified 또는 `-`.
 
@@ -272,52 +334,56 @@ Research Workspace:
 
 ---
 
-# 12. Live Store / Performance
+# 14. Live Store / Performance
 
 1. second full DOM observer 금지
 2. shared SPA observer activity
-3. mutation마다 full JSON parse 금지
-4. legacy raw fingerprint 변경시에만 STORE_CHANGED
-5. delayed event-triggered one-shot
-6. open research view render dedupe
-7. same fingerprint unnecessary render 없음
-8. listener cleanup
-9. layout도 mutation마다 full run 금지
-10. inactive heavy content body 동시 render 금지
-11. Activity same-id progress update로 DOM/state 중복 최소화
+3. same-href Reel identity도 shared observer activity 사용
+4. mutation마다 full JSON parse 금지
+5. legacy raw fingerprint 변경시에만 STORE_CHANGED
+6. delayed event-triggered one-shot
+7. open research view render dedupe
+8. same fingerprint unnecessary render 없음
+9. listener cleanup
+10. layout도 mutation마다 full run 금지
+11. inactive heavy content body 동시 render 금지
+12. Activity same-id progress update로 DOM/state 중복 최소화
 
 ---
 
-# 13. Architecture / Source of Truth
+# 15. Architecture / Source of Truth
 
 1. `src/*` only development source
 2. generated userscript warning
 3. VERSION/UPDATE_URL → `version.js`
-4. route/event/lifecycle → `core/app.js`
+4. route/event/shared SPA activity → `core/app.js`
 5. async activity state → `core/activity.js`
 6. clipboard → `core/clipboard.js`
 7. settings → `store/settings-store.js`
-8. legacy read/history → `migration/legacy-store-adapter.js`
-9. metrics → `metrics/metrics.js`
-10. media/cover/filename → `media/media-resolver.js`
-11. file write/activity emission → `media/download-manager.js`
-12. Workspace state → `ui/workspace-state.js`
-13. Research Workspace DOM shell → `ui/research-workspace.js`
-14. mobile layout → `ui/layout.js`
-15. running/persistent feedback → `ui/activity-indicator.js`
-16. transient toast → `ui/toast.js`
-17. RI primitives → `ui/ri-primitives.js`
-18. RI controller/actions → `ui/ri-panel.js`
-19. RI Settings presentation → `ui/ri-settings.js`
-20. RI summary → `ui/ri-summary.js`
-21. UI storage/FileSystem/network direct 금지
-22. metrics DOM 금지
-23. circular import 금지
-24. new override stack 금지
+8. legacy read/history/exact media lookup → `migration/legacy-store-adapter.js`
+9. active Reel context/native metric evidence → `migration/reel-context-adapter.js`
+10. metrics → `metrics/metrics.js`
+11. media/cover/filename → `media/media-resolver.js`
+12. file write/activity emission → `media/download-manager.js`
+13. Workspace state → `ui/workspace-state.js`
+14. Research Workspace DOM shell → `ui/research-workspace.js`
+15. mobile layout → `ui/layout.js`
+16. metric format → `ui/metric-format.js`
+17. staged Reel Metrics presentation → `ui/reel-overlay.js`
+18. running/persistent feedback → `ui/activity-indicator.js`
+19. transient toast → `ui/toast.js`
+20. RI primitives → `ui/ri-primitives.js`
+21. RI controller/actions → `ui/ri-panel.js`
+22. RI Settings presentation → `ui/ri-settings.js`
+23. RI summary → `ui/ri-summary.js`
+24. UI storage/FileSystem/network direct 금지
+25. metrics DOM 금지
+26. circular import 금지
+27. new override stack 금지
 
 ---
 
-# 14. 파일 / 중복 관리
+# 16. 파일 / 중복 관리
 
 1. private helper first
 2. second real use → owner API 검토
@@ -329,12 +395,13 @@ Research Workspace:
 8. legacy-runtime only migration size exception
 9. workspace state와 workspace DOM shell을 합치지 않음
 10. Settings presentation은 `ri-settings.js` owner
-11. UI-E checkpoint **23 source / 0 warnings**
-12. legacy metric compatibility는 Reel/Grid migration 후 제거
+11. metric display format은 `metric-format.js` owner
+12. UI-F checkpoint target **26 source / 0 warnings**
+13. legacy metric compatibility는 Reel/Grid migration 후 제거
 
 ---
 
-# 15. 실기기 승인 순서
+# 17. 실기기 승인 순서
 
 Android Edge에서 반드시 확인:
 
@@ -353,7 +420,13 @@ Android Edge에서 반드시 확인:
 13. Activity global/Workspace 위치와 가독성
 14. Carousel `N/N 저장 중` 실제 진행 표시
 15. persistent error → `설정 열기` touch flow
-16. Grid 8-slot/no-flicker/cover regression 없음
-17. update shortcut → Tampermonkey install/update flow
+16. vertical Reel 이동 시 active shortcode가 실제 current video와 일치
+17. scoped likes/comments/reposts가 같은 Reel에 결합
+18. exact media URL mapping이 실제 CDN URL에서 동작
+19. staged Metrics output과 current Reel 값 비교
+20. new overlay placement가 rail/caption 침범 없음
+21. replacement 확인 후에만 legacy overlay hide/remove
+22. Grid 8-slot/no-flicker/cover regression 없음
+23. update shortcut → Tampermonkey install/update flow
 
-실기기 확인 전 Android Edge visual/touch behavior를 완료로 기록하지 않습니다.
+실기기 확인 전 Android Edge visual/touch/Reel identity behavior를 완료로 기록하지 않습니다.
