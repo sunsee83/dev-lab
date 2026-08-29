@@ -1,7 +1,7 @@
 import { EVENTS } from '../core/app.js';
 import { copyText } from '../core/clipboard.js';
 import { resolveGridCardMedia } from '../media/media-resolver.js';
-import { showResult, showToast } from './toast.js';
+import { showToast } from './toast.js';
 
 const MENU_ID = 'ri32-grid-menu';
 
@@ -101,10 +101,7 @@ export function mountGridActions({ app, adapter, downloads, capabilities, doc = 
   }
 
   async function downloadSingle(request) {
-    showToast(doc, '저장 준비 중…');
-    const result = await downloads.download(request);
-    showResult(doc, result);
-    return result;
+    return downloads.download(request);
   }
 
   async function downloadCarousel(shortcode, images) {
@@ -114,10 +111,7 @@ export function mountGridActions({ app, adapter, downloads, capabilities, doc = 
       url,
       slideIndex: index + 1
     }));
-    showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
-    const result = await downloads.downloadBatch(requests);
-    showResult(doc, result);
-    return result;
+    return downloads.downloadBatch(requests);
   }
 
   function positionMenu(menu, trigger) {
