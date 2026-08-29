@@ -138,11 +138,13 @@ const generatedPath = path.join(root, 'ri-retry.user.js');
 const statusPath = path.join(root, 'STATUS.md');
 const workTrackPath = path.join(root, 'WORK_TRACK.md');
 const preservationPath = path.join(root, 'PRESERVATION_BASELINE.md');
+const uiBaselinePath = path.join(root, 'UI_BASELINE.md');
 const versionPath = path.join(srcRoot, 'version.js');
 const generated = await readFile(generatedPath, 'utf8');
 const statusText = await readFile(statusPath, 'utf8');
 const workTrackText = await readFile(workTrackPath, 'utf8');
 const preservationText = await readFile(preservationPath, 'utf8');
+const uiBaselineText = await readFile(uiBaselinePath, 'utf8');
 const versionText = await readFile(versionPath, 'utf8');
 const sourceVersion = versionText.match(/VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1];
 const sourceUpdateUrl = versionText.match(/UPDATE_URL\s*=\s*['"]([^'"]+)['"]/)?.[1];
@@ -165,7 +167,23 @@ if (sourceVersion && workTrackVersion && sourceVersion !== workTrackVersion) err
 if (sourceUpdateUrl && generatedUpdateUrl !== sourceUpdateUrl) errors.push(`update URL mismatch: source=${sourceUpdateUrl}, @updateURL=${generatedUpdateUrl || 'missing'}`);
 if (sourceUpdateUrl && generatedDownloadUrl !== sourceUpdateUrl) errors.push(`download URL mismatch: source=${sourceUpdateUrl}, @downloadURL=${generatedDownloadUrl || 'missing'}`);
 if (!generated.includes('ri32-update-shortcut') || !generated.includes('업데이트 바로가기')) errors.push('ri-retry.user.js: preserved update shortcut missing');
-if (!preservationText.includes('RI Panel의 업데이트 바로가기')) errors.push('PRESERVATION_BASELINE.md: update shortcut preservation rule missing');
+if (!preservationText.includes('RI Panel/Research Sheet의 큰 업데이트 바로가기')) errors.push('PRESERVATION_BASELINE.md: update shortcut preservation rule missing');
+
+const requiredUiSections = [
+  '# 4. 전역 RI Launcher',
+  '# 5. Grid — Frozen UI 유지',
+  '# 6. Reel Overlay',
+  '# 7. RI Research Sheet — 모바일 상세 조사 UI',
+  '# 17. 현재 v3.2.3과 Target 비교',
+  '# 19. UI Upgrade Migration Plan',
+  '# 20. UI Definition of Done'
+];
+for (const heading of requiredUiSections) {
+  if (!uiBaselineText.includes(heading)) errors.push(`UI_BASELINE.md: required section missing: ${heading}`);
+}
+if (!uiBaselineText.includes('기존 Reel RI')) errors.push('UI_BASELINE.md: preserved Reel RI visual identity rule missing');
+if (!uiBaselineText.includes('업데이트 바로가기')) errors.push('UI_BASELINE.md: update shortcut rule missing');
+if (!workTrackText.includes('UI_BASELINE.md')) errors.push('WORK_TRACK.md: UI_BASELINE.md reference missing');
 
 const requiredWorkSections = [
   '# 2. Current Objective',
