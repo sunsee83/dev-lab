@@ -4,7 +4,7 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.7**
+- Runtime version: **v3.2.8**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
@@ -12,47 +12,40 @@
 
 ## Current Objective
 
-Instagram 기본 사용 흐름을 방해하지 않고 중요 지표를 빠르게 확인하는 모바일 리서치 확장도구로 정리합니다.
+Instagram 기본 흐름을 방해하지 않고 중요 지표 확인 → 원본 확보 → 상세 리서치로 이어집니다.
 
 ```text
-Grid 빠른 비교
-→ Reel 최소 지표
-→ Research Workspace 상세 확인/원본 확보
-→ Reel overlay replacement
-→ Data Engine
-→ Content/Comments/Analysis
+Grid 비교 → Reel 최소 지표 → Research Workspace → Data Engine → Research data
 ```
 
-위치는 `[기준 영역 · 위치]`로 정의하며 실제 좌표/충돌은 Android gate 전 확정하지 않습니다.
+위치는 `[기준 영역 · 위치]`; 실제 좌표/충돌은 Android gate 전 확정하지 않습니다.
 
 ## Current Source Checkpoint
 
 Runtime/source active:
 
 - AppContext + shared SPA activity
-- Settings Store / Capability / Clipboard
-- Download Manager + Activity Store
+- Settings/Capability/Clipboard + Download/Activity
 - 미디어별 저장 정책: 영상 / 사진·표지 / 슬라이드 (`directory | default | prompt` 독립)
-- Grid quick-save / Global RI launcher / Contextual Bottom Research Workspace
-- CONTENT 6탭 / GLOBAL RI Home / persistent Activity + Toast dedupe
-- **History Store** — 기존 `ri311` snapshot/account history 호환 read API, Metrics owner 연결
-- **Data Engine passive runtime service** — legacy cache sync → Verified Store → common `media[]`
+- Grid quick-save / Global RI / Bottom Research Workspace / CONTENT 6탭
+- **History Store** — `ri311` snapshot/account history read+write owner
+- **Verified Cache Store** — `ri311:items:v1` compatibility cache persistence owner
+- **Data Engine** — Verified Store + common `media[]` + raw `ingest()` + compatibility `ingestPatch()`
+- **legacy capture handoff** — bootstrap seed 후 active `saveItem` write side-effect를 Data Engine으로 위임
 - active Reel context adapter
 
-Staged, writer/visual not switched:
+Staged / not switched:
 
-- `data/engine.js`의 `ingest()`는 준비됐지만 Instagram capture callsite는 아직 legacy runtime
-- common `media[]`: `video | cover | photo | carousel-slide`; Carousel 순서/개수 보존
-- `ui/reel-overlay.js` + `ui/metric-format.js`
-- Grid/Reel renderer는 legacy adapter 유지
-- Android gate 전 새 Reel overlay mount 및 legacy `#ri3-reels-overlay` 선제 제거 금지
+- legacy parser/DOM capture는 아직 payload patch 생성 담당; raw Extractor callsite 전환 전
+- Grid/Reel renderer는 legacy adapter/in-memory compatibility 유지
+- `ui/reel-overlay.js`는 Android gate 전 mount 금지
 
 ## Automated Checkpoint
 
-- unit: **41 / 41 pass**
-- build: **v3.2.7 success**
+- unit: **43 / 43 pass**
+- build: **v3.2.8 success**
 - architecture/syntax: **success**
-- source files: **32**
+- source files: **34**
 - architecture warnings: **0**
 - generated userscript: current
 
@@ -60,47 +53,43 @@ Staged, writer/visual not switched:
 
 ## Preserve
 
-세부 기준은 `BASELINE.md`가 owner입니다. 특히:
+세부 owner=`BASELINE.md`.
 
 - Grid 3열 / 8-slot / no-flicker / Photo·Carousel bogus views 차단
 - actual Video/Reel cover / native media-type icon
-- 기존 Reel RI visual identity와 legacy Reel overlay 선제 삭제 금지
+- 기존 Reel RI visual + legacy overlay 선제 삭제 금지
 - CONTENT 6탭 / 큰 업데이트 바로가기
 - Carousel individual files / no ZIP / prompt destination 1회
-- 지정 폴더 실패 시 silent default fallback 금지
+- 지정폴더 실패 silent fallback 금지
 - missing metric → fabricated zero 금지
-- verified provenance/conflict 보호
-- Carousel `media[]` slide order/count 보존
+- provenance/conflict + Carousel slide order/count 보존
 - one shared SPA observer; 900ms full polling 복귀 금지
 
 ## Unverified / Device
 
-Android Edge에서 아직 실제 확인이 필요한 것:
+Android Edge 실확인 필요:
 
-- Global RI 1개, 34px visual / 44px touch, bottom nav/app banner/Reel rail collision
-- 위치 기준: 전체 화면 / 카드·썸네일 / Reel 영상 / Workspace 내부
-- COMPACT/EXPANDED, CONTENT 6탭, GLOBAL RI Home, keyboard/visualViewport
-- Activity progress/persistent error → Settings
-- vertical Reel active shortcode / scoped native metrics / exact media mapping
+- Global RI 34px visual / 44px touch + bottom nav/app banner/Reel rail collision
+- COMPACT/EXPANDED, CONTENT/GLOBAL, keyboard/visualViewport
+- active Reel shortcode/native metrics/exact media mapping
 - staged Reel Overlay rail/caption placement
 - update shortcut → Tampermonkey
-- 영상 / 사진·표지 / 슬라이드별 mode·폴더 선택 및 복원
-- directory photo/cover CORS / prompt mode / Carousel same destination
-- Grid 3열/8-slot/no-flicker/actual cover regression
+- 영상 / 사진·표지 / 슬라이드별 mode·폴더 선택/복원
+- directory photo/cover CORS / prompt Carousel same destination
+- Grid 3열/8-slot/no-flicker/actual cover
 
-실기기 확인 전 Verified로 기록하지 않습니다.
+실기기 전 Verified 승격 금지.
 
 ## Technical Debt
 
-- **History read owner + common `media[]` + passive Data Engine runtime wiring 완료**
-- Instagram capture/write owner는 아직 legacy runtime; `data.ingest()` callsite 전환 전
-- history write side-effect도 legacy runtime 직접 경로가 남음
-- Grid/Reel legacy renderer와 compatibility metric body 남음
-- `ri-panel.js`가 migration adapter를 직접 읽는 임시 coupling
-- staged Reel overlay runtime replacement 미완료
-- Research Content/Comments/Analysis 실제 data model 미연결
+- **verified cache/history write owner는 Data Engine/Store로 cutover**
+- legacy bootstrap 초기 seed와 payload parser/DOM capture는 남음
+- Grid/Reel renderer와 compatibility metric body 남음
+- `ri-panel.js` migration adapter 직접 coupling
+- staged Reel overlay replacement 미완료
+- Research Content/Comments/Analysis data model 미연결
 
-Research Analysis 예정 구조:
+Analysis 예정:
 
 - 포맷: 문제제기형 / 리스트형 / Before/After / 튜토리얼 / 리뷰 / 스토리 / 비교 / 뉴스·정보
 - 전환 장치: 댓글 유도 / 저장 유도 / 공유 유도 / 프로필 이동 / 링크 클릭 / 구매 / DM
@@ -108,26 +97,20 @@ Research Analysis 예정 구조:
 
 ## Next Execution Order
 
-1. **Device gate** — UI-C/D/E + active Reel identity/native metrics + 저장설정 실기기 확인
-2. **UI-F2 Reel Overlay replacement** — evidence → new overlay mount → parity → legacy visual 제거
-3. **UI-G1 writer cutover** — legacy capture callsite → `data.ingest()` / History Store write → parity → legacy write 제거
-4. **Renderer migration** — Grid/Reel read callsite를 Data Engine으로 전환 후 legacy formula/renderer 제거
-5. **Research data** — Content → Comments → Analysis(포맷/전환 장치) → STT/OCR/AI
+1. **Device gate** — UI-C/D/E + Reel identity/native metrics + 저장설정
+2. **UI-F2 Reel Overlay replacement** — evidence → new mount → parity → legacy visual 제거
+3. **UI-G1 capture parser migration** — legacy raw capture → `data.ingest()`/Extractor parity → legacy parser/write 코드 제거
+4. **Renderer migration** — Grid/Reel read → Data Engine 후 legacy formula/renderer 제거
+5. **Research data** — Content → Comments → Analysis → STT/OCR/AI
 
-Device gate가 막혀 있어도 visual switch와 독립적인 Data Engine writer 작업은 진행할 수 있습니다. Grid Frozen renderer는 먼저 제거하지 않습니다.
+Device gate와 독립적인 Data Engine parser 작업은 진행 가능. Grid Frozen renderer는 먼저 제거하지 않습니다.
 
 ## Work Protocol
 
 ```text
-STATUS.md → BASELINE.md → ARCHITECTURE.md / PROJECT_PLAN.md → source/test
-목적 확인 → PRESERVE/REPLACE/REMOVE-APPROVED → owner/data-flow → 코드+test
-→ build/check → STATUS → device 필요항목은 Unverified
+STATUS → BASELINE → ARCHITECTURE/PROJECT_PLAN → source/test
+목적 → PRESERVE/REPLACE/REMOVE-APPROVED → owner/data-flow → code+test
+→ build/check → STATUS → device 항목 Unverified
 ```
 
-완료 조건:
-
-- 승인된 기능/접근경로 회귀 없음
-- owner 중복 없음
-- `npm test` / `npm run build` / `npm run check` / generated syntax 통과
-- `src/version.js` ↔ generated ↔ STATUS version 일치
-- Android Edge 항목은 실제 확인 전 완료 처리하지 않음
+완료 조건: 회귀 없음 / owner 중복 없음 / test·build·check·generated syntax 통과 / version 일치 / Android는 실확인 전 완료 금지.
