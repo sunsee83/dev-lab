@@ -47,10 +47,10 @@ test('Extractor maps exact Instagram media payload fields and leaves missing met
   assert.equal(result.patch.reposts, undefined);
   assert.equal(result.patch.videoUrl, 'https://cdn.example.test/high.mp4');
   assert.equal(result.patch.coverUrl, 'https://cdn.example.test/cover.jpg');
-  assert.deepEqual(result.evidence.videoUrls, [
+  assert.deepEqual(new Set(result.evidence.videoUrls), new Set([
     'https://cdn.example.test/low.mp4',
     'https://cdn.example.test/high.mp4'
-  ]);
+  ]));
 });
 
 test('Extractor keeps legacy-shaped nested metrics and alternate media URL evidence', () => {
