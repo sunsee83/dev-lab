@@ -216,7 +216,8 @@ if (!uiArchitectureText.includes('브라우저 Back') && !uiArchitectureText.inc
 if (!workTrackText.includes('UI_BASELINE.md')) errors.push('WORK_TRACK.md: UI_BASELINE.md reference missing');
 if (!workTrackText.includes('UI_ARCHITECTURE.md')) errors.push('WORK_TRACK.md: UI_ARCHITECTURE.md reference missing');
 if (!workTrackText.includes('UI-B — Primitive + Layout + Workspace State Foundation')) errors.push('WORK_TRACK.md: UI-B execution checkpoint missing');
-if (!workTrackText.includes('UI-C — Global RI Launcher Replacement')) errors.push('WORK_TRACK.md: next UI-C execution step missing');
+if (!workTrackText.includes('UI-C — Global RI Launcher visual restoration')) errors.push('WORK_TRACK.md: UI-C execution checkpoint missing');
+if (!workTrackText.includes('UI-D — Contextual Research Workspace')) errors.push('WORK_TRACK.md: next UI-D execution step missing');
 
 const requiredUiFoundationFiles = [
   'src/ui/ri-primitives.js',
