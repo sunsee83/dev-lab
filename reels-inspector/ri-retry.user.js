@@ -2126,7 +2126,7 @@
     (doc.head || doc.documentElement).appendChild(style);
   }
   var CSS = `
-#ri3-tool,#ri3-panel{display:none!important}
+#ri3-tool,#ri3-panel,#ri3-reels-overlay{display:none!important}
 #ri32-tool{
   position:fixed;right:var(--ri-launcher-right,12px);bottom:var(--ri-launcher-bottom,max(88px,calc(env(safe-area-inset-bottom) + 78px)));z-index:2147483645;
   width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;
@@ -2139,6 +2139,7 @@
 #ri32-tool svg{position:relative;z-index:1;width:21px;height:21px;pointer-events:none}
 #ri32-tool[aria-expanded="true"]::before{background:rgba(0,0,0,.20)}
 #ri32-tool:focus-visible{outline:2px solid rgba(255,255,255,.88);outline-offset:1px}
+#ri32-reel-overlay{position:fixed;right:var(--ri-reel-overlay-right,60px);top:clamp(112px,16vh,170px);z-index:2147483600;width:74px;display:none;flex-direction:column;align-items:flex-end;gap:5px;text-align:right;pointer-events:none;color:#fff;font:760 12px/1.08 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-shadow:0 1px 3px rgba(0,0,0,.98),0 0 2px rgba(0,0,0,.72);font-variant-numeric:tabular-nums}
 #ri32-scrim{position:fixed;inset:0;z-index:2147483644;background:rgba(0,0,0,.28);-webkit-tap-highlight-color:transparent}
 #ri32-scrim[hidden]{display:none!important}
 #ri32-panel{
