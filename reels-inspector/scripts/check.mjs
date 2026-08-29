@@ -135,6 +135,7 @@ function visit(file, stack = []) {
 for (const file of graph.keys()) visit(file);
 
 const generatedPath = path.join(root, 'ri-retry.user.js');
+const projectPlanPath = path.join(root, 'PROJECT_PLAN.md');
 const statusPath = path.join(root, 'STATUS.md');
 const workTrackPath = path.join(root, 'WORK_TRACK.md');
 const preservationPath = path.join(root, 'PRESERVATION_BASELINE.md');
@@ -142,6 +143,7 @@ const uiBaselinePath = path.join(root, 'UI_BASELINE.md');
 const uiArchitecturePath = path.join(root, 'UI_ARCHITECTURE.md');
 const versionPath = path.join(srcRoot, 'version.js');
 const generated = await readFile(generatedPath, 'utf8');
+const projectPlanText = await readFile(projectPlanPath, 'utf8');
 const statusText = await readFile(statusPath, 'utf8');
 const workTrackText = await readFile(workTrackPath, 'utf8');
 const preservationText = await readFile(preservationPath, 'utf8');
@@ -154,6 +156,7 @@ const generatedVersion = generated.match(/^\/\/ @version\s+([^\s]+)\s*$/m)?.[1];
 const generatedBuildVersion = generated.match(/^\/\/ Build version:\s*([^\s]+)\s*$/m)?.[1];
 const generatedUpdateUrl = generated.match(/^\/\/ @updateURL\s+([^\s]+)\s*$/m)?.[1];
 const generatedDownloadUrl = generated.match(/^\/\/ @downloadURL\s+([^\s]+)\s*$/m)?.[1];
+const projectPlanVersion = projectPlanText.match(/현재 배포 버전:\s*\*\*v([^*]+)\*\*/)?.[1];
 const statusVersion = statusText.match(/버전:\s*\*\*v([^*]+)\*\*/)?.[1];
 const workTrackVersion = workTrackText.match(/Current version:\s*\*\*v([^*]+)\*\*/)?.[1];
 
@@ -163,6 +166,8 @@ if (!generatedVersion) errors.push('ri-retry.user.js: missing @version');
 if (!generated.includes('// GENERATED FILE — DO NOT EDIT DIRECTLY.')) errors.push('ri-retry.user.js: generated warning missing; run npm run build');
 if (sourceVersion && generatedVersion && sourceVersion !== generatedVersion) errors.push(`version mismatch: source=${sourceVersion}, generated=${generatedVersion}`);
 if (sourceVersion && generatedBuildVersion && sourceVersion !== generatedBuildVersion) errors.push(`build header mismatch: source=${sourceVersion}, build=${generatedBuildVersion}`);
+if (!projectPlanVersion) errors.push('PROJECT_PLAN.md: missing current deployment version');
+if (sourceVersion && projectPlanVersion && sourceVersion !== projectPlanVersion) errors.push(`version mismatch: source=${sourceVersion}, PROJECT_PLAN=${projectPlanVersion}`);
 if (generatedVersion && statusVersion && generatedVersion !== statusVersion) errors.push(`version mismatch: generated=${generatedVersion}, STATUS=${statusVersion}`);
 if (!workTrackVersion) errors.push('WORK_TRACK.md: missing Current version');
 if (sourceVersion && workTrackVersion && sourceVersion !== workTrackVersion) errors.push(`version mismatch: source=${sourceVersion}, WORK_TRACK=${workTrackVersion}`);
@@ -197,7 +202,7 @@ const requiredUiArchitectureSections = [
   '# 16. Feedback & Activity Layer',
   '# 19. UI Read Model Boundary',
   '# 20. UI State Ownership',
-  '# 22. Improved Migration Plan',
+  '# 22. Migration Plan',
   '# 23. Acceptance / Definition of Done'
 ];
 for (const heading of requiredUiArchitectureSections) {
@@ -206,11 +211,22 @@ for (const heading of requiredUiArchitectureSections) {
 if (!uiArchitectureText.includes('CONTENT') || !uiArchitectureText.includes('GLOBAL')) errors.push('UI_ARCHITECTURE.md: context modes missing');
 if (!uiArchitectureText.includes('CLOSED') || !uiArchitectureText.includes('COMPACT') || !uiArchitectureText.includes('EXPANDED')) errors.push('UI_ARCHITECTURE.md: workspace state machine markers missing');
 if (!uiArchitectureText.includes('active tab만 mount')) errors.push('UI_ARCHITECTURE.md: active-tab lazy mount rule missing');
-if (!uiArchitectureText.includes('브라우저 Back')) errors.push('UI_ARCHITECTURE.md: browser navigation preservation rule missing');
+if (!uiArchitectureText.includes('브라우저 Back') && !uiArchitectureText.includes('browser Back')) errors.push('UI_ARCHITECTURE.md: browser navigation preservation rule missing');
 
 if (!workTrackText.includes('UI_BASELINE.md')) errors.push('WORK_TRACK.md: UI_BASELINE.md reference missing');
 if (!workTrackText.includes('UI_ARCHITECTURE.md')) errors.push('WORK_TRACK.md: UI_ARCHITECTURE.md reference missing');
-if (!workTrackText.includes('UI-B — Primitive + Layout + Workspace State Foundation')) errors.push('WORK_TRACK.md: next UI architecture execution step missing');
+if (!workTrackText.includes('UI-B — Primitive + Layout + Workspace State Foundation')) errors.push('WORK_TRACK.md: UI-B execution checkpoint missing');
+if (!workTrackText.includes('UI-C — Global RI Launcher Replacement')) errors.push('WORK_TRACK.md: next UI-C execution step missing');
+
+const requiredUiFoundationFiles = [
+  'src/ui/ri-primitives.js',
+  'src/ui/layout.js',
+  'src/ui/workspace-state.js'
+];
+const sourceRelative = new Set(sourceFiles.map(rel));
+for (const filename of requiredUiFoundationFiles) {
+  if (!sourceRelative.has(filename)) errors.push(`${filename}: required UI-B owner missing`);
+}
 
 const requiredWorkSections = [
   '# 2. Current Objective',
