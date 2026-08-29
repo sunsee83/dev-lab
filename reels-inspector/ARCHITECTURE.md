@@ -38,7 +38,11 @@ src/
 - common `media[]` → `data/media-model.js`
 - provenance/rank/conflict + common post projection → `store/verified-store.js`
 - cache persistence → `store/verified-cache-store.js`; history → `store/history-store.js`
-- legacy bridges → `migration/*`
+- legacy raw/permalink/patch bridge → `migration/capture-handoff.js`
+- legacy cache/change tracking → `migration/legacy-store-adapter.js`
+- Data Engine post + Metrics summary → legacy Grid/Reel visual bridge → `migration/legacy-renderer-handoff.js`
+- active Reel DOM evidence/context → `migration/reel-context-adapter.js`
+- modern Reel context → legacy visual bridge/DOM enrichment → `migration/reel-context-handoff.js`
 - ER/24h/account-relative → `metrics/metrics.js`
 - staged Frozen Grid projection → `ui/grid-metrics-renderer.js`
 - staged Reel overlay → `ui/reel-overlay.js`
