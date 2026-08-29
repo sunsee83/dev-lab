@@ -35,7 +35,7 @@ WORK_TRACK.md            = 현재 작업 목표/진행/다음 순서/차단요�
 - Deployment artifact: `ri-retry.user.js`
 - Current phase: **v3.2 UI/Foundation + Contextual Mobile Research Workspace 전환**
 
-현재 v3.2.3 runtime visual은 아직 Foundation UI입니다. UI-B에서 내부 구조와 layout owner를 연결했지만 **Global Launcher visual / bottom Research Workspace 교체는 아직 하지 않았습니다.**
+현재 v3.2.3 source는 UI-B Foundation과 UI-C Global RI visual restoration까지 반영했습니다. **Bottom Research Workspace 교체는 아직 하지 않았고, UI-C의 Android Edge 실제 시각/터치/충돌 결과도 Unverified**입니다.
 
 ---
 
@@ -113,8 +113,6 @@ runtime visual 변경 없음.
 
 ## UI-B — Primitive + Layout + Workspace State Foundation — 코드 완료
 
-이번 checkpoint에서 실제 반영:
-
 ### `ui/ri-primitives.js`
 
 공통화:
@@ -181,7 +179,7 @@ route/resize/orientation/visualViewport 변화에서 schedule하며 일반 DOM m
 
 ### 검증
 
-자동검증 checkpoint:
+UI-B 자동검증 checkpoint:
 
 - unit test **18/18 pass**
 - build pass
@@ -189,7 +187,32 @@ route/resize/orientation/visualViewport 변화에서 schedule하며 일반 DOM m
 - **19 source files / 0 warnings**
 - generated userscript syntax pass
 
-UI-B는 **코드/CI Verified**. Android Edge 시각/터치 결과는 아직 Unverified.
+UI-B는 코드/CI Verified. Android Edge 시각/터치 결과는 Unverified.
+
+## UI-C — Global RI Launcher visual restoration — source 완료 / 실기기 대기
+
+v3.1.6 source와 현재 source를 다시 비교해 확인한 사실:
+
+- `researchIcon()` SVG 자체는 이미 v3.1.6과 동일했습니다.
+- 실제 mismatch는 아이콘 path가 아니라 v3.2.3의 launcher 외곽 styling이었습니다.
+- v3.1.6 visual baseline은 `34×34`, border 없음, `rgba(0,0,0,.12)` 원형 배경, drop-shadow, `21×21` research icon입니다.
+
+이번 source 변경:
+
+```text
+실제 touch target 44×44
+└ visual circle 34×34
+  └ 기존 v3.1.6 21×21 research icon
+```
+
+- 큰 opaque 새 버튼으로 키우지 않고 invisible touch area만 확장
+- border 제거
+- legacy low-opacity circle / drop-shadow 복원
+- Layout Manager `--ri-launcher-right / --ri-launcher-bottom` 계속 사용
+- `aria-expanded`, keyboard focus, 기존 panel toggle 유지
+- Grid / update shortcut / panel action 변경 없음
+
+이 단계는 source 기준 visual restoration 완료이며 **Android Edge에서 실제 위치, native rail/nav/banner collision, 체감 visual parity는 확인 전 Verified 금지**.
 
 ---
 
@@ -235,12 +258,12 @@ UI-B는 **코드/CI Verified**. Android Edge 시각/터치 결과는 아직 Unve
 
 # 5. Current Known Issues / Unverified
 
-현재 UI mismatch:
+현재 UI 상태:
 
-- v3.2.3 launcher icon은 기존 Reel RI visual identity와 다름
-- 현재 right floating panel은 target Research Workspace가 아님
+- Global RI SVG/visual styling은 v3.1.6 baseline에 맞춰 source 복원했지만 Android Edge parity는 미확인
+- current right floating panel은 target Research Workspace가 아님
 - Layout Manager blocker heuristic은 Foundation 단계이며 Android Edge/Instagram 실제 구조 검증 필요
-- Reel right rail 세부 collision은 UI-C/UI-F에서 보강 필요
+- Reel right rail 세부 collision은 실기기 검증 후 필요 시 보강
 - panel Compact/Expanded visual은 아직 미구현
 - GLOBAL RI Home 미구현
 - active tab lazy mount 미구현
@@ -248,7 +271,9 @@ UI-B는 **코드/CI Verified**. Android Edge 시각/터치 결과는 아직 Unve
 
 실기기 미확인:
 
-- UI-B layout 적용 후 nav/banner collision
+- Global RI visual/touch target 체감
+- Global RI가 화면당 1개로 보이는지
+- bottom nav/app banner/Reel right rail collision
 - SPA 이동 후 stale shortcode
 - live Store → 열린 Summary 갱신
 - 업데이트 바로가기 → Tampermonkey install/update intercept
@@ -270,9 +295,14 @@ UI-B에서 해결:
 - workspace open/tab/context state owner 부재 → 해결
 - architecture duplicate warnings 4 → **0**
 
+UI-C에서 해결:
+
+- 기존 Reel RI SVG source 재확인
+- v3.2.3 launcher 외곽 visual mismatch → source 수준 복원
+- 34px visual / 44px touch target 분리
+
 남음:
 
-- v3.2.3 임시 launcher visual
 - right floating Foundation panel
 - GLOBAL/CONTENT 실제 presentation 분리
 - active-tab lazy host
@@ -288,21 +318,25 @@ Read Model implementation은 Data Engine migration 시 실제 필요가 생겼�
 
 순서를 바꾸려면 이 문서와 관련 baseline/architecture를 먼저 갱신합니다.
 
-## UI-C — Global RI Launcher Replacement — 다음 작업
+## UI-C — Global RI Launcher visual restoration — source 완료 / device validation pending
 
-1. v3.1 계열 기존 Reel RI icon/visual 실제 source 재확인
-2. 현재 임시 막대+돋보기 icon과 차이 inventory
-3. 새 Global Launcher에 기존 visual identity 적용
-4. 시각 32~36px, touch target 약 44px
-5. Layout Manager `launcherAnchor` 적용
-6. Profile/Search/Explore/Grid/Reel/Post에서 화면당 정확히 1개
-7. bottom nav/app banner/Reel rail collision 검토
-8. 새 launcher 기능/접근 동등성 확인
-9. 그 다음 임시 visual 제거
+완료한 source 작업:
 
-**기존 업데이트 shortcut / Grid / panel action은 이 단계에서 삭제하지 않음.**
+1. v3.1.6 `ri3-tool` source 재확인
+2. SVG는 기존과 동일하다는 사실 확인
+3. 외곽 visual을 legacy 34px low-opacity circle로 복원
+4. touch target만 44px로 확대
+5. Layout Manager anchor 유지
+6. 기존 panel toggle / update / Grid action 보존
 
-## UI-D — Contextual Research Workspace
+실기기 확인 전 남은 승인:
+
+- Profile/Search/Explore/Grid/Reel/Post에서 visible launcher 1개
+- bottom nav/app banner/Reel rail과 심각한 겹침 없음
+- 한 손 tap 가능
+- 기존 Reel RI와 visual identity가 체감상 이어짐
+
+## UI-D — Contextual Research Workspace — 다음 구현
 
 1. 기존 panel 사용자 action inventory
 2. bottom Research Sheet 구현
@@ -430,4 +464,4 @@ Deferred   = 현재 범위 밖
 - 실기기 항목은 확인 전 Verified 금지
 - 다음 작업이 이 문서에 명확히 남아 있음
 
-현재 다음 정확한 작업은 **UI-C Global RI Launcher Replacement**입니다.
+현재 다음 정확한 구현 작업은 **UI-D Contextual Research Workspace**입니다.
