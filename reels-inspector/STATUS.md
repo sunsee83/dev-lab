@@ -4,7 +4,7 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.6**
+- Runtime version: **v3.2.7**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
@@ -32,34 +32,27 @@ Runtime/source active:
 - AppContext + shared SPA activity
 - Settings Store / Capability / Clipboard
 - Download Manager + Activity Store
-- **미디어별 저장 정책: 영상 / 사진·표지 / 슬라이드** (`directory | default | prompt` 독립)
-- v1 전역 저장설정 → v2 미디어별 정책 migration
+- 미디어별 저장 정책: 영상 / 사진·표지 / 슬라이드 (`directory | default | prompt` 독립)
 - Grid quick-save / Global RI launcher / Contextual Bottom Research Workspace
 - CONTENT 6탭 / GLOBAL RI Home / persistent Activity + Toast dedupe
-- Metrics Engine + RI Summary / legacy verified-cache-history adapter
+- **History Store** — 기존 `ri311` snapshot/account history 호환 read API, Metrics owner 연결
+- **Data Engine passive runtime service** — legacy cache sync → Verified Store → common `media[]`
 - active Reel context adapter
 
-Staged, runtime not switched:
+Staged, writer/visual not switched:
 
-- `data/identity.js` — shortcode/canonical/media identity normalization
-- `data/extractor.js` — Instagram media payload → verified patch 후보
-- `store/verified-store.js` — source rank/provenance/conflict 보호
+- `data/engine.js`의 `ingest()`는 준비됐지만 Instagram capture callsite는 아직 legacy runtime
+- common `media[]`: `video | cover | photo | carousel-slide`; Carousel 순서/개수 보존
 - `ui/reel-overlay.js` + `ui/metric-format.js`
-- legacy runtime write/renderer는 아직 active이며 새 Data Engine source를 runtime writer로 연결하지 않음
-- Android gate 전 새 overlay mount 및 legacy `#ri3-reels-overlay` 선제 제거 금지
-
-Active Reel evidence:
-
-```text
-scope shortcode → exact media URL → exact Reel route → unresolved
-```
+- Grid/Reel renderer는 legacy adapter 유지
+- Android gate 전 새 Reel overlay mount 및 legacy `#ri3-reels-overlay` 선제 제거 금지
 
 ## Automated Checkpoint
 
-- unit: **38 / 38 pass**
-- build: **v3.2.6 success**
+- unit: **41 / 41 pass**
+- build: **v3.2.7 success**
 - architecture/syntax: **success**
-- source files: **29**
+- source files: **32**
 - architecture warnings: **0**
 - generated userscript: current
 
@@ -77,6 +70,7 @@ scope shortcode → exact media URL → exact Reel route → unresolved
 - 지정 폴더 실패 시 silent default fallback 금지
 - missing metric → fabricated zero 금지
 - verified provenance/conflict 보호
+- Carousel `media[]` slide order/count 보존
 - one shared SPA observer; 900ms full polling 복귀 금지
 
 ## Unverified / Device
@@ -98,8 +92,9 @@ Android Edge에서 아직 실제 확인이 필요한 것:
 
 ## Technical Debt
 
-- **Identity / Extractor / Verified Store foundation source는 준비됐지만 runtime write owner는 아직 legacy runtime**
-- history / media[] write owner 이동 전
+- **History read owner + common `media[]` + passive Data Engine runtime wiring 완료**
+- Instagram capture/write owner는 아직 legacy runtime; `data.ingest()` callsite 전환 전
+- history write side-effect도 legacy runtime 직접 경로가 남음
 - Grid/Reel legacy renderer와 compatibility metric body 남음
 - `ri-panel.js`가 migration adapter를 직접 읽는 임시 coupling
 - staged Reel overlay runtime replacement 미완료
@@ -113,34 +108,20 @@ Research Analysis 예정 구조:
 
 ## Next Execution Order
 
-순서를 바꾸면 이 문서를 먼저 수정합니다.
-
-1. **Device gate** — UI-C/D/E + active Reel identity/native metrics + 새 저장설정 실기기 확인
+1. **Device gate** — UI-C/D/E + active Reel identity/native metrics + 저장설정 실기기 확인
 2. **UI-F2 Reel Overlay replacement** — evidence → new overlay mount → parity → legacy visual 제거
-3. **UI-G1 Data Engine migration** — staged Identity/Extractor/Verified Store → history → media[] owner 이동 → runtime wiring
-4. **Renderer migration** — Grid/Reel callsite 전환 후 legacy formula/renderer 제거
+3. **UI-G1 writer cutover** — legacy capture callsite → `data.ingest()` / History Store write → parity → legacy write 제거
+4. **Renderer migration** — Grid/Reel read callsite를 Data Engine으로 전환 후 legacy formula/renderer 제거
 5. **Research data** — Content → Comments → Analysis(포맷/전환 장치) → STT/OCR/AI
 
-Device gate가 막혀 있어도 visual switch와 독립적인 Data Engine 작업은 진행할 수 있습니다. Grid Frozen renderer는 먼저 제거하지 않습니다.
+Device gate가 막혀 있어도 visual switch와 독립적인 Data Engine writer 작업은 진행할 수 있습니다. Grid Frozen renderer는 먼저 제거하지 않습니다.
 
 ## Work Protocol
 
-작업 시작 전:
-
 ```text
 STATUS.md → BASELINE.md → ARCHITECTURE.md / PROJECT_PLAN.md → source/test
-```
-
-변경 절차:
-
-```text
-목적 확인
-→ PRESERVE / REPLACE / REMOVE-APPROVED
-→ owner/data-flow 확인
-→ 코드 + test
-→ build/check
-→ STATUS 갱신
-→ device 필요항목은 Unverified
+목적 확인 → PRESERVE/REPLACE/REMOVE-APPROVED → owner/data-flow → 코드+test
+→ build/check → STATUS → device 필요항목은 Unverified
 ```
 
 완료 조건:

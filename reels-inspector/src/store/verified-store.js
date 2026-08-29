@@ -1,4 +1,5 @@
 import { normalizeIdentity } from '../data/identity.js';
+import { buildMediaList } from '../data/media-model.js';
 
 const SOURCE_RANK = Object.freeze({ legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 });
 const METRIC_FIELDS = new Set(['views', 'likes', 'comments', 'reposts']);
@@ -10,7 +11,7 @@ const FIELDS = [
 ];
 
 export function createVerifiedStore({ initialItems = {}, now = () => Date.now(), onChange } = {}) {
-  const items = clone(initialItems) || {};
+  let items = clone(initialItems) || {};
 
   function getItem(shortcode) {
     const item = items[shortcode];
@@ -20,7 +21,7 @@ export function createVerifiedStore({ initialItems = {}, now = () => Date.now(),
   function getPost(shortcode) {
     if (!shortcode) return null;
     const item = items[shortcode];
-    if (!item) return { shortcode };
+    if (!item) return { shortcode, media: [] };
     const read = (key) => fieldValue(item, key);
     const post = { shortcode };
     post.mediaId = read('mediaId') || '';
@@ -39,6 +40,7 @@ export function createVerifiedStore({ initialItems = {}, now = () => Date.now(),
     post.thumbUrl = read('thumbUrl') || '';
     const carouselImages = read('carouselImages');
     post.carouselImages = Array.isArray(carouselImages) ? [...carouselImages] : [];
+    post.media = buildMediaList(post);
     return post;
   }
 
@@ -76,6 +78,11 @@ export function createVerifiedStore({ initialItems = {}, now = () => Date.now(),
     return { item: clone(item), changed };
   }
 
+  function replaceSnapshot(nextItems = {}) {
+    items = clone(nextItems) || {};
+    return snapshot();
+  }
+
   function snapshot() {
     return clone(items);
   }
@@ -110,7 +117,7 @@ export function createVerifiedStore({ initialItems = {}, now = () => Date.now(),
     return true;
   }
 
-  return { getItem, getPost, getIdentity, upsert, snapshot };
+  return { getItem, getPost, getIdentity, upsert, replaceSnapshot, snapshot };
 }
 
 export function sourceRank(source) {

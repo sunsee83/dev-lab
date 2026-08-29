@@ -17,9 +17,9 @@ src/
 ├ main.js
 ├ legacy-runtime.js
 ├ core/ activity.js app.js capability.js clipboard.js
-├ data/ identity.js extractor.js
+├ data/ engine.js identity.js extractor.js media-model.js
 ├ migration/ legacy-store-adapter.js reel-context-adapter.js
-├ store/ settings-store.js verified-store.js
+├ store/ history-store.js settings-store.js verified-store.js
 ├ metrics/ metrics.js
 ├ media/ media-resolver.js download-manager.js
 └ ui/
@@ -37,27 +37,21 @@ src/
 - async activity → `core/activity.js`
 - capability/permission → `core/capability.js`
 - clipboard → `core/clipboard.js`
-- **staged identity normalization/key** → `data/identity.js`
-- **staged Instagram media payload extraction** → `data/extractor.js`
-- **staged verified field provenance/source-rank/conflict** → `store/verified-store.js`
-- 영상 / 사진·표지 / 슬라이드 저장정책·directory handle·v1→v2 migration → `store/settings-store.js`
-- legacy verified cache/history read → `migration/legacy-store-adapter.js`
+- identity normalization/key → `data/identity.js`
+- Instagram media payload extraction → `data/extractor.js`
+- **Data Engine runtime facade / legacy passive sync / ingest entry** → `data/engine.js`
+- **common `media[]` role/order projection** → `data/media-model.js`
+- **verified field provenance/source-rank/conflict** → `store/verified-store.js`
+- **snapshot/account history API + legacy-compatible storage keys** → `store/history-store.js`
+- 영상 / 사진·표지 / 슬라이드 저장정책·directory handle → `store/settings-store.js`
+- legacy cache read/change tracking → `migration/legacy-store-adapter.js`
 - active Reel identity/native metric evidence → `migration/reel-context-adapter.js`
 - ER / 24h / account-relative → `metrics/metrics.js`
 - cover/media/default filename → `media/media-resolver.js`
 - media kind→저장 profile / destination/write/batch → `media/download-manager.js`
-- Workspace state → `ui/workspace-state.js`
-- viewport/safe-area/collision → `ui/layout.js`
-- Research Sheet shell → `ui/research-workspace.js`
-- RI controller/actions → `ui/ri-panel.js`
-- RI settings presentation → `ui/ri-settings.js`
-- RI summary → `ui/ri-summary.js`
-- Grid quick-save → `ui/grid.js`
-- metric formatting / staged Reel overlay → `ui/metric-format.js` / `ui/reel-overlay.js`
-- persistent / transient feedback → `ui/activity-indicator.js` / `ui/toast.js`
-- shared CSS → `ui/styles.js`
+- Workspace/Layout/RI/UI owners → 각 `ui/*`
 
-`data/*` + `store/verified-store.js`는 foundation owner source이며 아직 runtime writer가 아닙니다. runtime write side effect는 migration 완료 전 legacy path 하나만 유지합니다.
+History read는 `history-store.js` 하나를 통해 Metrics와 migration adapter가 공유합니다. legacy runtime의 직접 history write는 writer cutover 전 임시 technical debt입니다.
 
 ## 4. Main flows
 
@@ -67,9 +61,7 @@ src/
 
 ```text
 Instagram
-→ Identity
-→ Extractor
-→ Verified Store
+→ Identity → Extractor → Verified Store
 → History / media[]
 → Metrics Engine
 → Grid / Reel / Research Workspace
@@ -79,30 +71,28 @@ Instagram
 
 ```text
 legacy runtime writer
-→ ri311 cache/history
-→ migration adapter
-→ Metrics/UI
+├→ ri311 cache → legacy adapter → data.syncLegacy()
+│                              → Verified Store → media[]
+└→ ri311 history → History Store → Metrics
 
-staged:
-Identity → Extractor → Verified Store
+UI renderer → legacy adapter (아직 유지)
 ```
 
-Verified Store는 `legacy < permalink < dom < embedded < network` source rank, provenance/confidence, conflict를 보존합니다. 약한 evidence가 강한 verified 값을 덮지 않고 missing을 `0`으로 만들지 않습니다.
+`data.ingest()`는 검증된 writer 진입점으로 준비됐지만 Instagram capture callsite에는 아직 연결하지 않습니다. Verified Store는 `legacy < permalink < dom < embedded < network` rank와 provenance/conflict를 보존하며 missing=`0`을 만들지 않습니다.
+
+### common media[]
+
+```text
+REEL/VIDEO → video + cover
+PHOTO      → photo
+CAROUSEL   → carousel-slide[] (원래 순서/개수 유지)
+```
+
+`kind`는 Download Manager의 `video | cover | photo | carousel-slide`와 동일 계약을 사용합니다.
 
 ### Workspace / 위치
 
-```text
-AppContext identity
-→ Workspace State
-   CLOSED | COMPACT | EXPANDED
-   GLOBAL | CONTENT
-→ Research Workspace View
-→ active body 1개
-```
-
 CONTENT=`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`, GLOBAL=`RI Home + Settings + 업데이트 바로가기`.
-
-UI 위치 계약:
 
 ```text
 전체 화면        → Global RI fixed anchor
@@ -116,32 +106,23 @@ Workspace 내부   → header/tab/body/action/activity
 ### Download / Activity
 
 ```text
-Grid / RI action
-→ Download Manager
-→ media kind profile
-   video          → 영상 정책
-   cover / photo  → 사진·표지 정책
-   carousel-slide → 슬라이드 정책
-→ directory | default | prompt
-→ write
-→ Activity Store
-→ indicator / Toast
+Grid / RI action → Download Manager → media kind profile
+video → 영상 | cover/photo → 사진·표지 | carousel-slide → 슬라이드
+→ directory/default/prompt → write → Activity Store
 ```
 
-각 profile은 독립 mode/directory handle. v1 전역 설정은 migration 때 세 profile에 승계합니다. Carousel prompt는 destination 1회 선택 후 개별 저장하며 지정폴더 실패를 silent fallback하지 않습니다.
+Carousel prompt는 destination 1회 선택 후 개별 저장, 지정폴더 실패는 silent fallback 금지.
 
 ### Active Reel
 
 ```text
 shared SPA activity
-→ migration/reel-context-adapter.js
-   scoped Reel link
-   → exact media URL mapping
-   → exact Reel route
+→ reel-context-adapter
+→ scoped Reel link → exact media URL → exact Reel route
 → scoped native likes/comments/reposts
 ```
 
-fuzzy owner/metric shortcode 추측 금지. 같은 URL 세로 이동도 shared observer를 재사용합니다.
+fuzzy shortcode 추측 및 별도 full DOM observer 금지.
 
 ## 5. Staged Reel overlay replacement
 
@@ -151,36 +132,28 @@ fuzzy owner/metric shortcode 추측 금지. 같은 URL 세로 이동도 shared o
 ▶ views → ER → 24h → × account-relative → date
 ```
 
-1. source/test
-2. Android identity/native metric/placement
-3. new overlay mount
-4. 이후 legacy `#ri3-reels-overlay` hide/remove
-5. renderer/Data Engine migration 뒤 compatibility body 제거
+Android identity/native metric/placement 확인 뒤 mount하고, 그 이후에만 legacy `#ri3-reels-overlay`를 제거합니다.
 
 ## 6. Migration boundary
 
-`legacy-runtime.js`에는 active writer + Grid/Reel renderer 고위험 경로가 남아 있습니다.
-
 ```text
-[staged 완료] Identity → Extractor → Verified Store
-[다음] history → media[] → runtime writer wiring
-→ Grid/Reel renderer → legacy-runtime 제거
+[완료] Identity → Extractor → Verified Store foundation
+[완료] History read owner → common media[] → passive runtime Data Engine wiring
+[다음] legacy capture → data.ingest() + History Store write → parity → legacy writer 제거
+→ Grid/Reel renderer read 전환 → legacy-runtime 제거
 ```
 
-runtime wiring 전에는 새 Verified Store와 legacy runtime이 같은 cache를 동시에 쓰지 않습니다.
+writer cutover 전 새 Data Engine과 legacy runtime이 같은 cache를 동시에 쓰지 않습니다. Research data는 이 경계 정리 후 연결합니다.
 
-Research data는 Data Engine 이후 연결합니다.
+Analysis 목표:
 
 ```text
-포맷
-→ 문제제기형 | 리스트형 | Before/After | 튜토리얼 | 리뷰 | 스토리 | 비교 | 뉴스·정보
-전환 장치
-→ 댓글 유도 | 저장 유도 | 공유 유도 | 프로필 이동 | 링크 클릭 | 구매 | DM
-보조
-→ 훅 | CTA 위치 | 신뢰 장치 | 감정/긴급성
+포맷 → 문제제기형 | 리스트형 | Before/After | 튜토리얼 | 리뷰 | 스토리 | 비교 | 뉴스·정보
+전환 장치 → 댓글 유도 | 저장 유도 | 공유 유도 | 프로필 이동 | 링크 클릭 | 구매 | DM
+보조 → 훅 | CTA 위치 | 신뢰 장치 | 감정/긴급성
 ```
 
-현재 `analysis` 탭에 가짜 결과를 생성하지 않습니다.
+근거 데이터가 없으면 분석값을 만들지 않습니다.
 
 ## 7. Build / architecture gate
 
@@ -191,13 +164,6 @@ npm run check
 node --check ri-retry.user.js
 ```
 
-자동 gate:
-
-- source/generated/`STATUS.md` version 일치
-- update URL/업데이트 바로가기 보존
-- UI storage/File System/network 직접 접근 금지
-- metrics DOM 접근 금지 / circular import / runtime `@require` 금지
-- 일반 source 500줄 초과 금지, 350줄 초과 warning
-- canonical docs marker/크기, duplicate block warning
+자동 gate: version/update drift, canonical docs, UI storage/File System/network 직접 접근, metrics DOM 접근, circular import, runtime `@require`, source line limit, duplicate block warning.
 
 자동검증과 Android Edge 실기기 검증은 구분합니다.

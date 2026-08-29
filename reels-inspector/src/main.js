@@ -2,7 +2,9 @@ import { VERSION } from './version.js';
 import { createActivityStore } from './core/activity.js';
 import { createApp, EVENTS } from './core/app.js';
 import { detectCapabilities } from './core/capability.js';
+import { createDataEngine } from './data/engine.js';
 import { createSettingsStore } from './store/settings-store.js';
+import { createHistoryStore } from './store/history-store.js';
 import { createDownloadManager } from './media/download-manager.js';
 import { createMetricsEngine } from './metrics/metrics.js';
 import { createLegacyStoreAdapter } from './migration/legacy-store-adapter.js';
@@ -33,17 +35,20 @@ const downloads = createDownloadManager({
     app.emit(EVENTS.DOWNLOAD_CHANGED, change);
   }
 });
-const legacyStore = createLegacyStoreAdapter({ env: globalThis });
+const history = createHistoryStore({ env: globalThis });
+const legacyStore = createLegacyStoreAdapter({ env: globalThis, history });
+const data = createDataEngine({ legacyAdapter: legacyStore, history });
 const reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
-const metrics = createMetricsEngine({ history: legacyStore });
+const metrics = createMetricsEngine({ history });
 const workspace = createWorkspaceState();
 const storeTracker = legacyStore.createChangeTracker((change) => {
+  data.syncLegacy();
   const activeIdentity = reelContext.resolveActivityIdentity();
   app.setCurrentIdentity(activeIdentity === undefined ? legacyStore.getCurrentIdentity() : activeIdentity);
   app.emit(EVENTS.STORE_CHANGED, change);
 });
 
-app.services = { capabilities, settings, downloads, metrics, workspace, activity };
+app.services = { capabilities, settings, downloads, metrics, workspace, activity, history, data };
 app.adapters.legacyStore = legacyStore;
 app.adapters.reelContext = reelContext;
 

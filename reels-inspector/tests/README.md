@@ -15,8 +15,9 @@ node --check ri-retry.user.js
 
 - `activity.test.mjs` — Activity merge/progress/actionable error
 - `data-engine.test.mjs` — Identity/Extractor/Verified Store foundation
+- `data-runtime.test.mjs` — History Store/common `media[]`/passive Data Engine runtime
 - `foundation.test.mjs` — AppContext/capability/clipboard/settings/download/workspace/layout
-- `migration.test.mjs` — legacy adapter/history/media resolver
+- `migration.test.mjs` — legacy adapter/history delegation/media resolver
 - `metrics.test.mjs` — ER/24h/account relative
 - `reel-context.test.mjs` — active Reel evidence/native count/exact media mapping
 - `reel-overlay.test.mjs` — staged overlay/Metrics owner/replacement gate
@@ -25,19 +26,19 @@ node --check ri-retry.user.js
 - `ui-launcher.test.mjs` — RI visual/touch geometry
 - `ui-workspace.test.mjs` — Bottom Sheet/CONTENT-GLOBAL/Settings/Activity/update
 
-Data Engine foundation:
+Data Engine:
 
-- route shortcode/canonical identity normalization
-- exact payload field extraction / missing metric 유지
-- source rank/provenance/confidence 유지
-- weaker evidence overwrite 차단
-- suspicious metric regression/jump conflict
-- VIDEO→REEL refinement 허용
-- foundation은 runtime writer로 아직 mount하지 않음
+- route/canonical identity normalization, exact payload extraction
+- source rank/provenance/confidence/conflict, missing metric 유지
+- History Store는 기존 `ri311` history를 읽고 real positive views만 기록
+- Metrics history read owner=`History Store`
+- `media[]`: video/cover/photo/carousel-slide, Carousel 순서/개수 보존
+- passive `data.syncLegacy()`는 legacy cache를 read-model로 동기화
+- `data.ingest()`는 단위검증하지만 Instagram capture callsite는 아직 미전환
 
 Settings/download:
 
-- v1 global setting → v2 `video | image | carousel`
+- v1 global → v2 `video | image | carousel`
 - profile별 mode/directory 독립
 - photo/cover→image, video→video, carousel-slide→carousel
 - directory failure silent fallback 금지
@@ -49,9 +50,8 @@ Settings/download:
 - Photo/Carousel bogus views 금지
 - native media-type icon + custom media action 1/card
 - actual Video/Reel cover, music/album/avatar reject
-- Carousel individual files / no ZIP
-- 큰 update shortcut 보존
-- CONTENT 6 tabs / GLOBAL RI Home
+- Carousel individual files / no ZIP / slide order-count 유지
+- 큰 update shortcut / CONTENT 6 tabs / GLOBAL RI Home
 - one Workspace State / Layout / Activity owner
 - second full DOM observer 금지
 - missing metric → fabricated zero 금지
@@ -86,11 +86,4 @@ Settings/download:
 
 ## 5. Architecture gate
 
-`npm run check`:
-
-- version/update URL drift / 업데이트 바로가기 삭제
-- canonical docs marker 누락
-- UI storage/File System/network 직접 접근
-- metrics DOM 접근 / circular import / runtime `@require`
-- 일반 source >500 lines / >350 lines warning
-- duplicate block warning
+`npm run check`: version/update drift, canonical docs, UI direct side effect, metrics DOM, circular import, runtime `@require`, source line limit, duplicate block warning.

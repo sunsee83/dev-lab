@@ -1,9 +1,9 @@
-const CACHE_KEY = 'ri311:items:v1';
-const SNAP_KEY = 'ri311:snap:v1';
-const POST_KEY = 'ri311:posts:v1';
-const WATCH_KEYS = [CACHE_KEY, SNAP_KEY, POST_KEY];
+import { createHistoryStore, HISTORY_STORAGE_KEYS } from '../store/history-store.js';
 
-export function createLegacyStoreAdapter({ env = globalThis } = {}) {
+const CACHE_KEY = 'ri311:items:v1';
+const WATCH_KEYS = [CACHE_KEY, HISTORY_STORAGE_KEYS.snapshots, HISTORY_STORAGE_KEYS.posts];
+
+export function createLegacyStoreAdapter({ env = globalThis, history = createHistoryStore({ env }) } = {}) {
   function readStore(key) {
     try {
       const raw = env.localStorage?.getItem(key);
@@ -20,6 +20,10 @@ export function createLegacyStoreAdapter({ env = globalThis } = {}) {
     } catch {
       return '';
     }
+  }
+
+  function getItemsSnapshot() {
+    return readStore(CACHE_KEY);
   }
 
   function getItem(shortcode) {
@@ -97,28 +101,6 @@ export function createLegacyStoreAdapter({ env = globalThis } = {}) {
     return best;
   }
 
-  function getSnapshots(shortcode) {
-    const list = readStore(SNAP_KEY)[shortcode];
-    if (!Array.isArray(list)) return [];
-    return list
-      .map((entry) => ({ t: Number(entry?.t), v: Number(entry?.v) }))
-      .filter((entry) => Number.isFinite(entry.t) && entry.t > 0 && Number.isFinite(entry.v) && entry.v > 0);
-  }
-
-  function getAccountPosts(username) {
-    const owner = String(username || '').toLowerCase();
-    if (!owner) return [];
-    return Object.values(readStore(POST_KEY))
-      .filter((entry) => entry && String(entry.owner || '').toLowerCase() === owner)
-      .map((entry) => ({
-        code: String(entry.code || ''),
-        owner,
-        views: Number(entry.views),
-        t: Number(entry.t)
-      }))
-      .filter((entry) => entry.code && Number.isFinite(entry.views) && entry.views > 0 && Number.isFinite(entry.t) && entry.t > 0);
-  }
-
   function createChangeTracker(listener, { delayMs = 360 } = {}) {
     if (typeof listener !== 'function') return { schedule() {}, checkNow() {}, destroy() {} };
     const last = new Map(WATCH_KEYS.map((key) => [key, readRaw(key)]));
@@ -181,11 +163,12 @@ export function createLegacyStoreAdapter({ env = globalThis } = {}) {
 
   return {
     getItem,
+    getItemsSnapshot,
     getPost,
     getCurrentIdentity,
     findPostByMediaUrls,
-    getSnapshots,
-    getAccountPosts,
+    getSnapshots: history.getSnapshots,
+    getAccountPosts: history.getAccountPosts,
     createChangeTracker,
     codeFromUrl
   };
