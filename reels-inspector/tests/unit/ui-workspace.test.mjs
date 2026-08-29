@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const workspaceView = await readFile(new URL('../../src/ui/research-workspace.js', import.meta.url), 'utf8');
 const activityView = await readFile(new URL('../../src/ui/activity-indicator.js', import.meta.url), 'utf8');
+const settingsView = await readFile(new URL('../../src/ui/ri-settings.js', import.meta.url), 'utf8');
 const panel = await readFile(new URL('../../src/ui/ri-panel.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../../src/ui/styles.js', import.meta.url), 'utf8');
 
@@ -29,6 +30,16 @@ test('Research Workspace separates CONTENT six-tab research from GLOBAL RI Home 
   assert.match(panel, /renderGlobalHome\(body\);\s*renderSettings\(body\);/);
   assert.match(workspaceView, /tabsNode\.hidden = !contentMode/);
   assert.match(panel, /onUpdate:\s*openUpdateShortcut/);
+});
+
+test('RI Settings presentation stays in its own owner while the panel only delegates', () => {
+  assert.match(panel, /import \{ renderRiSettings \} from '\.\/ri-settings\.js'/);
+  assert.match(panel, /return renderRiSettings\(\{ body, settings, settingsState, capabilities, doc \}\)/);
+  assert.doesNotMatch(panel, /function permissionLabel\(/);
+  assert.match(settingsView, /export function renderRiSettings/);
+  assert.match(settingsView, /settings\.selectDirectory\(\)/);
+  assert.match(settingsView, /settings\.setDownloadMode\(mode\)/);
+  assert.match(settingsView, /지정 폴더 저장 실패 시 기본 Downloads로 몰래 전환하지 않습니다/);
 });
 
 test('Feedback activity moves into the open Workspace and keeps actionable errors persistent', () => {
