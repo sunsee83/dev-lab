@@ -6,7 +6,9 @@ import { createDownloadManager } from './media/download-manager.js';
 import { createMetricsEngine } from './metrics/metrics.js';
 import { createLegacyStoreAdapter } from './migration/legacy-store-adapter.js';
 import { mountGridActions } from './ui/grid.js';
+import { createLayoutManager } from './ui/layout.js';
 import { mountRiPanel } from './ui/ri-panel.js';
+import { createWorkspaceState } from './ui/workspace-state.js';
 import './legacy-runtime.js';
 
 const app = createApp({ version: VERSION });
@@ -28,12 +30,13 @@ const downloads = createDownloadManager({
 });
 const legacyStore = createLegacyStoreAdapter({ env: globalThis });
 const metrics = createMetricsEngine({ history: legacyStore });
+const workspace = createWorkspaceState();
 const storeTracker = legacyStore.createChangeTracker((change) => {
   app.setCurrentIdentity(legacyStore.getCurrentIdentity());
   app.emit(EVENTS.STORE_CHANGED, change);
 });
 
-app.services = { capabilities, settings, downloads, metrics };
+app.services = { capabilities, settings, downloads, metrics, workspace };
 app.adapters.legacyStore = legacyStore;
 
 const stopRouteTracking = app.startRouteTracking({
@@ -45,6 +48,7 @@ const stopRouteTracking = app.startRouteTracking({
     storeTracker.schedule(reason);
   }
 });
+const layout = createLayoutManager({ app, doc: document, env: globalThis });
 const grid = mountGridActions({ app, adapter: legacyStore, downloads, capabilities, doc: document, env: globalThis });
 const riPanel = mountRiPanel({
   app,
@@ -53,13 +57,17 @@ const riPanel = mountRiPanel({
   downloads,
   metrics,
   adapter: legacyStore,
+  workspace,
+  layout,
   version: VERSION,
   doc: document,
   env: globalThis
 });
 
+app.services.layout = layout;
 app.adapters.stopRouteTracking = stopRouteTracking;
 app.adapters.stopStoreTracking = () => storeTracker.destroy();
+app.adapters.stopLayout = () => layout.destroy();
 app.adapters.grid = grid;
 app.adapters.riPanel = riPanel;
 
