@@ -127,20 +127,26 @@ UI Layout Manager
 
 **기존 Reel에서 사용하던 RI 리서치 도구의 아이콘/가벼운 시각 정체성을 전역 Launcher로 승격**합니다.
 
+v3.1.6 source audit 결과 기존 `ri3-tool`과 현재 `researchIcon()`의 SVG path 자체는 동일했습니다. 실제 회귀는 icon 자체가 아니라 v3.2.3 Foundation launcher의 불필요하게 진한 배경·border·box-shadow·외곽 크기였습니다.
+
 보존 기준:
 
-- 기존 Reel RI 아이콘 계열 유지
-- 영상 위에서 과도하게 튀지 않는 투명/저채도 배경
-- 둥근 버튼
+- 기존 Reel RI SVG 계열 유지
+- visual circle 약 `34×34px`
+- icon 약 `21×21px`
+- border 없음
+- `rgba(0,0,0,.12)` 수준의 낮은 불투명도 원형 배경
+- drop-shadow 정도의 가벼운 분리
 - Instagram native action보다 강한 시각적 위계를 만들지 않음
 
-현재 v3.2.3의 새 막대그래프+돋보기 아이콘은 최종 baseline이 아닙니다.
+UI-C source에서는 위 visual을 복원하고 실제 touch target만 `44×44px`로 확장했습니다. Android Edge 실기기에서의 체감 parity는 확인 전입니다.
 
 ## 4.3 크기와 터치 영역
 
 - 시각 크기: 약 `32~36px`
-- 실제 터치 target: 최소 약 `44×44px`
-- 시각 요소를 크게 만들어 화면을 가리지 않고, invisible padding으로 터치 영역을 확보할 수 있음
+- 현재 기준 visual circle: `34×34px`
+- 실제 touch target: 약 `44×44px`
+- 시각 요소를 크게 만들어 화면을 가리지 않고, invisible touch area로 조작성만 확보
 
 ## 4.4 위치
 
@@ -530,10 +536,10 @@ Settings 하단에 **full-width `업데이트 바로가기`**를 명확하게 �
 
 # 17. 현재 v3.2.3과 Target 비교
 
-| 항목 | v3.2.3 현재 | Target |
+| 항목 | v3.2.3 source 현재 | Target |
 |---|---|---|
-| Global RI | 새 막대+돋보기 아이콘 | 기존 Reel RI visual identity 승격 |
-| RI 위치 | CSS 고정 bottom 계산 | Layout Manager 기반 실제 충돌 회피 |
+| Global RI | v3.1.6 SVG + 34px legacy-style visual + 44px touch target, 실기기 미확인 | 기존 Reel RI visual identity + 한 손 조작성 유지 |
+| RI 위치 | Layout Manager 변수 연결, blocker heuristic 실기기 미확인 | 실제 nav/banner/right rail 충돌 회피 |
 | Panel | 우측 floating 70vw panel | 모바일 bottom Research Sheet |
 | Panel 높이 | 단일 max-height | Compact / Expanded 2단계 |
 | Tabs | 6탭 | 6탭 유지 |
@@ -542,7 +548,7 @@ Settings 하단에 **full-width `업데이트 바로가기`**를 명확하게 �
 | Reel overlay | legacy migration 중 | 5개 파생지표 + native UI 비침범 |
 | 저장설정 | RI Settings | 유지 |
 
-현재 UI를 최종 디자인으로 간주하지 않습니다.
+현재 launcher source 복원은 완료했지만 Android Edge 실제 시각/충돌 검증 전입니다. 현재 floating panel은 최종 디자인으로 간주하지 않습니다.
 
 ---
 
@@ -579,42 +585,42 @@ ui/ri/
 
 # 19. UI Upgrade Migration Plan
 
-## UI-0 — Baseline 재설계 — 현재 단계
+## UI-0 — Baseline 재설계 — 완료
 
 - 기존 합의/실기기 좋은 점 inventory
 - `UI_BASELINE.md` 작성
 - Preservation 목록 갱신
 - 테스트 승인기준 갱신
-- 현재 v3.2.3 UI와 target 차이 명시
+- 현재 UI와 target 차이 명시
 
-**이 단계에서는 runtime UI를 아직 임의로 변경하지 않습니다.**
+## UI-1 — Primitive + Layout Foundation — 완료
 
-## UI-1 — Primitive + Layout Foundation
-
-- 현재 `ri-panel.js / ri-summary.js` section/row 중복 제거
+- `ri-panel.js / ri-summary.js` section/row 중복 제거
 - `ri-primitives.js` 도입
 - `layout.js` 도입
 - safeBottom / launcher anchor / Reel rail collision API
-- 화면 기능은 가능한 한 동일 유지
+- Workspace State owner 도입
 
-## UI-2 — Global RI Launcher 복원/전역화
+## UI-2 — Global RI Launcher 복원/전역화 — source 완료 / 실기기 승인 대기
 
-- 기존 Reel RI visual identity를 새 launcher에 복원
-- 화면당 1개
-- 최소 터치영역 확보
-- Layout Manager 위치 적용
-- 현재 v3.2.3 임시 icon 제거
+- v3.1.6 legacy source 재확인
+- 기존 SVG가 이미 동일하다는 사실 확인
+- 외곽 visual을 legacy 34px low-opacity circle로 복원
+- 실제 touch target 44px 확보
+- Layout Manager 위치 적용 유지
+- current panel toggle/update/Grid 기능 유지
 
-Replacement Gate:
+Replacement / Approval Gate:
 
 ```text
-새 launcher 존재
-→ click/open 동등성 확인
-→ 모든 화면 1개 확인
-→ 그 다음 임시 launcher 제거
+source visual 복원
+→ Android Edge에서 click/open 동등성 확인
+→ 모든 주요 화면 visible launcher 1개 확인
+→ nav/banner/right rail overlap 확인
+→ 그 다음 UI-D Workspace 교체 진행
 ```
 
-## UI-3 — Mobile Research Sheet
+## UI-3 — Mobile Research Sheet — 다음 구현
 
 - 기존 6탭/summary/media/settings 기능 그대로 이관
 - right floating panel → bottom sheet
