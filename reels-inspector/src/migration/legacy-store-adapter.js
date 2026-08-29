@@ -70,6 +70,33 @@ export function createLegacyStoreAdapter({ env = globalThis } = {}) {
     };
   }
 
+  function findPostByMediaUrls(urls) {
+    const targets = new Set((Array.isArray(urls) ? urls : [urls]).map(normalizeMediaUrl).filter(Boolean));
+    if (!targets.size) return null;
+
+    const store = readStore(CACHE_KEY);
+    let best = null;
+    let bestScore = 0;
+    for (const [shortcode, item] of Object.entries(store)) {
+      if (!item || !shortcode) continue;
+      const candidates = [
+        [fieldValue(item, 'videoUrl'), 4],
+        [fieldValue(item, 'coverUrl'), 3],
+        [fieldValue(item, 'thumbUrl'), 2]
+      ];
+      let score = 0;
+      for (const [url, weight] of candidates) {
+        const key = normalizeMediaUrl(url);
+        if (key && targets.has(key)) score = Math.max(score, weight);
+      }
+      if (score <= bestScore) continue;
+      bestScore = score;
+      best = getPost(shortcode);
+      if (score === 4) break;
+    }
+    return best;
+  }
+
   function getSnapshots(shortcode) {
     const list = readStore(SNAP_KEY)[shortcode];
     if (!Array.isArray(list)) return [];
@@ -156,6 +183,7 @@ export function createLegacyStoreAdapter({ env = globalThis } = {}) {
     getItem,
     getPost,
     getCurrentIdentity,
+    findPostByMediaUrls,
     getSnapshots,
     getAccountPosts,
     createChangeTracker,
@@ -180,6 +208,16 @@ function optionalMetric(value) {
 
 function normalizeImages(value) {
   return Array.isArray(value) ? value.filter((url) => /^https?:/i.test(String(url || ''))) : [];
+}
+
+function normalizeMediaUrl(url) {
+  if (!url || /^blob:/i.test(String(url))) return '';
+  try {
+    const parsed = new URL(String(url), 'https://www.instagram.com/');
+    return `${parsed.hostname}${parsed.pathname}`;
+  } catch {
+    return '';
+  }
 }
 
 function inferTypeFromUrl(url) {
