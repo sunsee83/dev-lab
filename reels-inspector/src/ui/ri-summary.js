@@ -1,3 +1,5 @@
+import { addRow, createSection, renderEmpty } from './ri-primitives.js';
+
 const COUNT_FORMATTER = new Intl.NumberFormat('ko-KR');
 
 export function renderRiSummary({ body, post, metrics, doc = globalThis.document } = {}) {
@@ -22,35 +24,6 @@ export function renderRiSummary({ body, post, metrics, doc = globalThis.document
   note.className = 'ri32-note';
   note.textContent = 'ER은 검증된 조회수·좋아요·댓글·리포스트가 모두 있을 때만 계산합니다. 24h는 실제 18~32시간 snapshot, 계정 대비는 최근 비교 표본 5개 이상일 때만 표시합니다.';
   section.appendChild(note);
-}
-
-function createSection(body, title, doc) {
-  const section = doc.createElement('section');
-  section.className = 'ri32-section';
-  const heading = doc.createElement('div');
-  heading.className = 'ri32-section-title';
-  heading.textContent = title;
-  section.appendChild(heading);
-  body.appendChild(section);
-  return section;
-}
-
-function addRow(parent, label, value, doc) {
-  const row = doc.createElement('div');
-  row.className = 'ri32-setting-row';
-  const left = doc.createElement('span');
-  const right = doc.createElement('strong');
-  left.textContent = label;
-  right.textContent = value ?? '—';
-  row.append(left, right);
-  parent.appendChild(row);
-}
-
-function renderEmpty(body, text, doc) {
-  const empty = doc.createElement('div');
-  empty.className = 'ri32-empty';
-  empty.textContent = text;
-  body.appendChild(empty);
 }
 
 function countLabel(value) {
