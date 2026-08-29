@@ -6,6 +6,8 @@ import { copyText } from '../../src/core/clipboard.js';
 import { detectCapabilities } from '../../src/core/capability.js';
 import { createSettingsStore } from '../../src/store/settings-store.js';
 import { createDownloadManager } from '../../src/media/download-manager.js';
+import { computeLayoutSnapshot } from '../../src/ui/layout.js';
+import { createWorkspaceState } from '../../src/ui/workspace-state.js';
 
 test('AppContext publishes events and dedupes scheduled render by key', async () => {
   let queuedFrame = null;
@@ -82,6 +84,59 @@ test('AppContext route tracker updates identity and shares observed activity wit
   assert.deepEqual(activity, ['dom']);
   stop();
   assert.equal(listeners.size, 0);
+});
+
+test('workspace state owns open/detent/tab and invalidates context by identity key', () => {
+  const workspace = createWorkspaceState();
+  assert.deepEqual(workspace.getState(), {
+    open: false,
+    detent: 'closed',
+    mode: 'global',
+    activeTab: 'summary',
+    contextKey: '',
+    contextEpoch: 0
+  });
+
+  workspace.rebindContext({ shortcode: 'AAA111', mediaId: '1' });
+  workspace.open();
+  workspace.setActiveTab('media');
+  workspace.expand();
+  assert.equal(workspace.getState().mode, 'content');
+  assert.equal(workspace.getState().detent, 'expanded');
+  assert.equal(workspace.getState().activeTab, 'media');
+  assert.equal(workspace.getState().contextEpoch, 1);
+
+  workspace.rebindContext({ shortcode: 'AAA111', mediaId: '1' });
+  assert.equal(workspace.getState().contextEpoch, 1);
+  workspace.rebindContext({ shortcode: 'BBB222', mediaId: '2' });
+  assert.equal(workspace.getState().contextEpoch, 2);
+  assert.match(workspace.getState().contextKey, /^BBB222\|2\|/);
+
+  workspace.close();
+  assert.equal(workspace.getState().detent, 'closed');
+  assert.equal(workspace.getState().open, false);
+});
+
+test('layout snapshot keeps legacy baseline but moves around bottom and right blockers', () => {
+  const baseline = computeLayoutSnapshot({
+    viewportWidth: 400,
+    viewportHeight: 800,
+    safeBottom: 20
+  });
+  assert.equal(baseline.launcherAnchor.bottom, 98);
+  assert.equal(baseline.launcherAnchor.right, 12);
+
+  const blocked = computeLayoutSnapshot({
+    viewportWidth: 400,
+    viewportHeight: 800,
+    safeBottom: 20,
+    bottomBlockers: [{ top: 650 }],
+    rightBlockers: [{ left: 350 }]
+  });
+  assert.equal(blocked.launcherAnchor.bottom, 162);
+  assert.equal(blocked.launcherAnchor.right, 60);
+  assert.ok(blocked.sheetMetrics.expandedHeight > blocked.sheetMetrics.compactHeight);
+  assert.ok(blocked.feedbackAnchor.bottom > blocked.launcherAnchor.bottom);
 });
 
 test('shared clipboard owner uses browser clipboard first and DOM fallback second', async () => {
