@@ -1362,10 +1362,29 @@
     };
 
     rememberObject = function (obj, source) {
-        var code, patch = {}, n, user, videos = [], images = [], i, key, type, directCover, carouselImages;
+        var code, patch = {}, n, user, videos = [], images = [], i, key, type, directCover, carouselImages, captured, evidenceVideos, evidenceImages;
         if (!obj || typeof obj !== 'object') return;
         code = obj.code || obj.shortcode || obj.short_code;
         if (!code || typeof code !== 'string' || code.length < 5 || code.length > 40) return;
+        if (typeof window.__RI32_CAPTURE_RAW__ === 'function') {
+            try {
+                captured = window.__RI32_CAPTURE_RAW__({
+                    input: obj,
+                    pageUrl: codeFromUrl(location.href) === code ? location.href : '',
+                    source: source || 'embedded',
+                    confidence: source === 'network' ? 'high' : 'medium'
+                });
+                if (captured && captured.item) {
+                    items[code] = captured.item;
+                    evidenceVideos = captured.evidence && captured.evidence.videoUrls || [];
+                    evidenceImages = captured.evidence && captured.evidence.imageUrls || [];
+                    for (i = 0; i < evidenceVideos.length; i++) { key = normalizeUrl(evidenceVideos[i]); if (key) videoMap[key] = code; }
+                    for (i = 0; i < evidenceImages.length; i++) { key = normalizeUrl(evidenceImages[i]); if (key) posterMap[key] = code; }
+                    if (captured.changed) scheduleRefresh();
+                    return;
+                }
+            } catch (e) {}
+        }
         n = sameMediaNumber(obj, VIEW_KEYS, code, 0); if (n != null) patch.views = n;
         n = sameMediaNumber(obj, ['like_count','likes_count'], code, 0); if (n != null) patch.likes = n;
         n = sameMediaNumber(obj, ['comment_count','comments_count'], code, 0); if (n != null) patch.comments = n;

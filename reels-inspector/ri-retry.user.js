@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.8
+// @version      3.2.9
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.8
+// Build version: 3.2.9
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.8";
+  var VERSION = "3.2.9";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -452,29 +452,36 @@
     "views",
     "plays"
   ];
+  var LIKE_KEYS = ["like_count", "likes_count", "likes", "likeCount"];
+  var COMMENT_KEYS = ["comment_count", "comments_count", "comments", "commentCount"];
+  var REPOST_KEYS = ["repost_count", "reshare_count", "reposts_count", "reposts", "repostCount"];
   function extractInstagramMedia(input, { pageUrl = "" } = {}) {
     const media = unwrapMedia(input);
     if (!media) return null;
-    const user = media.user || media.owner || {};
-    const shortcode = cleanShortcode2(media.code || media.shortcode);
+    const shortcode = cleanShortcode2(media.code || media.shortcode || media.short_code);
+    if (!shortcode) return null;
+    const user = media.user || media.owner || media.owner_user || {};
     const mediaType = detectMediaType(media);
-    const canonicalUrl = media.permalink || pageUrl || "";
+    const evidence = collectMediaEvidence(media, shortcode);
+    const coverUrl = bestImageFromMedia(media) || evidence.imageUrls[0] || "";
+    const videoUrl = bestVideoUrl(media, evidence.videoUrls);
+    const canonicalUrl = media.permalink || media.canonical_url || pageUrl || "";
     const patch = compact({
-      mediaId: scalar(media.pk || media.id),
-      ownerId: scalar(user.pk || user.id || media.owner_id),
+      mediaId: scalar(media.pk || media.id || media.media_id),
+      ownerId: scalar(user.pk || user.id || media.user_id || media.owner_id),
       owner: username(user.username || media.owner_username),
       mediaType,
       productType: scalar(media.product_type || media.productType),
       canonicalUrl,
       pageUrl,
-      views: firstMetric(media, VIEW_KEYS),
-      likes: firstMetric(media, ["like_count", "likes", "likeCount"]),
-      comments: firstMetric(media, ["comment_count", "comments", "commentCount"]),
-      reposts: firstMetric(media, ["repost_count", "reshare_count", "reposts", "repostCount"]),
-      date: extractDate(media),
-      videoUrl: bestVideoUrl(media),
-      coverUrl: bestImageFromMedia(media),
-      thumbUrl: bestImageFromMedia(media),
+      views: metricFromMediaTree(media, VIEW_KEYS, shortcode),
+      likes: metricFromMediaTree(media, LIKE_KEYS, shortcode),
+      comments: metricFromMediaTree(media, COMMENT_KEYS, shortcode),
+      reposts: metricFromMediaTree(media, REPOST_KEYS, shortcode),
+      date: extractDate(media, shortcode),
+      videoUrl,
+      coverUrl,
+      thumbUrl: coverUrl,
       carouselImages: carouselImagesFromMedia(media)
     });
     const identity = normalizeIdentity({
@@ -486,14 +493,19 @@
       productType: patch.productType,
       canonicalUrl: patch.canonicalUrl
     }, pageUrl);
-    return { shortcode: identity?.shortcode || shortcode, identity, patch };
+    return {
+      shortcode: identity?.shortcode || shortcode,
+      identity,
+      patch,
+      evidence
+    };
   }
   function detectMediaType(media) {
     const mt = Number(media?.media_type ?? media?.mediaType);
     const productType = String(media?.product_type || media?.productType || "").toLowerCase();
     if (/reel|clips/.test(productType)) return "REEL";
-    if (mt === 8 || Array.isArray(media?.carousel_media)) return "CAROUSEL";
-    if (mt === 2 || media?.video_versions || media?.video_url) return "VIDEO";
+    if (mt === 8 || carouselSlides(media).length) return "CAROUSEL";
+    if (mt === 2 || media?.video_versions || media?.video_url || media?.video_src) return "VIDEO";
     if (mt === 1) return "PHOTO";
     return "";
   }
@@ -518,19 +530,39 @@
     return best || media.display_url || media.thumbnail_src || media.thumbnail_url || media.image_url || "";
   }
   function carouselImagesFromMedia(media) {
-    const slides = Array.isArray(media?.carousel_media) ? media.carousel_media : [];
-    const seen = /* @__PURE__ */ new Set();
     const out = [];
-    for (const slide of slides) {
-      const url = bestImageFromMedia(slide);
-      const key = mediaUrlKey(url) || url;
-      if (!url || seen.has(key)) continue;
-      seen.add(key);
-      out.push(url);
+    for (const slide of carouselSlides(media)) {
+      const url = bestImageFromMedia(slide) || collectMediaEvidence(slide, "").imageUrls[0] || "";
+      if (url) out.push(url);
     }
     return out;
   }
-  function bestVideoUrl(media) {
+  function collectMediaEvidence(media, shortcode = "") {
+    const videoUrls = [];
+    const imageUrls = [];
+    const seenVideo = /* @__PURE__ */ new Set();
+    const seenImage = /* @__PURE__ */ new Set();
+    const stack = [{ value: media, depth: 0 }];
+    while (stack.length) {
+      const current = stack.pop();
+      if (!current?.value || typeof current.value !== "object" || current.depth > 3) continue;
+      for (const [key, value] of Object.entries(current.value).slice(0, 130)) {
+        if (typeof value === "string" && /^https?:/i.test(value)) {
+          const videoLike = /^(video_url|video_src|playback_url)$/i.test(key) || /\.mp4(?:\?|$)/i.test(value);
+          const imageLike = /image|thumbnail|display|poster|image_url|src/i.test(key) && !/\.mp4/i.test(value);
+          if (videoLike) addUnique(videoUrls, seenVideo, value);
+          else if (imageLike) addUnique(imageUrls, seenImage, value);
+          continue;
+        }
+        if (!value || typeof value !== "object") continue;
+        const childCode = cleanShortcode2(value.code || value.shortcode || value.short_code);
+        if (shortcode && childCode && childCode !== shortcode) continue;
+        stack.push({ value, depth: current.depth + 1 });
+      }
+    }
+    return { videoUrls, imageUrls };
+  }
+  function bestVideoUrl(media, evidenceUrls = []) {
     const versions = Array.isArray(media?.video_versions) ? media.video_versions : [];
     let best = "";
     let bestScore = -1;
@@ -542,24 +574,48 @@
         bestScore = score;
       }
     }
-    return best || media?.video_url || "";
+    return best || media?.video_url || media?.video_src || evidenceUrls[0] || "";
+  }
+  function metricFromMediaTree(media, keys, shortcode) {
+    const stack = [{ value: media, depth: 0 }];
+    while (stack.length) {
+      const current = stack.shift();
+      const value = current?.value;
+      if (!value || typeof value !== "object" || current.depth > 2) continue;
+      const direct = firstMetric(value, keys);
+      if (direct !== void 0) return direct;
+      for (const child of Object.values(value).slice(0, 80)) {
+        if (!child || typeof child !== "object" || Array.isArray(child)) continue;
+        const childCode = cleanShortcode2(child.code || child.shortcode || child.short_code);
+        if (childCode && childCode !== shortcode) continue;
+        stack.push({ value: child, depth: current.depth + 1 });
+      }
+    }
+    return void 0;
   }
   function firstMetric(media, keys) {
     for (const key of keys) {
-      const value = Number(media?.[key]);
+      if (media?.[key] == null || media?.[key] === "") continue;
+      const value = Number(media[key]);
       if (Number.isFinite(value) && value >= 0) return value;
     }
     return void 0;
   }
-  function extractDate(media) {
+  function extractDate(media, shortcode) {
     if (typeof media?.date === "string" && media.date) return media.date;
-    const takenAt = Number(media?.taken_at || media?.takenAt);
+    const takenAt = metricFromMediaTree(media, ["taken_at", "taken_at_timestamp", "takenAt"], shortcode);
     if (!Number.isFinite(takenAt) || takenAt <= 0) return void 0;
     try {
       return new Date(takenAt * 1e3).toISOString().slice(0, 10);
     } catch {
       return void 0;
     }
+  }
+  function carouselSlides(media) {
+    if (Array.isArray(media?.carousel_media)) return media.carousel_media;
+    if (Array.isArray(media?.carouselMedia)) return media.carouselMedia;
+    const edges = media?.edge_sidecar_to_children?.edges;
+    return Array.isArray(edges) ? edges.map((edge) => edge?.node || edge).filter(Boolean) : [];
   }
   function unwrapMedia(input) {
     if (!input || typeof input !== "object") return null;
@@ -571,11 +627,16 @@
       return !Array.isArray(item) || item.length > 0;
     }));
   }
+  function addUnique(out, seen, value) {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    out.push(value);
+  }
   function cleanShortcode2(value) {
     return String(value || "").replace(/[^A-Za-z0-9_-]/g, "");
   }
   function username(value) {
-    return String(value || "").trim().replace(/^@/, "");
+    return String(value || "").trim().replace(/^@/, "").toLowerCase();
   }
   function scalar(value) {
     return value == null ? "" : String(value).trim();
@@ -819,7 +880,8 @@
     function ingest(input, { pageUrl = "", source = "network", confidence } = {}) {
       const extracted = extractInstagramMedia(input, { pageUrl });
       if (!extracted?.shortcode) return null;
-      return applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
+      const result2 = applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
+      return result2 ? { ...result2, evidence: extracted.evidence } : null;
     }
     function flush() {
       return persistence?.flush?.(verified.snapshot()) ?? false;
@@ -1755,8 +1817,10 @@
 
   // src/migration/capture-handoff.js
   var LEGACY_CAPTURE_HOOK = "__RI32_CAPTURE_PATCH__";
+  var LEGACY_RAW_CAPTURE_HOOK = "__RI32_CAPTURE_RAW__";
   function installLegacyCaptureHandoff({ env = globalThis, data: data2 } = {}) {
-    const previous = env[LEGACY_CAPTURE_HOOK];
+    const previousPatch = env[LEGACY_CAPTURE_HOOK];
+    const previousRaw = env[LEGACY_RAW_CAPTURE_HOOK];
     env[LEGACY_CAPTURE_HOOK] = (capture = {}) => {
       if (!data2?.ingestPatch) return null;
       return data2.ingestPatch(capture.shortcode, capture.patch, {
@@ -1764,10 +1828,22 @@
         confidence: capture.confidence
       });
     };
-    return () => {
-      if (previous === void 0) delete env[LEGACY_CAPTURE_HOOK];
-      else env[LEGACY_CAPTURE_HOOK] = previous;
+    env[LEGACY_RAW_CAPTURE_HOOK] = (capture = {}) => {
+      if (!data2?.ingest) return null;
+      return data2.ingest(capture.input, {
+        pageUrl: capture.pageUrl || "",
+        source: capture.source || "embedded",
+        confidence: capture.confidence
+      });
     };
+    return () => {
+      restore(env, LEGACY_CAPTURE_HOOK, previousPatch);
+      restore(env, LEGACY_RAW_CAPTURE_HOOK, previousRaw);
+    };
+  }
+  function restore(env, key, previous) {
+    if (previous === void 0) delete env[key];
+    else env[key] = previous;
   }
 
   // src/migration/legacy-store-adapter.js
@@ -4937,10 +5013,36 @@
       return item;
     };
     rememberObject = function(obj, source) {
-      var code, patch = {}, n, user, videos = [], images = [], i, key, type, directCover, carouselImages;
+      var code, patch = {}, n, user, videos = [], images = [], i, key, type, directCover, carouselImages, captured, evidenceVideos, evidenceImages;
       if (!obj || typeof obj !== "object") return;
       code = obj.code || obj.shortcode || obj.short_code;
       if (!code || typeof code !== "string" || code.length < 5 || code.length > 40) return;
+      if (typeof window.__RI32_CAPTURE_RAW__ === "function") {
+        try {
+          captured = window.__RI32_CAPTURE_RAW__({
+            input: obj,
+            pageUrl: codeFromUrl2(location.href) === code ? location.href : "",
+            source: source || "embedded",
+            confidence: source === "network" ? "high" : "medium"
+          });
+          if (captured && captured.item) {
+            items[code] = captured.item;
+            evidenceVideos = captured.evidence && captured.evidence.videoUrls || [];
+            evidenceImages = captured.evidence && captured.evidence.imageUrls || [];
+            for (i = 0; i < evidenceVideos.length; i++) {
+              key = normalizeUrl(evidenceVideos[i]);
+              if (key) videoMap[key] = code;
+            }
+            for (i = 0; i < evidenceImages.length; i++) {
+              key = normalizeUrl(evidenceImages[i]);
+              if (key) posterMap[key] = code;
+            }
+            if (captured.changed) scheduleRefresh();
+            return;
+          }
+        } catch (e) {
+        }
+      }
       n = sameMediaNumber(obj, VIEW_KEYS2, code, 0);
       if (n != null) patch.views = n;
       n = sameMediaNumber(obj, ["like_count", "likes_count"], code, 0);
