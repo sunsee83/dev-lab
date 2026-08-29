@@ -4,7 +4,7 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.9**
+- Runtime version: **v3.2.10**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
@@ -27,20 +27,22 @@ Active:
 - Grid quick-save / Global RI / Bottom Workspace / CONTENT 6탭
 - History Store + Verified Cache Store read/write owner
 - Data Engine: Verified Store + `media[]` + `ingest()` + `ingestPatch()`
-- **structured JSON capture: legacy scan → raw handoff → Extractor → Data Engine**
+- structured JSON capture: legacy scan → raw handoff → Extractor → Data Engine
 - Extractor parity: `code|shortcode|short_code`, nested metrics, alternate media URLs, `carousel_media|carouselMedia|edge_sidecar_to_children`
-- active Reel context adapter
+- **Data Engine read facade: route identity + exact media URL lookup**
+- **Grid quick-save / RI Workspace / active Reel context read → Data Engine**
 
 Compatibility still active:
 
 - DOM/Reel identity patch와 permalink HTML fallback은 `ingestPatch()` 경유
-- Grid/Reel renderer는 legacy adapter/in-memory compatibility 유지
+- legacy adapter는 cache/change-tracking migration boundary로만 유지
+- legacy runtime Grid metric renderer / Reel overlay는 in-memory compatibility read 유지
 - Android gate 전 새 Reel overlay mount 금지
 
 ## Automated Checkpoint
 
-- unit: **45 / 45 pass**
-- build: **v3.2.9 success**
+- unit: **47 / 47 pass**
+- build: **v3.2.10 success**
 - architecture/syntax: **success**
 - source files: **34**
 - architecture warnings: **0**
@@ -79,9 +81,9 @@ Android Edge 실확인 필요:
 
 - verified cache/history writer cutover 완료
 - structured JSON raw capture → Extractor cutover 완료
+- Grid quick-save / RI Workspace / Reel context Data Engine read cutover 완료
 - permalink HTML parser / DOM compatibility patch 남음
-- Grid/Reel legacy renderer + compatibility metric body 남음
-- `ri-panel.js` migration adapter 직접 coupling
+- legacy runtime Grid metric renderer + Reel overlay compatibility body 남음
 - staged Reel overlay replacement 미완료
 - Research Content/Comments/Analysis data model 미연결
 
@@ -96,7 +98,7 @@ Analysis 예정:
 1. **Device gate** — UI-C/D/E + Reel identity/native metrics + 저장설정
 2. **UI-F2 Reel Overlay replacement** — evidence → mount → parity → legacy visual 제거
 3. **UI-G1 remaining capture migration** — permalink/DOM compatibility 최소화 → parser 중복 제거
-4. **Renderer migration** — Grid/Reel read → Data Engine → legacy formula/renderer 제거
+4. **Legacy renderer migration** — Grid metric/Reel compatibility read → Data Engine → legacy formula/renderer 제거
 5. **Research data** — Content → Comments → Analysis → STT/OCR/AI
 
 Device gate와 독립적인 parser/renderer 준비는 진행 가능. Grid Frozen renderer는 먼저 제거하지 않습니다.

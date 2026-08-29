@@ -1,4 +1,4 @@
-export const VERSION = '3.2.9';
+export const VERSION = '3.2.10';
 export const UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
 
 export function updateInstallUrl(cacheBust = Date.now()) {

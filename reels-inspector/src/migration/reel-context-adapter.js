@@ -1,3 +1,5 @@
+import { shortcodeFromUrl } from '../data/identity.js';
+
 const METRIC_PATTERNS = Object.freeze({
   likes: /좋아요|\blikes?\b/i,
   comments: /댓글|\bcomments?\b/i,
@@ -20,7 +22,7 @@ export function createReelContextAdapter({ store, doc = globalThis.document, env
     const root = findScopedRoot(video, viewport, env) || video.parentElement || doc;
     const native = readNativeMetrics(root, env);
     const username = readUsername(root, videoRect, viewport, env);
-    const scopedCode = scopedShortcode(root, store, env);
+    const scopedCode = scopedShortcode(root, env);
     const mediaPost = store.findPostByMediaUrls?.(mediaUrls(video)) || null;
     const mediaCode = mediaPost?.shortcode || '';
     const urlCode = exactReelCode(env.location?.href || '');
@@ -188,12 +190,12 @@ function readUsername(root, videoRect, viewport, env) {
   return best || '';
 }
 
-function scopedShortcode(root, store, env) {
+function scopedShortcode(root, env) {
   const anchors = root?.querySelectorAll?.('a[href*="/reel/"],a[href*="/reels/"]') || [];
   for (let index = 0; index < anchors.length && index < 120; index += 1) {
     const anchor = anchors[index];
     if (!isVisible(anchor, env)) continue;
-    const code = store.codeFromUrl?.(anchor.href || anchor.getAttribute?.('href')) || exactReelCode(anchor.href || anchor.getAttribute?.('href'));
+    const code = shortcodeFromUrl(anchor.href || anchor.getAttribute?.('href')) || exactReelCode(anchor.href || anchor.getAttribute?.('href'));
     if (code) return code;
   }
   return '';

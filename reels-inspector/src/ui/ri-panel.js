@@ -24,7 +24,7 @@ export function mountRiPanel({
   capabilities,
   downloads,
   metrics,
-  adapter,
+  data,
   workspace = createWorkspaceState(),
   layout,
   version = '',
@@ -262,12 +262,12 @@ export function mountRiPanel({
   }
 
   function currentIdentity() {
-    return app?.getCurrentIdentity?.() || adapter?.getCurrentIdentity?.() || null;
+    return app?.getCurrentIdentity?.() || data?.getIdentityFromUrl?.(env.location?.href || '') || null;
   }
 
   function currentPost() {
     const identity = currentIdentity();
-    return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
+    return identity?.shortcode ? data?.getPost?.(identity.shortcode) || identity : null;
   }
 
   function isOpen() {

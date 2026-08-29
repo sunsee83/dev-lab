@@ -53,13 +53,13 @@ const data = createDataEngine({
   }
 });
 const stopCaptureHandoff = installLegacyCaptureHandoff({ env: globalThis, data });
-const reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
+const reelContext = createReelContextAdapter({ store: data, doc: document, env: globalThis });
 const metrics = createMetricsEngine({ history });
 const workspace = createWorkspaceState();
 const storeTracker = legacyStore.createChangeTracker((change) => {
   data.syncLegacy();
   const activeIdentity = reelContext.resolveActivityIdentity();
-  app.setCurrentIdentity(activeIdentity === undefined ? legacyStore.getCurrentIdentity() : activeIdentity);
+  app.setCurrentIdentity(activeIdentity === undefined ? data.getIdentityFromUrl(globalThis.location?.href || '') : activeIdentity);
   app.emit(EVENTS.STORE_CHANGED, change);
 });
 
@@ -70,7 +70,7 @@ app.adapters.reelContext = reelContext;
 const stopRouteTracking = app.startRouteTracking({
   env: globalThis,
   resolveIdentity(url) {
-    return reelContext.getCurrent()?.identity || legacyStore.getCurrentIdentity(url);
+    return reelContext.getCurrent()?.identity || data.getIdentityFromUrl(url);
   },
   resolveActivityIdentity() {
     return reelContext.resolveActivityIdentity();
@@ -80,14 +80,14 @@ const stopRouteTracking = app.startRouteTracking({
   }
 });
 const layout = createLayoutManager({ app, doc: document, env: globalThis });
-const grid = mountGridActions({ app, adapter: legacyStore, downloads, capabilities, doc: document, env: globalThis });
+const grid = mountGridActions({ app, data, downloads, capabilities, doc: document, env: globalThis });
 const riPanel = mountRiPanel({
   app,
   settings,
   capabilities,
   downloads,
   metrics,
-  adapter: legacyStore,
+  data,
   workspace,
   layout,
   version: VERSION,

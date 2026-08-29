@@ -1,12 +1,13 @@
 import { EVENTS } from '../core/app.js';
 import { copyText } from '../core/clipboard.js';
+import { shortcodeFromUrl } from '../data/identity.js';
 import { resolveGridCardMedia } from '../media/media-resolver.js';
 import { showToast } from './toast.js';
 
 const MENU_ID = 'ri32-grid-menu';
 
-export function mountGridActions({ app, adapter, downloads, capabilities, doc = globalThis.document, env = globalThis } = {}) {
-  if (!doc?.documentElement || !adapter || !downloads) throw new Error('Grid actions require document, adapter and Download Manager');
+export function mountGridActions({ app, data, downloads, capabilities, doc = globalThis.document, env = globalThis } = {}) {
+  if (!doc?.documentElement || !data || !downloads) throw new Error('Grid actions require document, Data Engine and Download Manager');
   let destroyed = false;
 
   doc.addEventListener('pointerdown', onPointerDown, true);
@@ -36,7 +37,7 @@ export function mountGridActions({ app, adapter, downloads, capabilities, doc = 
   }
 
   function openMenu(anchor, trigger) {
-    const shortcode = anchor.dataset.ri315Code || adapter.codeFromUrl(anchor.href);
+    const shortcode = anchor.dataset.ri315Code || shortcodeFromUrl(anchor.href);
     if (!shortcode) return;
     const existing = doc.getElementById(MENU_ID);
     if (existing?.dataset.code === shortcode) {
@@ -46,7 +47,7 @@ export function mountGridActions({ app, adapter, downloads, capabilities, doc = 
     closeMenu();
     doc.getElementById('ri3-grid-menu')?.remove();
 
-    const post = adapter.getPost(shortcode) || { shortcode };
+    const post = data.getPost(shortcode) || { shortcode };
     const media = resolveGridCardMedia({ anchor, post, shortcode });
     const menu = doc.createElement('div');
     menu.id = MENU_ID;

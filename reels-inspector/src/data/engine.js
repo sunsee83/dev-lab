@@ -1,3 +1,4 @@
+import { mediaUrlKey, normalizeIdentity, shortcodeFromUrl } from './identity.js';
 import { extractInstagramMedia } from './extractor.js';
 import { createVerifiedStore } from '../store/verified-store.js';
 
@@ -9,6 +10,42 @@ export function createDataEngine({ legacyAdapter, history, persistence, now = ()
     const snapshot = legacyAdapter?.getItemsSnapshot?.();
     if (!snapshot) return verified.snapshot();
     return verified.replaceSnapshot(snapshot);
+  }
+
+  function getIdentityFromUrl(url = '') {
+    const shortcode = shortcodeFromUrl(url);
+    if (!shortcode) return null;
+    const post = verified.getPost(shortcode) || { shortcode };
+    return normalizeIdentity({ ...post, shortcode }, url);
+  }
+
+  function findPostByMediaUrls(urls) {
+    const targets = new Set((Array.isArray(urls) ? urls : [urls]).map(mediaUrlKey).filter(Boolean));
+    if (!targets.size) return null;
+
+    let best = null;
+    let bestScore = 0;
+    const snapshot = verified.snapshot();
+    for (const shortcode of Object.keys(snapshot)) {
+      const post = verified.getPost(shortcode);
+      if (!post) continue;
+      const candidates = [
+        [post.videoUrl, 4],
+        [post.coverUrl, 3],
+        [post.thumbUrl, 2],
+        ...(post.carouselImages || []).map((url) => [url, 1])
+      ];
+      let score = 0;
+      for (const [url, weight] of candidates) {
+        const key = mediaUrlKey(url);
+        if (key && targets.has(key)) score = Math.max(score, weight);
+      }
+      if (score <= bestScore) continue;
+      bestScore = score;
+      best = post;
+      if (score === 4) break;
+    }
+    return best;
   }
 
   function applyPatch(shortcode, patch = {}, { source = 'dom', confidence } = {}) {
@@ -47,6 +84,8 @@ export function createDataEngine({ legacyAdapter, history, persistence, now = ()
   return {
     getPost: verified.getPost,
     getIdentity: verified.getIdentity,
+    getIdentityFromUrl,
+    findPostByMediaUrls,
     getItem: verified.getItem,
     getSnapshots: history?.getSnapshots,
     getAccountPosts: history?.getAccountPosts,

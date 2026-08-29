@@ -31,15 +31,15 @@ src/
 - version/update → `version.js`
 - route/shared SPA → `core/app.js`; activity → `core/activity.js`
 - identity → `data/identity.js`
-- **structured Instagram payload extraction/evidence → `data/extractor.js`**
-- **verified ingest facade → `data/engine.js`**
+- structured Instagram payload extraction/evidence → `data/extractor.js`
+- **verified ingest + renderer/context read facade → `data/engine.js`**
 - common `media[]` → `data/media-model.js`
 - provenance/rank/conflict → `store/verified-store.js`
 - compatibility cache persistence → `store/verified-cache-store.js`
 - snapshot/account history → `store/history-store.js`
-- **legacy raw/patch bridge → `migration/capture-handoff.js`**
-- legacy compatibility read/change tracking → `migration/legacy-store-adapter.js`
-- active Reel evidence → `migration/reel-context-adapter.js`
+- legacy raw/patch bridge → `migration/capture-handoff.js`
+- **legacy cache/change tracking only → `migration/legacy-store-adapter.js`**
+- active Reel DOM evidence/context → `migration/reel-context-adapter.js`
 - ER/24h/account-relative → `metrics/metrics.js`
 - media resolution/filename → `media/media-resolver.js`; save → `media/download-manager.js`
 - Workspace/Layout/RI/UI → 각 `ui/*`
@@ -56,10 +56,13 @@ structured JSON network/embedded scan
 → Verified Store
 ├→ Verified Cache Store
 ├→ History Store → Metrics
-└→ common media[]
+├→ common media[]
+└→ read facade → Grid quick-save / RI Workspace / Reel context
 ```
 
-Extractor는 `code|shortcode|short_code`, direct+nested metrics, media variants, `carousel_media|carouselMedia|edge_sidecar_to_children`를 처리합니다. evidence의 video/image URL은 legacy exact-media map parity용으로만 bridge합니다.
+Data Engine read facade가 shortcode route identity와 normalized exact media URL lookup을 소유합니다. UI는 migration adapter의 `getPost()`/`getCurrentIdentity()`를 직접 호출하지 않습니다.
+
+Extractor는 `code|shortcode|short_code`, direct+nested metrics, media variants, `carousel_media|carouselMedia|edge_sidecar_to_children`를 처리합니다. evidence의 video/image URL은 legacy exact-media map parity용 bridge로 유지합니다.
 
 Compatibility:
 
@@ -71,6 +74,8 @@ DOM/Reel identity patch + permalink HTML fallback
 ```
 
 모든 ongoing cache/history side effect는 Data Engine/Store owner이며 legacy 직접 write는 handoff 성공 시 실행되지 않습니다. missing=`0` 금지, source rank=`legacy < permalink < dom < embedded < network`.
+
+legacy adapter는 cache fingerprint/change tracking 및 external/compatibility sync 경계로만 남습니다. legacy runtime 내부 Grid metric/Reel overlay renderer는 아직 자체 in-memory `items`를 읽으므로 별도 migration 대상입니다.
 
 ### common media[]
 
@@ -101,8 +106,8 @@ Workspace 내부 → header/tab/body/action/activity
 ### Active Reel / Download
 
 ```text
-shared SPA → reel-context-adapter → scoped → exact media → route
-Grid/RI → Download Manager → video|image|carousel policy → Activity
+shared SPA → reel-context-adapter → scoped → Data Engine exact media → route
+Grid/RI → Data Engine post → Download Manager → video|image|carousel policy → Activity
 ```
 
 fuzzy shortcode/별도 full DOM observer/silent directory fallback 금지.
@@ -119,8 +124,9 @@ Android placement/identity 확인 뒤 mount, 이후에만 legacy `#ri3-reels-ove
 [완료] History/media[]/runtime wiring
 [완료] cache/history writer handoff
 [완료] structured JSON raw capture → Extractor
+[완료] Grid quick-save / RI Workspace / Reel context → Data Engine read
 [다음] permalink/DOM compatibility parser 최소화
-→ Grid/Reel renderer read 전환 → legacy-runtime 제거
+→ legacy Grid metric/Reel renderer read 전환 → legacy-runtime 제거
 ```
 
 Analysis 목표: 포맷=`문제제기형|리스트형|Before/After|튜토리얼|리뷰|스토리|비교|뉴스·정보`; 전환=`댓글|저장|공유|프로필|링크|구매|DM`; 보조=`훅|CTA 위치|신뢰|감정·긴급성`. 근거 없으면 생성 금지.
