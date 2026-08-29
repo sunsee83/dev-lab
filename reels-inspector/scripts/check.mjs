@@ -190,6 +190,7 @@ for (const heading of requiredUiSections) {
 }
 if (!uiBaselineText.includes('기존 Reel RI')) errors.push('UI_BASELINE.md: preserved Reel RI visual identity rule missing');
 if (!uiBaselineText.includes('업데이트 바로가기')) errors.push('UI_BASELINE.md: update shortcut rule missing');
+if (!uiBaselineText.includes('UI-3 — Mobile Research Workspace — source 완료')) errors.push('UI_BASELINE.md: UI-D source checkpoint not reflected');
 
 const requiredUiArchitectureSections = [
   '# 2. 5-Layer UI Model',
@@ -215,18 +216,29 @@ if (!uiArchitectureText.includes('브라우저 Back') && !uiArchitectureText.inc
 
 if (!workTrackText.includes('UI_BASELINE.md')) errors.push('WORK_TRACK.md: UI_BASELINE.md reference missing');
 if (!workTrackText.includes('UI_ARCHITECTURE.md')) errors.push('WORK_TRACK.md: UI_ARCHITECTURE.md reference missing');
-if (!workTrackText.includes('UI-B — Primitive + Layout + Workspace State Foundation')) errors.push('WORK_TRACK.md: UI-B execution checkpoint missing');
-if (!workTrackText.includes('UI-C — Global RI Launcher visual restoration')) errors.push('WORK_TRACK.md: UI-C execution checkpoint missing');
-if (!workTrackText.includes('UI-D — Contextual Research Workspace')) errors.push('WORK_TRACK.md: next UI-D execution step missing');
+if (!workTrackText.includes('UI-B — Primitive + Layout + Workspace State Foundation')) errors.push('WORK_TRACK.md: UI-B checkpoint missing');
+if (!workTrackText.includes('UI-C — Global RI Launcher visual restoration')) errors.push('WORK_TRACK.md: UI-C checkpoint missing');
+if (!workTrackText.includes('UI-D — Contextual Research Workspace')) errors.push('WORK_TRACK.md: UI-D checkpoint missing');
+if (!workTrackText.includes('UI-E — Feedback / Activity — 다음 작업')) errors.push('WORK_TRACK.md: next UI-E execution step missing');
 
-const requiredUiFoundationFiles = [
+const requiredUiFiles = [
   'src/ui/ri-primitives.js',
   'src/ui/layout.js',
-  'src/ui/workspace-state.js'
+  'src/ui/workspace-state.js',
+  'src/ui/research-workspace.js'
 ];
 const sourceRelative = new Set(sourceFiles.map(rel));
-for (const filename of requiredUiFoundationFiles) {
-  if (!sourceRelative.has(filename)) errors.push(`${filename}: required UI-B owner missing`);
+for (const filename of requiredUiFiles) {
+  if (!sourceRelative.has(filename)) errors.push(`${filename}: required UI owner missing`);
+}
+
+const workspaceSource = sourceRelative.has('src/ui/research-workspace.js')
+  ? await readFile(path.join(root, 'src/ui/research-workspace.js'), 'utf8')
+  : '';
+if (workspaceSource) {
+  if (!workspaceSource.includes('ri32-update-shortcut')) errors.push('src/ui/research-workspace.js: preserved update shortcut slot missing');
+  if (!workspaceSource.includes("current.detent === 'expanded'")) errors.push('src/ui/research-workspace.js: compact/expanded binding missing');
+  if (!workspaceSource.includes("tabsNode.hidden = !contentMode")) errors.push('src/ui/research-workspace.js: CONTENT/GLOBAL tab policy missing');
 }
 
 const requiredWorkSections = [
