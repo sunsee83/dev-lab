@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.6
+// @version      3.2.7
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.6
+// Build version: 3.2.7
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.6";
+  var VERSION = "3.2.7";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -350,6 +350,479 @@
     }
   }
 
+  // src/data/identity.js
+  var MEDIA_TYPES = /* @__PURE__ */ new Set(["REEL", "VIDEO", "PHOTO", "CAROUSEL"]);
+  function shortcodeFromUrl(url) {
+    const match = String(url || "").match(/\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/);
+    return match ? match[1] : "";
+  }
+  function mediaTypeFromUrl(url) {
+    const value = String(url || "");
+    if (/\/(?:reel|reels)\//.test(value)) return "REEL";
+    return "";
+  }
+  function mediaUrlKey(url) {
+    const text = String(url || "");
+    if (!text || /^blob:/i.test(text)) return "";
+    try {
+      const parsed = new URL(text.replace(/\\u0026/g, "&").replace(/\\\//g, "/"), "https://www.instagram.com/");
+      return [parsed.hostname, parsed.pathname].join("");
+    } catch {
+      return "";
+    }
+  }
+  function canonicalizeInstagramUrl(url, baseUrl = "https://www.instagram.com/") {
+    if (!url) return "";
+    try {
+      const parsed = new URL(String(url), baseUrl);
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.href;
+    } catch {
+      return String(url).split("?")[0].split("#")[0];
+    }
+  }
+  function normalizeIdentity(input = {}, fallbackUrl = "") {
+    const sourceUrl = input.canonicalUrl || input.pageUrl || fallbackUrl || "";
+    const shortcode = cleanShortcode(input.shortcode) || shortcodeFromUrl(sourceUrl);
+    if (!shortcode) return null;
+    const mediaId = cleanScalar(input.mediaId);
+    const ownerId = cleanScalar(input.ownerId);
+    const username2 = cleanUsername(input.username || input.owner);
+    const mediaType = normalizeMediaType(input.mediaType) || mediaTypeFromUrl(sourceUrl);
+    const canonicalUrl = canonicalizeInstagramUrl(sourceUrl);
+    const productType = cleanScalar(input.productType);
+    const parentMediaId = cleanScalar(input.parentMediaId);
+    const childMediaId = cleanScalar(input.childMediaId);
+    const slideIndex = Number.isInteger(Number(input.slideIndex)) && Number(input.slideIndex) >= 0 ? Number(input.slideIndex) : null;
+    return {
+      shortcode,
+      mediaId,
+      ownerId,
+      username: username2,
+      mediaType,
+      productType,
+      canonicalUrl,
+      parentMediaId,
+      childMediaId,
+      slideIndex,
+      state: identityState({ shortcode, mediaId, username: username2, mediaType })
+    };
+  }
+  function identityKey2(identity) {
+    if (!identity?.shortcode) return "";
+    return [
+      identity.shortcode,
+      identity.mediaId || "",
+      identity.parentMediaId || "",
+      identity.childMediaId || "",
+      identity.slideIndex ?? ""
+    ].join("|");
+  }
+  function identityState(identity) {
+    if (identity.mediaId || identity.username && identity.mediaType) return "IDENTIFIED";
+    if (identity.username || identity.mediaType) return "IDENTIFYING";
+    return "DETECTED";
+  }
+  function normalizeMediaType(value) {
+    const type = String(value || "").toUpperCase();
+    return MEDIA_TYPES.has(type) ? type : "";
+  }
+  function cleanShortcode(value) {
+    const code = String(value || "").replace(/[^A-Za-z0-9_-]/g, "");
+    return code;
+  }
+  function cleanUsername(value) {
+    return String(value || "").trim().replace(/^@/, "");
+  }
+  function cleanScalar(value) {
+    return value == null ? "" : String(value).trim();
+  }
+
+  // src/data/extractor.js
+  var VIEW_KEYS = [
+    "play_count",
+    "ig_play_count",
+    "video_play_count",
+    "video_view_count",
+    "view_count",
+    "clips_play_count",
+    "reel_view_count",
+    "media_view_count",
+    "views",
+    "plays"
+  ];
+  function extractInstagramMedia(input, { pageUrl = "" } = {}) {
+    const media = unwrapMedia(input);
+    if (!media) return null;
+    const user = media.user || media.owner || {};
+    const shortcode = cleanShortcode2(media.code || media.shortcode);
+    const mediaType = detectMediaType(media);
+    const canonicalUrl = media.permalink || pageUrl || "";
+    const patch = compact({
+      mediaId: scalar(media.pk || media.id),
+      ownerId: scalar(user.pk || user.id || media.owner_id),
+      owner: username(user.username || media.owner_username),
+      mediaType,
+      productType: scalar(media.product_type || media.productType),
+      canonicalUrl,
+      pageUrl,
+      views: firstMetric(media, VIEW_KEYS),
+      likes: firstMetric(media, ["like_count", "likes", "likeCount"]),
+      comments: firstMetric(media, ["comment_count", "comments", "commentCount"]),
+      reposts: firstMetric(media, ["repost_count", "reshare_count", "reposts", "repostCount"]),
+      date: extractDate(media),
+      videoUrl: bestVideoUrl(media),
+      coverUrl: bestImageFromMedia(media),
+      thumbUrl: bestImageFromMedia(media),
+      carouselImages: carouselImagesFromMedia(media)
+    });
+    const identity = normalizeIdentity({
+      shortcode,
+      mediaId: patch.mediaId,
+      ownerId: patch.ownerId,
+      username: patch.owner,
+      mediaType: patch.mediaType,
+      productType: patch.productType,
+      canonicalUrl: patch.canonicalUrl
+    }, pageUrl);
+    return { shortcode: identity?.shortcode || shortcode, identity, patch };
+  }
+  function detectMediaType(media) {
+    const mt = Number(media?.media_type ?? media?.mediaType);
+    const productType = String(media?.product_type || media?.productType || "").toLowerCase();
+    if (/reel|clips/.test(productType)) return "REEL";
+    if (mt === 8 || Array.isArray(media?.carousel_media)) return "CAROUSEL";
+    if (mt === 2 || media?.video_versions || media?.video_url) return "VIDEO";
+    if (mt === 1) return "PHOTO";
+    return "";
+  }
+  function bestImageFromMedia(media) {
+    if (!media || typeof media !== "object") return "";
+    const candidates = [
+      ...Array.isArray(media.image_versions2?.candidates) ? media.image_versions2.candidates : [],
+      ...Array.isArray(media.display_resources) ? media.display_resources : []
+    ];
+    let best = "";
+    let bestScore = -1;
+    for (const candidate of candidates) {
+      const url = candidate?.url || candidate?.src || "";
+      const width = Number(candidate?.width || candidate?.config_width || 0);
+      const height = Number(candidate?.height || candidate?.config_height || 0);
+      const score = width * height;
+      if (url && (score > bestScore || !best)) {
+        best = url;
+        bestScore = score;
+      }
+    }
+    return best || media.display_url || media.thumbnail_src || media.thumbnail_url || media.image_url || "";
+  }
+  function carouselImagesFromMedia(media) {
+    const slides = Array.isArray(media?.carousel_media) ? media.carousel_media : [];
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const slide of slides) {
+      const url = bestImageFromMedia(slide);
+      const key = mediaUrlKey(url) || url;
+      if (!url || seen.has(key)) continue;
+      seen.add(key);
+      out.push(url);
+    }
+    return out;
+  }
+  function bestVideoUrl(media) {
+    const versions = Array.isArray(media?.video_versions) ? media.video_versions : [];
+    let best = "";
+    let bestScore = -1;
+    for (const version of versions) {
+      const url = version?.url || "";
+      const score = Number(version?.width || 0) * Number(version?.height || 0);
+      if (url && (score > bestScore || !best)) {
+        best = url;
+        bestScore = score;
+      }
+    }
+    return best || media?.video_url || "";
+  }
+  function firstMetric(media, keys) {
+    for (const key of keys) {
+      const value = Number(media?.[key]);
+      if (Number.isFinite(value) && value >= 0) return value;
+    }
+    return void 0;
+  }
+  function extractDate(media) {
+    if (typeof media?.date === "string" && media.date) return media.date;
+    const takenAt = Number(media?.taken_at || media?.takenAt);
+    if (!Number.isFinite(takenAt) || takenAt <= 0) return void 0;
+    try {
+      return new Date(takenAt * 1e3).toISOString().slice(0, 10);
+    } catch {
+      return void 0;
+    }
+  }
+  function unwrapMedia(input) {
+    if (!input || typeof input !== "object") return null;
+    return input.media || input.item || input.node || input;
+  }
+  function compact(value) {
+    return Object.fromEntries(Object.entries(value).filter(([, item]) => {
+      if (item === void 0 || item === null || item === "") return false;
+      return !Array.isArray(item) || item.length > 0;
+    }));
+  }
+  function cleanShortcode2(value) {
+    return String(value || "").replace(/[^A-Za-z0-9_-]/g, "");
+  }
+  function username(value) {
+    return String(value || "").trim().replace(/^@/, "");
+  }
+  function scalar(value) {
+    return value == null ? "" : String(value).trim();
+  }
+
+  // src/data/media-model.js
+  function buildMediaList(post = {}) {
+    const type = String(post.mediaType || "").toUpperCase();
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (kind, url, extra = {}) => {
+      const value = cleanUrl(url);
+      const key = mediaUrlKey(value) || value;
+      const identity = kind === "carousel-slide" ? `${kind}|${extra.slideIndex}` : `${kind}|${key}`;
+      if (!value || seen.has(identity)) return;
+      seen.add(identity);
+      out.push(Object.freeze({ kind, url: value, ...extra }));
+    };
+    if (type === "REEL" || type === "VIDEO") {
+      add("video", post.videoUrl);
+      add("cover", post.coverUrl || post.thumbUrl);
+    } else if (type === "PHOTO") {
+      add("photo", post.coverUrl || post.thumbUrl);
+    } else if (type === "CAROUSEL") {
+      const images = Array.isArray(post.carouselImages) ? post.carouselImages : [];
+      images.forEach((url, index) => add("carousel-slide", url, { slideIndex: index }));
+    }
+    return Object.freeze(out);
+  }
+  function cleanUrl(url) {
+    const value = String(url || "").trim();
+    return /^https?:/i.test(value) ? value : "";
+  }
+
+  // src/store/verified-store.js
+  var SOURCE_RANK = Object.freeze({ legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 });
+  var METRIC_FIELDS = /* @__PURE__ */ new Set(["views", "likes", "comments", "reposts"]);
+  var REPLACEABLE_FIELDS = /* @__PURE__ */ new Set(["videoUrl", "coverUrl", "thumbUrl", "carouselImages"]);
+  var FIELDS = [
+    "views",
+    "likes",
+    "comments",
+    "reposts",
+    "date",
+    "owner",
+    "videoUrl",
+    "coverUrl",
+    "thumbUrl",
+    "carouselImages",
+    "mediaId",
+    "ownerId",
+    "mediaType",
+    "productType",
+    "canonicalUrl"
+  ];
+  function createVerifiedStore({ initialItems = {}, now = () => Date.now(), onChange } = {}) {
+    let items = clone(initialItems) || {};
+    function getItem(shortcode) {
+      const item = items[shortcode];
+      return item ? clone(item) : null;
+    }
+    function getPost(shortcode) {
+      if (!shortcode) return null;
+      const item = items[shortcode];
+      if (!item) return { shortcode, media: [] };
+      const read = (key) => fieldValue(item, key);
+      const post = { shortcode };
+      post.mediaId = read("mediaId") || "";
+      post.ownerId = read("ownerId") || "";
+      post.username = read("owner") || "";
+      post.mediaType = String(read("mediaType") || "").toUpperCase();
+      post.productType = read("productType") || "";
+      post.canonicalUrl = read("canonicalUrl") || item.pageUrl || "";
+      post.views = optional(read("views"));
+      post.likes = optional(read("likes"));
+      post.comments = optional(read("comments"));
+      post.reposts = optional(read("reposts"));
+      post.date = read("date") || "";
+      post.videoUrl = read("videoUrl") || "";
+      post.coverUrl = read("coverUrl") || "";
+      post.thumbUrl = read("thumbUrl") || "";
+      const carouselImages = read("carouselImages");
+      post.carouselImages = Array.isArray(carouselImages) ? [...carouselImages] : [];
+      post.media = buildMediaList(post);
+      return post;
+    }
+    function getIdentity(shortcode) {
+      const post = getPost(shortcode);
+      if (!post?.shortcode) return null;
+      return normalizeIdentity(post, post.canonicalUrl);
+    }
+    function upsert(shortcode, patch = {}, { source = "dom", confidence } = {}) {
+      const code = cleanShortcode3(shortcode);
+      if (!code) return { item: null, changed: false };
+      const item = items[code] || { code, fields: {}, conflicts: {} };
+      let changed = false;
+      const nextPatch = { ...patch };
+      if (!nextPatch.mediaType && /\/(?:reel|reels)\//.test(String(nextPatch.pageUrl || nextPatch.canonicalUrl || ""))) {
+        nextPatch.mediaType = "REEL";
+      }
+      for (const key of FIELDS) {
+        if (!hasValue(nextPatch[key])) continue;
+        if (setField(item, key, nextPatch[key], source, confidence)) changed = true;
+      }
+      if (nextPatch.pageUrl) item.pageUrl = nextPatch.pageUrl;
+      if (nextPatch.fetched) item.fetched = nextPatch.fetched;
+      item.seen = now();
+      item.identity = buildIdentity(code, item);
+      items[code] = item;
+      if (changed && typeof onChange === "function") {
+        onChange({ shortcode: code, item: clone(item) });
+      }
+      return { item: clone(item), changed };
+    }
+    function replaceSnapshot(nextItems = {}) {
+      items = clone(nextItems) || {};
+      return snapshot();
+    }
+    function snapshot() {
+      return clone(items);
+    }
+    function setField(item, key, value, source, confidence) {
+      item.fields || (item.fields = {});
+      const old = item.fields[key] || null;
+      const newRank = sourceRank(source);
+      const oldRank = old ? sourceRank(old.source) : -1;
+      if (old && isVerified(old) && !sameValue(old.value, value)) {
+        if (newRank < oldRank) return false;
+        if (METRIC_FIELDS.has(key) && metricConflict(old, value, now())) {
+          return markConflict(item, key, old, value, source, now());
+        }
+        const videoToReel = key === "mediaType" && old.value === "VIDEO" && value === "REEL";
+        if (!METRIC_FIELDS.has(key) && !REPLACEABLE_FIELDS.has(key) && !videoToReel && newRank <= oldRank) {
+          return markConflict(item, key, old, value, source, now());
+        }
+      }
+      if (old && sameValue(old.value, value) && newRank <= oldRank && old.status === "verified") return false;
+      item.fields[key] = {
+        value: clone(value),
+        source: source || "dom",
+        confidence: confidence || (newRank >= 4 ? "high" : "medium"),
+        status: "verified",
+        updatedAt: now()
+      };
+      item[key] = clone(value);
+      if (item.conflicts) delete item.conflicts[key];
+      return true;
+    }
+    return { getItem, getPost, getIdentity, upsert, replaceSnapshot, snapshot };
+  }
+  function sourceRank(source) {
+    return SOURCE_RANK[source] || 0;
+  }
+  function fieldValue(item, key) {
+    const field = item?.fields?.[key];
+    if (field && isVerified(field)) return field.value;
+    return item?.[key] ?? null;
+  }
+  function buildIdentity(code, item) {
+    return normalizeIdentity({
+      shortcode: code,
+      mediaId: fieldValue(item, "mediaId"),
+      ownerId: fieldValue(item, "ownerId"),
+      username: fieldValue(item, "owner"),
+      mediaType: fieldValue(item, "mediaType"),
+      productType: fieldValue(item, "productType"),
+      canonicalUrl: fieldValue(item, "canonicalUrl") || item.pageUrl || ""
+    });
+  }
+  function markConflict(item, key, oldField, incoming, source, timestamp) {
+    item.conflicts || (item.conflicts = {});
+    item.conflicts[key] = {
+      previous: clone(oldField.value),
+      incoming: clone(incoming),
+      source,
+      at: timestamp
+    };
+    item.fields[key] = {
+      value: clone(oldField.value),
+      source: oldField.source,
+      confidence: oldField.confidence,
+      status: "conflict",
+      updatedAt: timestamp
+    };
+    item[key] = clone(oldField.value);
+    return true;
+  }
+  function metricConflict(oldField, incoming, timestamp) {
+    const previous = Number(oldField.value);
+    const next = Number(incoming);
+    const age = timestamp - Number(oldField.updatedAt || 0);
+    if (!(previous > 0) || !Number.isFinite(next)) return false;
+    if (next < previous && previous - next > Math.max(5, previous * 0.02)) return true;
+    return age < 12e4 && previous > 100 && next > previous * 20;
+  }
+  function sameValue(left, right) {
+    if (Array.isArray(left) || Array.isArray(right)) return JSON.stringify(left) === JSON.stringify(right);
+    return String(left) === String(right);
+  }
+  function isVerified(field) {
+    return field?.status === "verified" || field?.status === "conflict";
+  }
+  function optional(value) {
+    return value == null || value === "" ? void 0 : value;
+  }
+  function hasValue(value) {
+    return value !== void 0 && value !== null && value !== "";
+  }
+  function cleanShortcode3(value) {
+    return String(value || "").replace(/[^A-Za-z0-9_-]/g, "");
+  }
+  function clone(value) {
+    if (value === void 0) return void 0;
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  // src/data/engine.js
+  function createDataEngine({ legacyAdapter, history: history3, now = () => Date.now() } = {}) {
+    const verified = createVerifiedStore({
+      initialItems: legacyAdapter?.getItemsSnapshot?.() || {},
+      now
+    });
+    function syncLegacy() {
+      const snapshot = legacyAdapter?.getItemsSnapshot?.();
+      if (!snapshot) return verified.snapshot();
+      return verified.replaceSnapshot(snapshot);
+    }
+    function ingest(input, { pageUrl = "", source = "network", confidence } = {}) {
+      const extracted = extractInstagramMedia(input, { pageUrl });
+      if (!extracted?.shortcode) return null;
+      const result2 = verified.upsert(extracted.shortcode, extracted.patch, { source, confidence });
+      const post = verified.getPost(extracted.shortcode);
+      if (result2.changed) history3?.record?.(post);
+      return { identity: verified.getIdentity(extracted.shortcode), post, changed: result2.changed };
+    }
+    return {
+      getPost: verified.getPost,
+      getIdentity: verified.getIdentity,
+      getItem: verified.getItem,
+      getSnapshots: history3?.getSnapshots,
+      getAccountPosts: history3?.getAccountPosts,
+      syncLegacy,
+      ingest,
+      snapshot: verified.snapshot
+    };
+  }
+
   // src/store/settings-store.js
   var STORAGE_KEY = "ri32:settings:v2";
   var LEGACY_STORAGE_KEY = "ri32:settings:v1";
@@ -632,6 +1105,101 @@
   }
   function deleteHandle(indexedDB, key) {
     return withHandleStore(indexedDB, "readwrite", (store) => store.delete(key));
+  }
+
+  // src/store/history-store.js
+  var SNAP_KEY = "ri311:snap:v1";
+  var POST_KEY = "ri311:posts:v1";
+  var HISTORY_STORAGE_KEYS = Object.freeze({ snapshots: SNAP_KEY, posts: POST_KEY });
+  var SNAPSHOT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1e3;
+  var SNAPSHOT_MIN_GAP_MS = 30 * 60 * 1e3;
+  var SNAPSHOT_LIMIT = 80;
+  var ACCOUNT_POST_LIMIT = 500;
+  function createHistoryStore({ env = globalThis, now = () => Date.now() } = {}) {
+    function getSnapshots(shortcode) {
+      const list = readStore(env.localStorage, SNAP_KEY)[String(shortcode || "")];
+      if (!Array.isArray(list)) return [];
+      return list.map(normalizeSnapshot).filter(Boolean);
+    }
+    function getAccountPosts(username2) {
+      const owner = String(username2 || "").toLowerCase();
+      if (!owner) return [];
+      return Object.values(readStore(env.localStorage, POST_KEY)).map(normalizeAccountPost).filter((entry) => entry && entry.owner === owner);
+    }
+    function record(post) {
+      if (!post?.shortcode) return false;
+      const snapshotChanged = recordSnapshot(post.shortcode, post.views);
+      const accountChanged = recordAccountPost(post);
+      return snapshotChanged || accountChanged;
+    }
+    function recordSnapshot(shortcode, views) {
+      const code = cleanCode(shortcode);
+      const value = positiveNumber(views);
+      if (!code || value == null) return false;
+      const timestamp = safeNow(now);
+      const store = readStore(env.localStorage, SNAP_KEY);
+      let list = Array.isArray(store[code]) ? store[code].map(normalizeSnapshot).filter(Boolean) : [];
+      const last = list.at(-1) || null;
+      if (last && timestamp - last.t < SNAPSHOT_MIN_GAP_MS && last.v === value) return false;
+      list.push({ t: timestamp, v: value });
+      list = list.filter((entry) => timestamp - entry.t <= SNAPSHOT_MAX_AGE_MS).slice(-SNAPSHOT_LIMIT);
+      store[code] = list;
+      return writeStore(env.localStorage, SNAP_KEY, store);
+    }
+    function recordAccountPost(post) {
+      const code = cleanCode(post?.shortcode);
+      const owner = String(post?.username || post?.owner || "").toLowerCase();
+      const views = positiveNumber(post?.views);
+      if (!code || !owner || views == null) return false;
+      const store = readStore(env.localStorage, POST_KEY);
+      store[code] = { code, owner, views, t: safeNow(now) };
+      const keys = Object.keys(store);
+      if (keys.length > ACCOUNT_POST_LIMIT) {
+        keys.sort((a, b) => Number(store[b]?.t || 0) - Number(store[a]?.t || 0));
+        keys.slice(ACCOUNT_POST_LIMIT).forEach((key) => delete store[key]);
+      }
+      return writeStore(env.localStorage, POST_KEY, store);
+    }
+    return { getSnapshots, getAccountPosts, record, recordSnapshot, recordAccountPost };
+  }
+  function readStore(storage, key) {
+    try {
+      const parsed = JSON.parse(storage?.getItem?.(key) || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  function writeStore(storage, key, value) {
+    try {
+      storage?.setItem?.(key, JSON.stringify(value));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function normalizeSnapshot(entry) {
+    const t = Number(entry?.t);
+    const v = positiveNumber(entry?.v);
+    return Number.isFinite(t) && t > 0 && v != null ? { t, v } : null;
+  }
+  function normalizeAccountPost(entry) {
+    const code = cleanCode(entry?.code);
+    const owner = String(entry?.owner || "").toLowerCase();
+    const views = positiveNumber(entry?.views);
+    const t = Number(entry?.t);
+    return code && owner && views != null && Number.isFinite(t) && t > 0 ? { code, owner, views, t } : null;
+  }
+  function positiveNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : null;
+  }
+  function cleanCode(value) {
+    return String(value || "").replace(/[^A-Za-z0-9_-]/g, "");
+  }
+  function safeNow(now) {
+    const value = Number(now());
+    return Number.isFinite(value) && value > 0 ? value : Date.now();
   }
 
   // src/media/media-resolver.js
@@ -1030,7 +1598,7 @@
   }
 
   // src/metrics/metrics.js
-  function createMetricsEngine({ history: history2, now = () => Date.now() } = {}) {
+  function createMetricsEngine({ history: history3, now = () => Date.now() } = {}) {
     return {
       summarize(post) {
         if (!post?.shortcode) return emptySummary();
@@ -1042,21 +1610,21 @@
         });
         const growth24h = calculateGrowth24h({
           views: post.views,
-          snapshots: history2?.getSnapshots?.(post.shortcode) || [],
+          snapshots: history3?.getSnapshots?.(post.shortcode) || [],
           now: now()
         });
         const accountMultiple = calculateAccountMultiple({
           shortcode: post.shortcode,
           username: post.username,
           views: post.views,
-          posts: history2?.getAccountPosts?.(post.username) || []
+          posts: history3?.getAccountPosts?.(post.username) || []
         });
         return { engagementRate, growth24h, accountMultiple };
       }
     };
   }
   function calculateEngagementRate({ views, likes, comments, reposts, requireComplete = true } = {}) {
-    const viewCount = positiveNumber(views);
+    const viewCount = positiveNumber2(views);
     if (viewCount == null) return void 0;
     const raw = [likes, comments, reposts];
     const values = raw.map(nonNegativeNumber);
@@ -1068,14 +1636,14 @@
     return total / viewCount * 100;
   }
   function calculateGrowth24h({ views, snapshots, now = Date.now(), minAgeMs = 18 * 60 * 60 * 1e3, maxAgeMs = 32 * 60 * 60 * 1e3 } = {}) {
-    const current = positiveNumber(views);
+    const current = positiveNumber2(views);
     if (current == null || !Array.isArray(snapshots)) return void 0;
     let best = null;
     let bestDelta = Infinity;
     const targetAge = 24 * 60 * 60 * 1e3;
     for (const snapshot of snapshots) {
-      const timestamp = positiveNumber(snapshot?.t);
-      const previous = positiveNumber(snapshot?.v);
+      const timestamp = positiveNumber2(snapshot?.t);
+      const previous = positiveNumber2(snapshot?.v);
       if (timestamp == null || previous == null) continue;
       const age = Number(now) - timestamp;
       if (!Number.isFinite(age) || age < minAgeMs || age > maxAgeMs) continue;
@@ -1087,11 +1655,11 @@
     if (best == null || current < best) return void 0;
     return (current - best) / best * 100;
   }
-  function calculateAccountMultiple({ shortcode, username, views, posts, maxRecent = 20, minSamples = 5 } = {}) {
-    const current = positiveNumber(views);
-    const owner = String(username || "").toLowerCase();
+  function calculateAccountMultiple({ shortcode, username: username2, views, posts, maxRecent = 20, minSamples = 5 } = {}) {
+    const current = positiveNumber2(views);
+    const owner = String(username2 || "").toLowerCase();
     if (current == null || !owner || !Array.isArray(posts)) return void 0;
-    const samples = posts.filter((entry) => entry && String(entry.code || "") !== String(shortcode || "")).filter((entry) => String(entry.owner || "").toLowerCase() === owner).map((entry) => ({ views: positiveNumber(entry.views), t: Number(entry.t) })).filter((entry) => entry.views != null && Number.isFinite(entry.t)).sort((a, b) => b.t - a.t).slice(0, Math.max(1, Number(maxRecent) || 20));
+    const samples = posts.filter((entry) => entry && String(entry.code || "") !== String(shortcode || "")).filter((entry) => String(entry.owner || "").toLowerCase() === owner).map((entry) => ({ views: positiveNumber2(entry.views), t: Number(entry.t) })).filter((entry) => entry.views != null && Number.isFinite(entry.t)).sort((a, b) => b.t - a.t).slice(0, Math.max(1, Number(maxRecent) || 20));
     if (samples.length < Math.max(1, Number(minSamples) || 5)) return void 0;
     const values = samples.map((entry) => entry.views).sort((a, b) => a - b);
     const mid = Math.floor(values.length / 2);
@@ -1101,7 +1669,7 @@
   function emptySummary() {
     return { engagementRate: void 0, growth24h: void 0, accountMultiple: void 0 };
   }
-  function positiveNumber(value) {
+  function positiveNumber2(value) {
     const number = Number(value);
     return Number.isFinite(number) && number > 0 ? number : void 0;
   }
@@ -1113,11 +1681,9 @@
 
   // src/migration/legacy-store-adapter.js
   var CACHE_KEY = "ri311:items:v1";
-  var SNAP_KEY = "ri311:snap:v1";
-  var POST_KEY = "ri311:posts:v1";
-  var WATCH_KEYS = [CACHE_KEY, SNAP_KEY, POST_KEY];
-  function createLegacyStoreAdapter({ env = globalThis } = {}) {
-    function readStore(key) {
+  var WATCH_KEYS = [CACHE_KEY, HISTORY_STORAGE_KEYS.snapshots, HISTORY_STORAGE_KEYS.posts];
+  function createLegacyStoreAdapter({ env = globalThis, history: history3 = createHistoryStore({ env }) } = {}) {
+    function readStore2(key) {
       try {
         const raw = env.localStorage?.getItem(key);
         const parsed = raw ? JSON.parse(raw) : null;
@@ -1133,14 +1699,17 @@
         return "";
       }
     }
+    function getItemsSnapshot() {
+      return readStore2(CACHE_KEY);
+    }
     function getItem(shortcode) {
       if (!shortcode) return null;
-      return readStore(CACHE_KEY)[shortcode] || null;
+      return readStore2(CACHE_KEY)[shortcode] || null;
     }
     function getPost(shortcode) {
       const item = getItem(shortcode);
       if (!item) return shortcode ? { shortcode } : null;
-      const value = (key) => fieldValue(item, key);
+      const value = (key) => fieldValue2(item, key);
       return {
         shortcode,
         mediaId: value("mediaId") || "",
@@ -1181,15 +1750,15 @@
     function findPostByMediaUrls(urls) {
       const targets = new Set((Array.isArray(urls) ? urls : [urls]).map(normalizeMediaUrl).filter(Boolean));
       if (!targets.size) return null;
-      const store = readStore(CACHE_KEY);
+      const store = readStore2(CACHE_KEY);
       let best = null;
       let bestScore = 0;
       for (const [shortcode, item] of Object.entries(store)) {
         if (!item || !shortcode) continue;
         const candidates = [
-          [fieldValue(item, "videoUrl"), 4],
-          [fieldValue(item, "coverUrl"), 3],
-          [fieldValue(item, "thumbUrl"), 2]
+          [fieldValue2(item, "videoUrl"), 4],
+          [fieldValue2(item, "coverUrl"), 3],
+          [fieldValue2(item, "thumbUrl"), 2]
         ];
         let score = 0;
         for (const [url, weight] of candidates) {
@@ -1202,21 +1771,6 @@
         if (score === 4) break;
       }
       return best;
-    }
-    function getSnapshots(shortcode) {
-      const list = readStore(SNAP_KEY)[shortcode];
-      if (!Array.isArray(list)) return [];
-      return list.map((entry) => ({ t: Number(entry?.t), v: Number(entry?.v) })).filter((entry) => Number.isFinite(entry.t) && entry.t > 0 && Number.isFinite(entry.v) && entry.v > 0);
-    }
-    function getAccountPosts(username) {
-      const owner = String(username || "").toLowerCase();
-      if (!owner) return [];
-      return Object.values(readStore(POST_KEY)).filter((entry) => entry && String(entry.owner || "").toLowerCase() === owner).map((entry) => ({
-        code: String(entry.code || ""),
-        owner,
-        views: Number(entry.views),
-        t: Number(entry.t)
-      })).filter((entry) => entry.code && Number.isFinite(entry.views) && entry.views > 0 && Number.isFinite(entry.t) && entry.t > 0);
     }
     function createChangeTracker(listener, { delayMs = 360 } = {}) {
       if (typeof listener !== "function") return { schedule() {
@@ -1277,11 +1831,12 @@
     }
     return {
       getItem,
+      getItemsSnapshot,
       getPost,
       getCurrentIdentity,
       findPostByMediaUrls,
-      getSnapshots,
-      getAccountPosts,
+      getSnapshots: history3.getSnapshots,
+      getAccountPosts: history3.getAccountPosts,
       createChangeTracker,
       codeFromUrl
     };
@@ -1290,7 +1845,7 @@
     const match = String(url || "").match(/\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/);
     return match ? match[1] : "";
   }
-  function fieldValue(item, key) {
+  function fieldValue2(item, key) {
     const field = item?.fields?.[key];
     if (field && (field.status === "verified" || field.status === "conflict")) return field.value;
     return item?.[key] ?? null;
@@ -1341,7 +1896,7 @@
       if (!videoRect || visibleHeight(videoRect, viewport.height) < viewport.height * 0.45) return null;
       const root = findScopedRoot(video, viewport, env) || video.parentElement || doc;
       const native = readNativeMetrics(root, env);
-      const username = readUsername(root, videoRect, viewport, env);
+      const username2 = readUsername(root, videoRect, viewport, env);
       const scopedCode = scopedShortcode(root, store, env);
       const mediaPost = store.findPostByMediaUrls?.(mediaUrls(video)) || null;
       const mediaCode = mediaPost?.shortcode || "";
@@ -1351,7 +1906,7 @@
       const post = shortcode ? store.getPost?.(shortcode) || null : null;
       const identity = shortcode ? toIdentity(post, {
         shortcode,
-        username: username || post?.username || "",
+        username: username2 || post?.username || "",
         canonicalUrl: post?.canonicalUrl || canonicalReelUrl(shortcode),
         source: resolved.source
       }) : null;
@@ -1360,7 +1915,7 @@
         shortcode,
         identity,
         identitySource: resolved.source,
-        username: username || post?.username || "",
+        username: username2 || post?.username || "",
         native,
         post
       };
@@ -2380,8 +2935,8 @@
     return { mount, sync, getBody, resetScroll, destroy };
   }
   function contentTitle(context) {
-    const username = String(context?.username || "").replace(/^@/, "").trim();
-    return username ? `RI · @${username}` : "RI · 콘텐츠";
+    const username2 = String(context?.username || "").replace(/^@/, "").trim();
+    return username2 ? `RI · @${username2}` : "RI · 콘텐츠";
   }
   function ensureTabVisible(button) {
     if (typeof button?.scrollIntoView !== "function") return;
@@ -2444,7 +2999,7 @@
         return commit({ activeTab: String(activeTab) }, "tab");
       },
       rebindContext(identity) {
-        const contextKey = identityKey2(identity);
+        const contextKey = identityKey3(identity);
         const mode = contextKey ? "content" : "global";
         if (contextKey === state.contextKey && mode === state.mode) return state;
         return commit({
@@ -2467,7 +3022,7 @@
       contextEpoch: Number.isFinite(Number(input.contextEpoch)) ? Number(input.contextEpoch) : 0
     };
   }
-  function identityKey2(identity) {
+  function identityKey3(identity) {
     if (!identity?.shortcode) return "";
     return [
       identity.shortcode,
@@ -2892,10 +3447,10 @@
     var CACHE_KEY2 = "ri311:items:v1";
     var SNAP_KEY2 = "ri311:snap:v1";
     var POST_KEY2 = "ri311:posts:v1";
-    var SOURCE_RANK = { legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 };
-    var METRIC_FIELDS = { views: 1, likes: 1, comments: 1, reposts: 1 };
-    var VIEW_KEYS = ["play_count", "ig_play_count", "video_play_count", "video_view_count", "view_count", "clips_play_count", "reel_view_count", "media_view_count", "views", "plays"];
-    var items = readStore(CACHE_KEY2, {});
+    var SOURCE_RANK2 = { legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 };
+    var METRIC_FIELDS2 = { views: 1, likes: 1, comments: 1, reposts: 1 };
+    var VIEW_KEYS2 = ["play_count", "ig_play_count", "video_play_count", "video_view_count", "view_count", "clips_play_count", "reel_view_count", "media_view_count", "views", "plays"];
+    var items = readStore2(CACHE_KEY2, {});
     var videoMap = /* @__PURE__ */ Object.create(null);
     var posterMap = /* @__PURE__ */ Object.create(null);
     var pending = /* @__PURE__ */ Object.create(null);
@@ -2912,7 +3467,7 @@
     var appBannerCacheAt = 0;
     var appBannerTop = Infinity;
     var downloadDirectoryHandle = null;
-    function readStore(key, fallback) {
+    function readStore2(key, fallback) {
       try {
         var raw = localStorage.getItem(key);
         return raw ? JSON.parse(raw) : fallback;
@@ -2920,7 +3475,7 @@
         return fallback;
       }
     }
-    function writeStore(key, value) {
+    function writeStore2(key, value) {
       try {
         localStorage.setItem(key, JSON.stringify(value));
       } catch (e) {
@@ -2930,7 +3485,7 @@
       if (storeWriteTimer) return;
       storeWriteTimer = setTimeout(function() {
         storeWriteTimer = 0;
-        writeStore(CACHE_KEY2, items);
+        writeStore2(CACHE_KEY2, items);
       }, 300);
     }
     function codeFromUrl2(url) {
@@ -2991,15 +3546,15 @@
       var r = el.getBoundingClientRect();
       return r.width > 2 && r.height > 2 && r.bottom > 0 && r.top < innerHeight;
     }
-    function sourceRank(source) {
-      return SOURCE_RANK[source] || 0;
+    function sourceRank2(source) {
+      return SOURCE_RANK2[source] || 0;
     }
-    function fieldValue2(item, key) {
+    function fieldValue3(item, key) {
       var f = item && item.fields && item.fields[key];
       if (f && (f.status === "verified" || f.status === "conflict")) return f.value;
       return item && item[key] != null ? item[key] : null;
     }
-    function markConflict(item, key, oldField, incoming, source) {
+    function markConflict2(item, key, oldField, incoming, source) {
       item.conflicts = item.conflicts || {};
       item.conflicts[key] = { previous: oldField.value, incoming, source, at: Date.now() };
       item.fields[key] = {
@@ -3017,17 +3572,17 @@
       if (value == null || value === "") return false;
       item.fields = item.fields || {};
       old = item.fields[key] || null;
-      newRank = sourceRank(source);
-      oldRank = old ? sourceRank(old.source) : -1;
+      newRank = sourceRank2(source);
+      oldRank = old ? sourceRank2(old.source) : -1;
       if (old && (old.status === "verified" || old.status === "conflict") && String(old.value) !== String(value)) {
         if (newRank < oldRank) return false;
-        if (METRIC_FIELDS[key]) {
+        if (METRIC_FIELDS2[key]) {
           a = Number(old.value);
           b = Number(value);
           age = Date.now() - Number(old.updatedAt || 0);
-          if (a > 0 && (b < a && a - b > Math.max(5, a * 0.02) || age < 12e4 && a > 100 && b > a * 20)) return markConflict(item, key, old, value, source);
+          if (a > 0 && (b < a && a - b > Math.max(5, a * 0.02) || age < 12e4 && a > 100 && b > a * 20)) return markConflict2(item, key, old, value, source);
         } else if (key !== "videoUrl" && key !== "thumbUrl" && key !== "carouselImages" && !(key === "mediaType" && old.value === "VIDEO" && value === "REEL") && newRank <= oldRank) {
-          return markConflict(item, key, old, value, source);
+          return markConflict2(item, key, old, value, source);
         }
       }
       if (old && String(old.value) === String(value) && newRank <= oldRank && old.status === "verified") return false;
@@ -3058,18 +3613,18 @@
       item.seen = Date.now();
       item.identity = {
         shortcode: code,
-        mediaId: fieldValue2(item, "mediaId") || "",
-        ownerId: fieldValue2(item, "ownerId") || "",
-        username: fieldValue2(item, "owner") || "",
-        mediaType: fieldValue2(item, "mediaType") || "",
-        productType: fieldValue2(item, "productType") || "",
-        canonicalUrl: fieldValue2(item, "canonicalUrl") || item.pageUrl || "",
-        state: fieldValue2(item, "mediaType") && fieldValue2(item, "owner") ? "IDENTIFIED" : "IDENTIFYING"
+        mediaId: fieldValue3(item, "mediaId") || "",
+        ownerId: fieldValue3(item, "ownerId") || "",
+        username: fieldValue3(item, "owner") || "",
+        mediaType: fieldValue3(item, "mediaType") || "",
+        productType: fieldValue3(item, "productType") || "",
+        canonicalUrl: fieldValue3(item, "canonicalUrl") || item.pageUrl || "",
+        state: fieldValue3(item, "mediaType") && fieldValue3(item, "owner") ? "IDENTIFIED" : "IDENTIFYING"
       };
       items[code] = item;
       if (changed) {
         scheduleStoreWrite();
-        recordSnapshot(code, fieldValue2(item, "views"));
+        recordSnapshot(code, fieldValue3(item, "views"));
         recordPost(item);
         scheduleRefresh();
       }
@@ -3079,7 +3634,7 @@
       var store, arr, last, now = Date.now();
       views = Number(views);
       if (!code || !views) return;
-      store = readStore(SNAP_KEY2, {});
+      store = readStore2(SNAP_KEY2, {});
       arr = Array.isArray(store[code]) ? store[code] : [];
       last = arr.length ? arr[arr.length - 1] : null;
       if (!last || now - Number(last.t || 0) >= 18e5 || Number(last.v) !== views) arr.push({ t: now, v: views });
@@ -3087,10 +3642,10 @@
         return now - Number(x.t || 0) <= 12096e5;
       }).slice(-80);
       store[code] = arr;
-      writeStore(SNAP_KEY2, store);
+      writeStore2(SNAP_KEY2, store);
     }
     function growth24h(code, views) {
-      var arr = readStore(SNAP_KEY2, {})[code] || [];
+      var arr = readStore2(SNAP_KEY2, {})[code] || [];
       var now = Date.now(), best = null, bestDelta = Infinity, i, age, delta;
       views = Number(views);
       if (!code || !views) return null;
@@ -3109,10 +3664,10 @@
     function recordPost(item) {
       var owner, views, store, keys;
       if (!item || !item.code) return;
-      owner = String(fieldValue2(item, "owner") || "").toLowerCase();
-      views = Number(fieldValue2(item, "views"));
+      owner = String(fieldValue3(item, "owner") || "").toLowerCase();
+      views = Number(fieldValue3(item, "views"));
       if (!owner || !views) return;
-      store = readStore(POST_KEY2, {});
+      store = readStore2(POST_KEY2, {});
       store[item.code] = { code: item.code, owner, views, t: Date.now() };
       keys = Object.keys(store);
       if (keys.length > 500) {
@@ -3123,14 +3678,14 @@
           delete store[k];
         });
       }
-      writeStore(POST_KEY2, store);
+      writeStore2(POST_KEY2, store);
     }
     function accountMultiple(code, owner, views) {
       var store, list = [], vals, mid, median;
       owner = String(owner || "").toLowerCase();
       views = Number(views);
       if (!owner || !views) return null;
-      store = readStore(POST_KEY2, {});
+      store = readStore2(POST_KEY2, {});
       Object.keys(store).forEach(function(k) {
         var d = store[k];
         if (k !== code && d && String(d.owner || "").toLowerCase() === owner && Number(d.views)) list.push(d);
@@ -3153,7 +3708,7 @@
       if (!Number(views) || !(Number(likes) || Number(comments) || Number(reposts))) return null;
       return (Number(likes || 0) + Number(comments || 0) + Number(reposts || 0)) / Number(views) * 100;
     }
-    function detectMediaType(obj) {
+    function detectMediaType2(obj) {
       var mt = Number(obj && (obj.media_type != null ? obj.media_type : obj.mediaType));
       var pt = String(obj && (obj.product_type || obj.productType) || "").toLowerCase();
       if (/reel|clips/.test(pt)) return "REEL";
@@ -3162,7 +3717,7 @@
       if (mt === 1) return "PHOTO";
       return "";
     }
-    function bestImageFromMedia(obj) {
+    function bestImageFromMedia2(obj) {
       var best = "", bestScore = -1, candidates = [], i, c, url, w, h;
       if (!obj || typeof obj !== "object") return "";
       if (obj.image_versions2 && Array.isArray(obj.image_versions2.candidates)) candidates = candidates.concat(obj.image_versions2.candidates);
@@ -3179,11 +3734,11 @@
       }
       return best || obj.display_url || obj.thumbnail_src || obj.thumbnail_url || obj.image_url || "";
     }
-    function carouselImagesFromMedia(obj) {
+    function carouselImagesFromMedia2(obj) {
       var out = [], seen = /* @__PURE__ */ Object.create(null), slides = obj && obj.carousel_media;
       if (!Array.isArray(slides)) return out;
       slides.forEach(function(slide) {
-        var url = bestImageFromMedia(slide), key = normalizeUrl(url) || url;
+        var url = bestImageFromMedia2(slide), key = normalizeUrl(url) || url;
         if (url && !seen[key]) {
           seen[key] = 1;
           out.push(url);
@@ -3231,7 +3786,7 @@
       if (!obj || typeof obj !== "object") return;
       code = obj.code || obj.shortcode || obj.short_code;
       if (!code || typeof code !== "string" || code.length < 5 || code.length > 40) return;
-      n = sameMediaNumber(obj, VIEW_KEYS, code, 0);
+      n = sameMediaNumber(obj, VIEW_KEYS2, code, 0);
       if (n != null) patch.views = n;
       n = sameMediaNumber(obj, ["like_count", "likes_count"], code, 0);
       if (n != null) patch.likes = n;
@@ -3250,12 +3805,12 @@
       if (user && user.username) patch.owner = String(user.username).toLowerCase();
       if (obj.pk || obj.id || obj.media_id) patch.mediaId = String(obj.pk || obj.id || obj.media_id);
       if (obj.user_id || obj.owner_id || user && (user.pk || user.id)) patch.ownerId = String(obj.user_id || obj.owner_id || user.pk || user.id);
-      type = detectMediaType(obj);
+      type = detectMediaType2(obj);
       if (type) patch.mediaType = type;
       if (obj.product_type || obj.productType) patch.productType = String(obj.product_type || obj.productType);
-      directThumb = bestImageFromMedia(obj);
+      directThumb = bestImageFromMedia2(obj);
       if (directThumb) patch.thumbUrl = directThumb;
-      carouselImages = carouselImagesFromMedia(obj);
+      carouselImages = carouselImagesFromMedia2(obj);
       if (carouselImages.length) patch.carouselImages = carouselImages;
       collectUrls(obj, code, videos, images, 0);
       for (i = 0; i < videos.length; i++) {
@@ -3393,7 +3948,7 @@
       }
       if (isReelUrl(url)) patch.mediaType = "REEL";
       else if (hasVideo) patch.mediaType = "VIDEO";
-      if (patch.mediaType === "REEL" || patch.mediaType === "VIDEO") patch.views = nearMetric(html, code, VIEW_KEYS);
+      if (patch.mediaType === "REEL" || patch.mediaType === "VIDEO") patch.views = nearMetric(html, code, VIEW_KEYS2);
       if (patch.likes == null) patch.likes = nearMetric(html, code, ["like_count", "likes_count"]);
       if (patch.comments == null) patch.comments = nearMetric(html, code, ["comment_count", "comments_count"]);
       patch.reposts = nearMetric(html, code, ["reshare_count", "repost_count", "reposts_count"]);
@@ -3421,12 +3976,12 @@
       queue.push({ url, code });
       pumpQueue();
     }
-    function finishPending(code, data) {
+    function finishPending(code, data2) {
       var callbacks = pending[code] || [];
       delete pending[code];
       callbacks.forEach(function(fn) {
         try {
-          fn(data);
+          fn(data2);
         } catch (e) {
         }
       });
@@ -3636,16 +4191,16 @@
       if (/carousel|multiple|여러|슬라이드/.test(text)) return "CAROUSEL";
       return "";
     }
-    function effectiveCardType(anchor, data) {
-      var stored = String(fieldValue2(data, "mediaType") || "").toUpperCase();
+    function effectiveCardType(anchor, data2) {
+      var stored = String(fieldValue3(data2, "mediaType") || "").toUpperCase();
       var domType = cardDomType(anchor);
       if (stored === "REEL" || stored === "VIDEO" || stored === "PHOTO" || stored === "CAROUSEL") return stored;
       if (isReelUrl(anchor && anchor.href)) return "REEL";
       if (domType) return domType;
       return /\/p\//.test(String(anchor && anchor.href || "")) ? "POST" : "";
     }
-    function isVideoCard(anchor, data) {
-      var type = effectiveCardType(anchor, data);
+    function isVideoCard(anchor, data2) {
+      var type = effectiveCardType(anchor, data2);
       return type === "REEL" || type === "VIDEO";
     }
     function bestDomImageUrl2(anchor) {
@@ -3667,8 +4222,8 @@
       }
       return best || img.currentSrc || img.src || "";
     }
-    function cardImageUrl(anchor, data) {
-      return bestDomImageUrl2(anchor) || fieldValue2(data, "thumbUrl") || "";
+    function cardImageUrl(anchor, data2) {
+      return bestDomImageUrl2(anchor) || fieldValue3(data2, "thumbUrl") || "";
     }
     function closeGridMenu() {
       var menu = document.getElementById("ri3-grid-menu");
@@ -3694,12 +4249,12 @@
         return;
       }
       closeGridMenu();
-      var data = items[code] || { code, fields: {} };
-      var type = effectiveCardType(anchor, data);
+      var data2 = items[code] || { code, fields: {} };
+      var type = effectiveCardType(anchor, data2);
       var videoCard = type === "REEL" || type === "VIDEO";
-      var imageUrl = cardImageUrl(anchor, data);
-      var videoUrl = fieldValue2(data, "videoUrl") || "";
-      var carouselImages = fieldValue2(data, "carouselImages");
+      var imageUrl = cardImageUrl(anchor, data2);
+      var videoUrl = fieldValue3(data2, "videoUrl") || "";
+      var carouselImages = fieldValue3(data2, "carouselImages");
       var pageUrl = (anchor.href || "").split("?")[0] || "https://www.instagram.com/" + (videoCard ? "reel/" : "p/") + code + "/";
       var trigger = anchor.querySelector(".ri3-grid-media");
       var rect = trigger ? trigger.getBoundingClientRect() : anchor.getBoundingClientRect();
@@ -3783,19 +4338,19 @@
       var spans = row ? row.children : [], i;
       for (i = 0; i < 4; i++) if (spans[i] && spans[i].textContent !== values[i]) spans[i].textContent = values[i];
     }
-    function renderGridCard(anchor, data) {
+    function renderGridCard(anchor, data2) {
       var row1 = anchor.querySelector(".ri3-grid-row1");
       var row2 = anchor.querySelector(".ri3-grid-row2");
-      var views = fieldValue2(data, "views");
-      var likes = fieldValue2(data, "likes");
-      var comments = fieldValue2(data, "comments");
-      var reposts = fieldValue2(data, "reposts");
-      var date = fieldValue2(data, "date");
-      var videoCard = isVideoCard(anchor, data);
-      var type = effectiveCardType(anchor, data);
+      var views = fieldValue3(data2, "views");
+      var likes = fieldValue3(data2, "likes");
+      var comments = fieldValue3(data2, "comments");
+      var reposts = fieldValue3(data2, "reposts");
+      var date = fieldValue3(data2, "date");
+      var videoCard = isVideoCard(anchor, data2);
+      var type = effectiveCardType(anchor, data2);
       var er = videoCard ? engagement(views, likes, comments, reposts) : null;
-      var growth = videoCard && views ? growth24h(data.code, views) : null;
-      var multiple = videoCard && views ? accountMultiple(data.code, fieldValue2(data, "owner"), views) : null;
+      var growth = videoCard && views ? growth24h(data2.code, views) : null;
+      var multiple = videoCard && views ? accountMultiple(data2.code, fieldValue3(data2, "owner"), views) : null;
       var line1, line2, key, actions, safe;
       if (!row1 || !row2) return;
       line1 = [
@@ -3822,7 +4377,7 @@
       if (actions) actions.style.visibility = safe ? "visible" : "hidden";
     }
     function scanGrid() {
-      var anchors, i, anchor, code, data, url;
+      var anchors, i, anchor, code, data2, url;
       if (/^\/(?:reel|reels|p)\//.test(location.pathname)) return;
       anchors = document.querySelectorAll('main a[href*="/reel/"],main a[href*="/reels/"],main a[href*="/p/"]');
       for (i = 0; i < anchors.length; i++) {
@@ -3831,9 +4386,9 @@
         code = codeFromUrl2(anchor.href);
         if (!code) continue;
         ensureGridCard(anchor, code);
-        data = items[code] || { code, fields: {} };
-        renderGridCard(anchor, data);
-        if (!data.fetched || Date.now() - Number(data.fetched || 0) > 3e5) {
+        data2 = items[code] || { code, fields: {} };
+        renderGridCard(anchor, data2);
+        if (!data2.fetched || Date.now() - Number(data2.fetched || 0) > 3e5) {
           url = anchor.href.split("?")[0];
           enqueue(url, /* @__PURE__ */ (function(target, expectedCode) {
             return function(d) {
@@ -3928,8 +4483,8 @@
       if (!code) {
         keys = Object.keys(items);
         keys.forEach(function(key) {
-          var d = items[key], score = 0, likes = fieldValue2(d, "likes"), comments = fieldValue2(d, "comments");
-          if (owner && fieldValue2(d, "owner") === owner) score += 10;
+          var d = items[key], score = 0, likes = fieldValue3(d, "likes"), comments = fieldValue3(d, "comments");
+          if (owner && fieldValue3(d, "owner") === owner) score += 10;
           if (metrics2.likes != null && likes != null && Math.abs(metrics2.likes - likes) <= Math.max(2, metrics2.likes * 0.04)) score += 8;
           if (metrics2.comments != null && comments != null && Math.abs(metrics2.comments - comments) <= Math.max(2, metrics2.comments * 0.04)) score += 8;
           if (score >= 18) candidates.push({ code: key, score });
@@ -3957,21 +4512,21 @@
       return box;
     }
     function renderReelOverlay(ctx) {
-      var box = ensureOverlay(), data, views, er, growth, multiple, lines = [], key;
+      var box = ensureOverlay(), data2, views, er, growth, multiple, lines = [], key;
       if (!ctx || !ctx.code) {
         box.style.display = "none";
         return;
       }
-      data = items[ctx.code] || {};
-      views = fieldValue2(data, "views");
+      data2 = items[ctx.code] || {};
+      views = fieldValue3(data2, "views");
       er = engagement(views, ctx.native.likes, ctx.native.comments, ctx.native.reposts);
       growth = views ? growth24h(ctx.code, views) : null;
-      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue2(data, "owner"), views) : null;
+      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue3(data2, "owner"), views) : null;
       if (views) lines.push("▶ " + fmt(views));
       if (er != null) lines.push("ER " + fmtPercent(er));
       if (growth != null) lines.push("24h " + (growth >= 0 ? "+" : "") + fmtPercent(growth));
       if (multiple != null) lines.push(fmtMultiple(multiple));
-      if (fieldValue2(data, "date")) lines.push(String(fieldValue2(data, "date")).slice(5).replace("-", "/"));
+      if (fieldValue3(data2, "date")) lines.push(String(fieldValue3(data2, "date")).slice(5).replace("-", "/"));
       key = lines.join("|");
       if (box.dataset.ri315Render !== key) {
         box.innerHTML = "";
@@ -4036,14 +4591,14 @@
       parent.appendChild(row);
     }
     function renderPanel(ctx) {
-      var panel = document.getElementById("ri3-panel"), body, data, views, er, growth, multiple, media = "";
+      var panel = document.getElementById("ri3-panel"), body, data2, views, er, growth, multiple, media = "";
       if (!panel || !ctx) return;
       body = panel.querySelector(".ri3-panel-body");
-      data = ctx.code ? items[ctx.code] || {} : {};
-      views = fieldValue2(data, "views");
+      data2 = ctx.code ? items[ctx.code] || {} : {};
+      views = fieldValue3(data2, "views");
       er = engagement(views, ctx.native.likes, ctx.native.comments, ctx.native.reposts);
       growth = views ? growth24h(ctx.code, views) : null;
-      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue2(data, "owner"), views) : null;
+      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue3(data2, "owner"), views) : null;
       if (ctx.video && isFinite(ctx.video.duration) && ctx.video.duration > 0) media = ctx.video.duration.toFixed(1) + "초";
       if (ctx.video && ctx.video.videoWidth && ctx.video.videoHeight) media += (media ? " · " : "") + ctx.video.videoWidth + "×" + ctx.video.videoHeight;
       body.innerHTML = "";
@@ -4055,7 +4610,7 @@
       panelRow(body, "ER", er != null ? fmtPercent(er) : "—");
       panelRow(body, "24h", growth != null ? (growth >= 0 ? "+" : "") + fmtPercent(growth) : "—");
       panelRow(body, "계정 대비", multiple != null ? fmtMultiple(multiple) : "—");
-      panelRow(body, "게시일", fieldValue2(data, "date") ? String(fieldValue2(data, "date")).slice(5).replace("-", "/") : "—");
+      panelRow(body, "게시일", fieldValue3(data2, "date") ? String(fieldValue3(data2, "date")).slice(5).replace("-", "/") : "—");
       panelRow(body, "영상", media || "—");
     }
     function openPanel(ctx) {
@@ -4072,15 +4627,15 @@
       entries = [
         ["순수 영상", function() {
           var latest = reelContext2() || panelContext;
-          var data = latest && latest.code ? items[latest.code] || {} : {};
-          var url = latest && latest.video && (latest.video.currentSrc || latest.video.src) || fieldValue2(data, "videoUrl") || "";
-          if (/^blob:/i.test(url)) url = fieldValue2(data, "videoUrl") || "";
+          var data2 = latest && latest.code ? items[latest.code] || {} : {};
+          var url = latest && latest.video && (latest.video.currentSrc || latest.video.src) || fieldValue3(data2, "videoUrl") || "";
+          if (/^blob:/i.test(url)) url = fieldValue3(data2, "videoUrl") || "";
           openUrl(url);
         }],
         ["썸네일", function() {
           var latest = reelContext2() || panelContext;
-          var data = latest && latest.code ? items[latest.code] || {} : {};
-          openUrl(fieldValue2(data, "thumbUrl") || latest && latest.video && latest.video.poster || "");
+          var data2 = latest && latest.code ? items[latest.code] || {} : {};
+          openUrl(fieldValue3(data2, "thumbUrl") || latest && latest.video && latest.video.poster || "");
         }],
         ["링크 복사", function() {
           var latest = reelContext2() || panelContext;
@@ -4221,7 +4776,7 @@
       }).filter(Boolean);
       return [];
     };
-    detectMediaType = function(obj) {
+    detectMediaType2 = function(obj) {
       var mt = Number(obj && (obj.media_type != null ? obj.media_type : obj.mediaType));
       var pt = String(obj && (obj.product_type || obj.productType) || "").toLowerCase();
       if (/reel|clips/.test(pt)) return "REEL";
@@ -4230,10 +4785,10 @@
       if (mt === 1) return "PHOTO";
       return "";
     };
-    carouselImagesFromMedia = function(obj) {
+    carouselImagesFromMedia2 = function(obj) {
       var out = [], seen = /* @__PURE__ */ Object.create(null), slides = carouselSlidesFromMedia316(obj);
       slides.forEach(function(slide) {
-        var url = bestImageFromMedia(slide), key = normalizeUrl(url) || url;
+        var url = bestImageFromMedia2(slide), key = normalizeUrl(url) || url;
         if (url && !seen[key]) {
           seen[key] = 1;
           out.push(url);
@@ -4257,18 +4812,18 @@
       item.seen = Date.now();
       item.identity = {
         shortcode: code,
-        mediaId: fieldValue2(item, "mediaId") || "",
-        ownerId: fieldValue2(item, "ownerId") || "",
-        username: fieldValue2(item, "owner") || "",
-        mediaType: fieldValue2(item, "mediaType") || "",
-        productType: fieldValue2(item, "productType") || "",
-        canonicalUrl: fieldValue2(item, "canonicalUrl") || item.pageUrl || "",
-        state: fieldValue2(item, "mediaType") && fieldValue2(item, "owner") ? "IDENTIFIED" : "IDENTIFYING"
+        mediaId: fieldValue3(item, "mediaId") || "",
+        ownerId: fieldValue3(item, "ownerId") || "",
+        username: fieldValue3(item, "owner") || "",
+        mediaType: fieldValue3(item, "mediaType") || "",
+        productType: fieldValue3(item, "productType") || "",
+        canonicalUrl: fieldValue3(item, "canonicalUrl") || item.pageUrl || "",
+        state: fieldValue3(item, "mediaType") && fieldValue3(item, "owner") ? "IDENTIFIED" : "IDENTIFYING"
       };
       items[code] = item;
       if (changed) {
         scheduleStoreWrite();
-        recordSnapshot(code, fieldValue2(item, "views"));
+        recordSnapshot(code, fieldValue3(item, "views"));
         recordPost(item);
         scheduleRefresh();
       }
@@ -4279,7 +4834,7 @@
       if (!obj || typeof obj !== "object") return;
       code = obj.code || obj.shortcode || obj.short_code;
       if (!code || typeof code !== "string" || code.length < 5 || code.length > 40) return;
-      n = sameMediaNumber(obj, VIEW_KEYS, code, 0);
+      n = sameMediaNumber(obj, VIEW_KEYS2, code, 0);
       if (n != null) patch.views = n;
       n = sameMediaNumber(obj, ["like_count", "likes_count"], code, 0);
       if (n != null) patch.likes = n;
@@ -4298,17 +4853,17 @@
       if (user && user.username) patch.owner = String(user.username).toLowerCase();
       if (obj.pk || obj.id || obj.media_id) patch.mediaId = String(obj.pk || obj.id || obj.media_id);
       if (obj.user_id || obj.owner_id || user && (user.pk || user.id)) patch.ownerId = String(obj.user_id || obj.owner_id || user.pk || user.id);
-      type = detectMediaType(obj);
+      type = detectMediaType2(obj);
       if (type) patch.mediaType = type;
       if (obj.product_type || obj.productType) patch.productType = String(obj.product_type || obj.productType);
-      directCover = bestImageFromMedia(obj);
+      directCover = bestImageFromMedia2(obj);
       if (directCover) {
         patch.coverUrl = directCover;
         patch.thumbUrl = directCover;
         key = normalizeUrl(directCover);
         if (key) posterMap[key] = code;
       }
-      carouselImages = carouselImagesFromMedia(obj);
+      carouselImages = carouselImagesFromMedia2(obj);
       if (carouselImages.length) patch.carouselImages = carouselImages;
       collectUrls(obj, code, videos, images, 0);
       for (i = 0; i < videos.length; i++) {
@@ -4346,7 +4901,7 @@
       }
       if (isReelUrl(url)) patch.mediaType = "REEL";
       else if (hasVideo) patch.mediaType = "VIDEO";
-      if (patch.mediaType === "REEL" || patch.mediaType === "VIDEO") patch.views = nearMetric(html, code, VIEW_KEYS);
+      if (patch.mediaType === "REEL" || patch.mediaType === "VIDEO") patch.views = nearMetric(html, code, VIEW_KEYS2);
       if (patch.likes == null) patch.likes = nearMetric(html, code, ["like_count", "likes_count"]);
       if (patch.comments == null) patch.comments = nearMetric(html, code, ["comment_count", "comments_count"]);
       patch.reposts = nearMetric(html, code, ["reshare_count", "repost_count", "reposts_count"]);
@@ -4416,8 +4971,8 @@
       }
       return best;
     };
-    cardImageUrl = function(anchor, data) {
-      return bestDomImageUrl2(anchor) || fieldValue2(data, "coverUrl") || fieldValue2(data, "thumbUrl") || "";
+    cardImageUrl = function(anchor, data2) {
+      return bestDomImageUrl2(anchor) || fieldValue3(data2, "coverUrl") || fieldValue3(data2, "thumbUrl") || "";
     };
     downloadMedia = function(url, filename) {
       if (!supportsDirectoryPicker() && !downloadLocationNoticeShown316) {
@@ -4472,12 +5027,12 @@
         return;
       }
       closeGridMenu();
-      var data = items[code] || { code, fields: {} };
-      var type = effectiveCardType(anchor, data);
+      var data2 = items[code] || { code, fields: {} };
+      var type = effectiveCardType(anchor, data2);
       var videoCard = type === "REEL" || type === "VIDEO";
-      var imageUrl = cardImageUrl(anchor, data);
-      var videoUrl = fieldValue2(data, "videoUrl") || "";
-      var carouselImages = fieldValue2(data, "carouselImages");
+      var imageUrl = cardImageUrl(anchor, data2);
+      var videoUrl = fieldValue3(data2, "videoUrl") || "";
+      var carouselImages = fieldValue3(data2, "carouselImages");
       var pageUrl = (anchor.href || "").split("?")[0] || "https://www.instagram.com/" + (videoCard ? "reel/" : "p/") + code + "/";
       var trigger = anchor.querySelector(".ri3-grid-media");
       var rect = trigger ? trigger.getBoundingClientRect() : anchor.getBoundingClientRect();
@@ -4560,16 +5115,19 @@
       app.emit(EVENTS.DOWNLOAD_CHANGED, change);
     }
   });
-  var legacyStore = createLegacyStoreAdapter({ env: globalThis });
+  var history2 = createHistoryStore({ env: globalThis });
+  var legacyStore = createLegacyStoreAdapter({ env: globalThis, history: history2 });
+  var data = createDataEngine({ legacyAdapter: legacyStore, history: history2 });
   var reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
-  var metrics = createMetricsEngine({ history: legacyStore });
+  var metrics = createMetricsEngine({ history: history2 });
   var workspace = createWorkspaceState();
   var storeTracker = legacyStore.createChangeTracker((change) => {
+    data.syncLegacy();
     const activeIdentity = reelContext.resolveActivityIdentity();
     app.setCurrentIdentity(activeIdentity === void 0 ? legacyStore.getCurrentIdentity() : activeIdentity);
     app.emit(EVENTS.STORE_CHANGED, change);
   });
-  app.services = { capabilities, settings, downloads, metrics, workspace, activity };
+  app.services = { capabilities, settings, downloads, metrics, workspace, activity, history: history2, data };
   app.adapters.legacyStore = legacyStore;
   app.adapters.reelContext = reelContext;
   var stopRouteTracking = app.startRouteTracking({
