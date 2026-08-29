@@ -244,14 +244,24 @@ Android Edge → Tampermonkey install/update intercept는 실기기 Unverified.
 
 # 8. Current Tests / Build
 
-자동 test suite에는 다음 UI guard가 추가돼 있습니다.
+UI-D 최종 자동검증 checkpoint:
+
+- unit tests: **21 / 21 pass**
+- userscript build: **success**
+- architecture/syntax check: **success**
+- source files: **20**
+- architecture warnings: **0**
+- generated userscript syntax: **success**
+- generated userscript: **v3.2.3**
+
+추가 UI guards:
 
 - launcher visual geometry preservation
 - Research Workspace compact/expanded structure
 - CONTENT/GLOBAL split
 - update shortcut preservation
 
-최종 CI 숫자는 latest workflow 성공 후 기록 기준으로 사용합니다. CI success가 Android Edge visual verification을 대신하지 않습니다.
+자동검증은 Android Edge visual/touch 검증을 대신하지 않습니다.
 
 ---
 
