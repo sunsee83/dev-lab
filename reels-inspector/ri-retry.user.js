@@ -1979,6 +1979,17 @@
       renderBody();
       layout2?.schedule?.();
     }
+    function openSettings() {
+      if (destroyed) return;
+      workspace2.rebindContext(currentIdentity());
+      workspace2.setActiveTab("settings");
+      if (!isOpen()) workspace2.open();
+      ensureWorkspaceView();
+      syncWorkspaceView();
+      workspaceView?.resetScroll();
+      renderBody();
+      layout2?.schedule?.();
+    }
     function closePanel() {
       if (!isOpen()) return;
       workspace2.close();
@@ -2140,9 +2151,8 @@
       return addAction(parent, label, action, { doc, className: "ri32-action ri32-media-action" });
     }
     async function save(request) {
-      if (!downloads2) return;
-      showToast(doc, "저장 준비 중…");
-      showResult(doc, await downloads2.download(request));
+      if (!downloads2) return null;
+      return downloads2.download(request);
     }
     async function saveBatch(post) {
       const requests = post.carouselImages.map((url, index) => ({
@@ -2151,8 +2161,7 @@
         url,
         slideIndex: index + 1
       }));
-      showToast(doc, `캐러셀 ${requests.length}장 저장 준비 중…`);
-      showResult(doc, await downloads2.downloadBatch(requests));
+      return downloads2?.downloadBatch(requests);
     }
     async function copyCurrentLink(post) {
       const text = post.canonicalUrl || `https://www.instagram.com/${post.mediaType === "REEL" ? "reel" : "p"}/${post.shortcode}/`;
@@ -2193,6 +2202,7 @@
     }
     return {
       open: openPanel,
+      openSettings,
       close: closePanel,
       destroy,
       getState: () => workspace2.getState()
