@@ -4,36 +4,46 @@
 
 상위 기준:
 
-- `PROJECT_PLAN.md` — 제품/데이터/UI/로드맵
-- `STATUS.md` — 현재 배포/검증/미해결
+- `PROJECT_PLAN.md` — 제품/데이터/장기 기능
+- `UI_BASELINE.md` — 모바일 UI 시각/조작 기준
+- `UI_ARCHITECTURE.md` — UI 계층/상태/데이터 흐름
 - `GRID_BASELINE.md` — Grid Frozen UI
+- `PRESERVATION_BASELINE.md` — 기존 기능/외형 보존 gate
+- `STATUS.md` — 현재 배포/검증/미해결
+- `WORK_TRACK.md` — 현재 실행순서
 - `tests/README.md` — 회귀/승인 기준
 
-설계가 바뀌면 기존 결정을 먼저 읽고 유지/수정/추가를 다시 통합합니다.
+설계가 바뀌면 기존 결정을 먼저 읽고 **유지 / 수정 / 추가**를 다시 통합합니다.
 
 ---
 
 # 1. 설계 목표
 
-1. **Single Owner** — 한 책임은 한 owner가 소유
+1. **Single Owner** — 한 책임은 한 owner
 2. **Single Data Flow** — UI별 별도 수집/계산 금지
 3. **Single Side-Effect Path** — persistence/download/clipboard 같은 부작용은 지정 경로만 사용
 4. **Small Public API** — 모듈 간 작은 명시적 API
 5. **Progressive Modularization** — 실제 책임 경계가 생길 때만 분리
 6. **Migration without rollback** — 기존 승인 runtime을 보존하면서 호출부를 한 단계씩 이동
+7. **UI State Ownership** — launcher/panel/tab이 open/context/layout 상태를 따로 소유하지 않음
+8. **Documented Replacement** — 기존 UI 제거는 preservation/replacement gate 이후에만
 
 파일 수 자체를 목표로 하지 않습니다.
 
 ---
 
-# 2. v3.2.2 실제 구조
+# 2. 현재 실제 구조 — v3.2.3 UI-B foundation checkpoint
 
 ```text
 reels-inspector/
 ├ README.md
 ├ PROJECT_PLAN.md
 ├ STATUS.md
+├ WORK_TRACK.md
 ├ GRID_BASELINE.md
+├ UI_BASELINE.md
+├ UI_ARCHITECTURE.md
+├ PRESERVATION_BASELINE.md
 ├ CODE_STRUCTURE.md
 ├ package.json
 ├ .gitignore
@@ -63,6 +73,9 @@ reels-inspector/
 │  │
 │  └ ui/
 │     ├ grid.js
+│     ├ layout.js
+│     ├ workspace-state.js
+│     ├ ri-primitives.js
 │     ├ ri-panel.js
 │     ├ ri-summary.js
 │     ├ toast.js
@@ -93,18 +106,22 @@ reels-inspector/
 
 ```text
 main.js
-  ├ VERSION
+  ├ VERSION / UPDATE_URL
   ├ AppContext
   ├ CapabilitySnapshot
   ├ Settings Store
   ├ Download Manager
   ├ Legacy Store Adapter
   ├ Metrics Engine
+  ├ Workspace State
+  ├ Layout Manager
   ├ Grid Actions
   └ RI Panel
 ```
 
-Dependency는 main에서 주입합니다.
+하위 모듈이 global service locator를 찾아다니지 않고 main에서 dependency를 주입합니다.
+
+현재 조립 개념:
 
 ```js
 const app = createApp({ version: VERSION });
@@ -112,11 +129,11 @@ const settings = createSettingsStore(...);
 const legacyStore = createLegacyStoreAdapter(...);
 const metrics = createMetricsEngine({ history: legacyStore });
 const downloads = createDownloadManager(...);
+const workspace = createWorkspaceState();
+const layout = createLayoutManager({ app, doc, env });
 
-app.services = { capabilities, settings, downloads, metrics };
+mountRiPanel({ app, settings, downloads, metrics, adapter: legacyStore, workspace, layout });
 ```
-
-하위 모듈이 상위 module/global service locator를 찾아다니지 않습니다.
 
 ---
 
@@ -134,9 +151,7 @@ download:changed
 
 `core/app.js`가 event 이름과 SPA lifecycle을 소유합니다.
 
-v3.2.2부터 기존 SPA `MutationObserver`의 activity를 `onActivity(reason)` callback으로 composition root에 공유할 수 있습니다.
-
-이 목적은 **같은 DOM을 보기 위한 두 번째 전체 observer를 만들지 않는 것**입니다.
+기존 SPA `MutationObserver` activity를 `onActivity(reason)`으로 공유하여 같은 DOM을 보기 위한 두 번째 전체 observer를 만들지 않습니다.
 
 ```text
 MutationObserver (1)
@@ -150,26 +165,30 @@ AppContext
 
 - mutation마다 전체 Grid/Store parse 금지
 - `scheduleRender(key)`로 동일 frame render dedupe
-- listener는 cleanup 경로 필수
+- listener cleanup 필수
 - route change 후 stale listener 금지
+- Layout Manager도 일반 mutation마다 전체 scan하지 않음
 
 ---
 
-# 5. 상태 소유권
+# 5. 상태 / 책임 소유권
 
 | 상태/책임 | Owner |
 |---|---|
-| 제품 버전 | `version.js` |
+| 제품 버전 / update URL | `version.js` |
 | route/event/lifecycle | `core/app.js` |
 | capability/permission probe | `core/capability.js` |
 | clipboard | `core/clipboard.js` |
 | 저장정책 + directory handle | `store/settings-store.js` |
 | legacy cache/history read | `migration/legacy-store-adapter.js` |
-| ER/24h/account relative formula | `metrics/metrics.js` |
-| migrated media/cover/filename | `media/media-resolver.js` |
+| ER/24h/account relative | `metrics/metrics.js` |
+| media/cover/filename | `media/media-resolver.js` |
 | destination/Blob write | `media/download-manager.js` |
+| Workspace open/detent/mode/tab/context state | `ui/workspace-state.js` |
+| safe-area/native collision/layout snapshot | `ui/layout.js` |
+| RI section/row/empty/action primitive | `ui/ri-primitives.js` |
 | Grid save intent/menu | `ui/grid.js` |
-| RI shell/tabs/lifecycle/settings/media | `ui/ri-panel.js` |
+| RI Foundation shell/tabs/settings/media lifecycle | `ui/ri-panel.js` |
 | RI summary presentation | `ui/ri-summary.js` |
 | toast | `ui/toast.js` |
 | new shared CSS | `ui/styles.js` |
@@ -178,58 +197,159 @@ Instagram Identity/Extractor/Verified Store/Grid renderer/Reel renderer는 migra
 
 ---
 
-# 6. Metrics Engine
+# 6. Workspace State Owner
 
-`metrics/metrics.js`는 DOM/storage/UI를 직접 접근하지 않는 순수 domain layer입니다.
+`ui/workspace-state.js`는 DOM을 소유하지 않는 UI state owner입니다.
+
+현재 state:
+
+```text
+WorkspaceState
+- open
+- detent: closed | compact | expanded
+- mode: content | global
+- activeTab
+- contextKey
+- contextEpoch
+```
+
+API:
+
+```text
+getState()
+subscribe(listener)
+open()
+close()
+toggle()
+expand()
+collapse()
+setActiveTab(tab)
+rebindContext(identity)
+```
+
+규칙:
+
+- launcher가 별도 open state를 소유하지 않음
+- tab renderer가 detent를 소유하지 않음
+- identity key가 실제 변경될 때만 contextEpoch 증가
+- route/identity change 시 이전 context를 stale 확정값처럼 유지하지 않도록 rebind
+- UI-D에서 CONTENT/GLOBAL presentation을 이 state에 연결
+
+현재 Foundation panel은 open/tab/context를 이 owner에서 읽지만, Compact/Expanded의 실제 bottom-sheet visual은 아직 UI-D 전입니다.
+
+---
+
+# 7. Layout Manager
+
+`ui/layout.js`가 전역 모바일 위치 계산 owner입니다.
+
+순수 계산 API:
+
+```text
+computeLayoutSnapshot(input)
+```
+
+runtime API:
+
+```text
+createLayoutManager({ app, doc, env })
+  .getSnapshot()
+  .measure()
+  .schedule()
+  .subscribe()
+  .destroy()
+```
+
+입력 개념:
+
+```text
+viewport width/height
+visualViewport
+safeBottom
+bottom blockers
+right blockers
+keyboard visible
+```
+
+출력:
+
+```text
+launcherAnchor
+reelOverlayLane
+sheetMetrics
+feedbackAnchor
+```
+
+현재 UI-B에서는 기존 시각 baseline을 기본값으로 유지하면서 CSS custom property를 통해 launcher/panel/toast offset을 한 owner로 연결했습니다.
+
+```text
+--ri-launcher-right
+--ri-launcher-bottom
+--ri-panel-bottom
+--ri-feedback-bottom
+--ri-sheet-compact-height
+--ri-sheet-expanded-height
+```
+
+실제 blocker 탐지는 제한된 visible fixed/sticky candidate를 사용하며 route/resize/visualViewport 변화 때만 schedule합니다. Instagram DOM 전체를 mutation마다 scan하지 않습니다.
+
+Reel rail 세부 적응은 UI-C/UI-F 실기기 검증에서 보강합니다.
+
+---
+
+# 8. RI UI Primitive
+
+`ui/ri-primitives.js`는 실제 중복이 생긴 표현 primitive만 소유합니다.
+
+```text
+createSection()
+addRow()
+addAction()
+renderEmpty()
+```
+
+`ri-panel.js`와 `ri-summary.js`가 같은 section/row/empty 구현을 복제하지 않습니다.
+
+의미 없는 global `utils.js/helpers.js`로 확장하지 않습니다.
+
+---
+
+# 9. Metrics Engine
+
+`metrics/metrics.js`는 DOM/storage/UI 독립 domain layer입니다.
 
 공개 API:
 
-```js
+```text
 createMetricsEngine({ history, now })
 calculateEngagementRate(input)
 calculateGrowth24h(input)
 calculateAccountMultiple(input)
 ```
 
-`history` contract:
+history contract:
 
-```js
-getSnapshots(shortcode) -> [{ t, v }]
-getAccountPosts(username) -> [{ code, owner, views, t }]
+```text
+getSnapshots(shortcode)
+getAccountPosts(username)
 ```
 
-현재 migration에서는 `legacy-store-adapter.js`가 이 contract를 제공합니다. 향후 Verified Store/history module이 완성되면 Metrics Engine 자체는 수정하지 않고 주입 대상만 교체합니다.
+현재는 migration adapter가 이 contract를 제공합니다. Verified Store/history가 완성되면 주입 대상만 교체합니다.
 
-## ER
+규칙:
 
-- formula: `(likes + comments + reposts) / views * 100`
-- 새 RI path는 views/likes/comments/reposts가 모두 실제 값일 때만 계산
-- missing을 0으로 치환 금지
-
-## 24h
-
-- 실제 snapshot만 사용
-- 18~32시간 window
-- 24시간에 가장 가까운 snapshot
-- 현재 views가 이전보다 작으면 미표시
-
-## account multiple
-
-- 동일 username
-- 현재 shortcode 제외
-- 최근 최대 20
-- 최소 5 sample
-- median 대비 current views
-
-Metrics module에서 DOM selector, localStorage, UI string을 다루지 않습니다.
+- ER missing→0 금지
+- 24h 실제 18~32h snapshot
+- account same username / current 제외 / max20 / min5 / median
+- Metrics module DOM 접근 금지
 
 ---
 
-# 7. Migration Store Adapter
+# 10. Migration Store Adapter
 
 `migration/legacy-store-adapter.js`는 영구 Store가 아니라 migration boundary입니다.
 
-읽는 legacy keys:
+읽기 key:
 
 ```text
 ri311:items:v1
@@ -237,9 +357,9 @@ ri311:snap:v1
 ri311:posts:v1
 ```
 
-공개 API:
+API:
 
-```js
+```text
 getItem(shortcode)
 getPost(shortcode)
 getCurrentIdentity(url?)
@@ -253,23 +373,14 @@ codeFromUrl(url)
 
 - 새 Instagram parser 추가
 - Verified conflict 규칙 새 구현
-- cache 쓰기 ownership 가져오기
-- 미확보 metric을 0으로 변경
+- cache write ownership
+- missing metric을 0으로 변경
 
-## Change Tracker
-
-Change Tracker는 interval polling을 만들지 않습니다.
-
-- AppContext가 관찰한 SPA DOM activity를 받아 1회 delayed fingerprint check
-- `ri311:items/snap/posts` raw string이 실제 변경됐을 때만 callback
-- storage/focus/pageshow 보조 trigger
-- fingerprint가 같으면 JSON parse/render 없음
-
-Verified Store migration 완료 후 adapter와 tracker를 삭제합니다.
+Change Tracker는 interval polling이 아니라 shared SPA activity 후 delayed fingerprint check입니다.
 
 ---
 
-# 8. UI 구조
+# 11. UI 구조
 
 UI는 표현과 intent 전달만 합니다.
 
@@ -283,45 +394,73 @@ UI는 표현과 intent 전달만 합니다.
 
 ## `ui/grid.js`
 
-- 기존 카드당 `.ri3-grid-media` intent capture
+- 기존 카드 `.ri3-grid-media` intent capture
 - shortcode 식별
-- `media-resolver` 호출
+- media resolver 호출
 - content action menu
-- Download Manager/clipboard owner 호출
+- Download Manager / clipboard owner 호출
 
-Grid 8-slot renderer 자체는 아직 legacy이며 회귀 위험 때문에 별도 단계에서 옮깁니다.
+Grid 8-slot renderer 자체는 아직 legacy이며 별도 migration에서 옮깁니다.
 
 ## `ui/ri-panel.js`
 
-소유:
+현재 Foundation 책임:
 
-- 전역 RI button
-- panel open/close
+- Global RI button mount
+- panel DOM open/close
 - tabs
-- settings UI
-- media intent
-- route/identity/store event에 따른 render scheduling
+- settings/media intent
+- route/identity/store render scheduling
+- injected Workspace State / Layout 사용
 
-summary의 지표/표시 책임은 `ri-summary.js`에 위임합니다.
+최종 목표의 bottom Research Workspace visual은 UI-D에서 교체합니다.
 
 ## `ui/ri-summary.js`
 
-v3.2.2에서 실제 두 번째 변경 책임이 생겨 분리했습니다.
+- raw metric presentation
+- Metrics Engine 결과 presentation
+- missing `—`
 
-소유:
-
-- summary rows
-- raw count presentation
-- Metrics Engine 결과의 percent/multiple presentation
-- missing value `—` 정책
-
-Instagram/storage/download side effect는 없습니다.
+Instagram/storage/download side effect 없음.
 
 ---
 
-# 9. Download System
+# 12. UI Target Architecture
 
-모든 새 미디어 저장:
+`UI_ARCHITECTURE.md`의 목표:
+
+```text
+UIRoot
+├ GlobalLauncher
+├ AmbientLayer
+│  ├ GridOverlay / Grid Action
+│  └ ReelOverlay
+├ ResearchWorkspace
+│  ├ ContextHeader
+│  ├ WorkspaceNavigation
+│  ├ ActiveTabHost
+│  └ WorkspaceActivity
+└ FeedbackLayer
+   └ Toast
+```
+
+책임이 실제 커질 때만 다음 파일 분리를 검토합니다.
+
+```text
+ui-root.js
+launcher.js
+research-workspace.js
+workspace-navigation.js
+reel.js
+```
+
+처음부터 빈 `tabs/*` 파일을 만들지 않습니다.
+
+Research Read Model도 Data Engine migration에서 실제 필요가 생긴 시점에 생성합니다.
+
+---
+
+# 13. Download System
 
 ```text
 UI intent
@@ -341,96 +480,68 @@ mode:
 - directory
 - prompt
 
-지정 폴더 실패 시 silent default fallback 금지.
+지정폴더 실패 시 silent default fallback 금지.
 
-cross-origin image/cover 문제가 실기기에서 확인될 때만 `media/transport.js` 분리를 검토합니다. 실제 필요 확인 전에 `@grant`를 바꾸지 않습니다.
+cross-origin image/cover 문제가 실기기에서 확인될 때만 `media/transport.js` 분리를 검토합니다. 확인 전 `@grant`를 바꾸지 않습니다.
 
 ---
 
-# 10. 중복 방지
+# 14. 중복 / 파일 관리
 
-## Single Owner rule
-
-두 번째 구현을 만들기 전에 기존 owner API를 먼저 찾습니다.
-
-예:
+Single Owner rule:
 
 - clipboard → `core/clipboard.js`
 - filename → `media/media-resolver.js`
-- metrics formula → `metrics/metrics.js`
+- metrics → `metrics/metrics.js`
 - save policy → `settings-store.js`
 - file write → `download-manager.js`
+- workspace state → `workspace-state.js`
+- global layout → `layout.js`
+- repeated RI DOM primitive → `ri-primitives.js`
 
-## Migration exception
+Migration exception:
 
-기존 `legacy-runtime.js`에는 아직 Grid/Reel parity를 위한 이전 metric 함수가 남아 있습니다.
+legacy runtime의 Grid/Reel compatibility 함수는 새 owner 전환 및 회귀 확인 후 삭제합니다.
 
-이는 영구 owner가 아닙니다.
-
-```text
-새 owner 작성
-→ 새 RI 호출부 전환
-→ 실기기/회귀 확인
-→ Grid/Reel 호출부 전환
-→ legacy metric 함수 제거
-```
-
-새 metric 변경은 `metrics/metrics.js`에만 적용합니다.
-
-## 금지 패턴
+금지:
 
 - `oldFn = fn; fn = override` 새 stack
 - `backup.js`, `final2.js`, `hotfix.js`, `copy.js`
-- 동일 helper 8줄+ 복사 후 독립 발전
-- 의미 없는 global `utils.js` 쓰레기통
+- 동일 helper 장기 복제
+- 의미 없는 global utils dump
 
----
+파일 크기 기준:
 
-# 11. 파일 크기 관리
-
-기준:
-
-- 0~250줄: 정상
-- 250~350줄: 책임 혼합 검토
-- 350~500줄: 분리 후보
-- 500줄 초과: 명확한 단일책임 사유 없으면 분리
+- 0~250줄 정상
+- 250~350 책임 혼합 검토
+- 350~500 분리 후보
+- 500 초과: 명확한 단일책임 사유 없으면 실패
 - `legacy-runtime.js`만 migration 기간 예외
 
-v3.2.2 적용 사례:
-
-`ri-panel.js`가 summary 지표 연결로 350줄 경계를 넘기려 했기 때문에, 단순 줄수 맞추기가 아니라 **summary presentation이라는 독립 변경 책임이 실제 생긴 시점**에 `ri-summary.js`로 분리했습니다.
-
-함수 분리 기준:
-
-- 약 60줄 이상 지속
-- DOM 탐색 + domain 계산 + persistence 같은 서로 다른 side effect 혼합
-- 3단계 이상 중첩이 지속
-- 같은 8줄 이상 로직이 여러 곳에 반복
-
 ---
 
-# 12. 성능 규칙
+# 15. 성능 규칙
 
 - interval 전체 polling 금지
 - 동일 shortcode request dedupe
 - MutationObserver callback 전체 parse/render 금지
-- shared SPA observer activity 활용
-- change fingerprint가 같으면 Store parse/render 금지
-- 같은 renderKey DOM rewrite 금지
-- document-level listener는 한 세트
-- localStorage/IndexedDB write는 owner만 수행
-- CDN URL을 identity key로 사용 금지
+- shared SPA observer activity 사용
+- change fingerprint 같으면 Store parse/render 금지
+- same renderKey DOM rewrite 금지
+- document-level listener 한 세트 지향
+- localStorage/IndexedDB write는 owner만
+- CDN URL identity key 금지
+- layout 전체 scan은 일반 mutation마다 실행 금지
+- inactive heavy research tab 동시 mount 금지(향후 UI-D)
 
 ---
 
-# 13. Build / Check
+# 16. Build / Check
 
 ```text
 src/main.js
-  ↓
-esbuild bundle
-  ↓
-userscript metadata prepend
+  ↓ esbuild
+metadata prepend
   ↓
 ri-retry.user.js
 ```
@@ -444,30 +555,31 @@ npm run check
 node --check ri-retry.user.js
 ```
 
-`check.mjs` error:
+현재 check 대상:
 
 - forbidden backup/hotfix filename
-- UI의 storage/File System 직접 사용
+- UI storage/File System 직접 사용
 - UI network transport
-- metrics의 DOM 접근
-- store → UI dependency
+- UI clipboard duplicate
+- UI filename owner 침범
+- metrics DOM 접근
+- store→UI dependency
 - circular import
-- version mismatch
-- generated warning 누락
+- version/update URL mismatch
+- generated warning
 - runtime `@require`
-- syntax failure
-- 일반 source 500줄 초과
-
-350줄 초과는 warning으로 responsibility split을 검토합니다.
+- source size
+- preservation/UI architecture 문서 존재
+- required work-track sections
 
 ---
 
-# 14. Migration 단계
+# 17. Migration 단계
 
-## Phase 1 — build source 전환 — 완료
+## Phase 1 — Build source 전환 — 완료
 
 - `src/*` source-of-truth
-- root userscript generated
+- generated userscript
 
 ## Phase 2 — Foundation — 완료
 
@@ -479,52 +591,60 @@ node --check ri-retry.user.js
 
 ## Phase 3 — Download migration — 진행 중
 
-- Grid/RI save intent → common manager
-- global save mode
-- 지정폴더 image/cover CORS는 실기기 확인 대기
+- Grid/RI → common manager
+- global mode
+- 지정폴더 photo/cover 실기기 확인 대기
 
 ## Phase 4 — UI / Metrics migration — 진행 중
 
-v3.2.2 완료:
+완료:
 
 - SPA activity 공유
-- legacy change fingerprint binding
-- Metrics Engine owner
-- RI summary metrics 연결
-- `ri-summary.js` 책임 분리
+- legacy fingerprint binding
+- Metrics Engine
+- RI Summary metrics
+- UI baseline / architecture
+- RI primitives
+- Workspace State
+- Layout Manager foundation
+- architecture duplicate warning 0
 
 다음:
 
-- Reel identity/native metrics 정확도
-- Reel overlay → Metrics owner
-- legacy metric 함수 제거
+- UI-C Global Launcher visual replacement
+- UI-D Contextual Research Workspace
+- UI-E Activity layer
+- UI-F Reel identity/native metrics + overlay
 
 ## Phase 5 — Data Engine
 
-- Identity
-- Extractor
-- Verified Store
-- common history
-- media[]
-- Grid/Reel renderer
+```text
+instagram/identity.js
+→ instagram/extractor.js
+→ store/verified-store.js
+→ common history
+→ media[]
+→ Grid/Reel renderer
+```
 
 ## Phase 6 — Legacy removal
 
-- legacy runtime 비우고 삭제
-- migration adapter 삭제
-- 남은 duplicate CSS/logic 삭제
+- legacy runtime 제거
+- migration adapter 제거
+- duplicate CSS/logic 제거
 
 ---
 
-# 15. 완료 기준
+# 18. 완료 기준
 
 1. `src/*`만 개발 원본
 2. generated userscript 직접 수정 없음
 3. 기능별 owner 명확
-4. UI/Store/Metrics/Download 책임 분리
+4. UI/Store/Metrics/Download/Layout 책임 분리
 5. interval polling 없음
 6. 같은 핵심 로직 장기 중복 없음
-7. source 파일 크기 gate 유지
+7. source size gate 유지
 8. unit/build/check 통과
-9. 실기기 승인 기능 유지
-10. migration 종료 후 legacy/adapter 제거
+9. preservation/replacement gate 통과
+10. Android Edge 실기기 미확인 항목을 Verified로 기록하지 않음
+11. 문서와 실제 source ownership 일치
