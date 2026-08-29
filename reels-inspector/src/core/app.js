@@ -92,7 +92,7 @@ export function createApp({ version = '' } = {}) {
       return currentIdentity;
     },
 
-    startRouteTracking({ env = globalThis, resolveIdentity } = {}) {
+    startRouteTracking({ env = globalThis, resolveIdentity, onActivity } = {}) {
       stopRouteTracking?.();
       if (destroyed) return () => {};
 
@@ -118,27 +118,40 @@ export function createApp({ version = '' } = {}) {
         }
       };
 
-      const schedule = () => {
-        if (stopped || destroyed || queued) return;
+      const schedule = (reason = 'activity') => {
+        if (stopped || destroyed) return;
+        if (typeof onActivity === 'function') {
+          try {
+            onActivity(reason);
+          } catch (error) {
+            console.warn('[RI] activity listener failed', error);
+          }
+        }
+        if (queued) return;
         queued = true;
         const raf = env.requestAnimationFrame || ((fn) => (env.setTimeout || setTimeout)(fn, 16));
         raf(sync);
       };
 
       const observer = env.MutationObserver && doc?.documentElement
-        ? new env.MutationObserver(schedule)
+        ? new env.MutationObserver(() => schedule('dom'))
         : null;
       observer?.observe(doc.documentElement, { childList: true, subtree: true });
 
       const eventNames = ['popstate', 'hashchange', 'pageshow'];
-      for (const name of eventNames) env.addEventListener?.(name, schedule, true);
+      const handlers = new Map();
+      for (const name of eventNames) {
+        const handler = () => schedule(name);
+        handlers.set(name, handler);
+        env.addEventListener?.(name, handler, true);
+      }
       sync();
 
       const cleanup = () => {
         if (stopped) return;
         stopped = true;
         observer?.disconnect();
-        for (const name of eventNames) env.removeEventListener?.(name, schedule, true);
+        for (const [name, handler] of handlers) env.removeEventListener?.(name, handler, true);
         if (stopRouteTracking === cleanup) stopRouteTracking = null;
       };
       stopRouteTracking = cleanup;
