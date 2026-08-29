@@ -20,8 +20,8 @@ src/
 ├ store/ history-store.js settings-store.js verified-cache-store.js verified-store.js
 ├ metrics/ metrics.js
 ├ media/ media-resolver.js download-manager.js
-└ ui/ activity-indicator.js grid.js layout.js metric-format.js reel-overlay.js
-       research-workspace.js ri-panel.js ri-primitives.js ri-settings.js
+└ ui/ activity-indicator.js grid.js grid-metrics-renderer.js layout.js metric-format.js
+       reel-overlay.js research-workspace.js ri-panel.js ri-primitives.js ri-settings.js
        ri-summary.js styles.js toast.js workspace-state.js
 ```
 
@@ -39,10 +39,12 @@ src/
 - cache persistence → `store/verified-cache-store.js`; history → `store/history-store.js`
 - legacy raw/permalink/patch bridge → `migration/capture-handoff.js`
 - legacy cache/change tracking → `migration/legacy-store-adapter.js`
-- **Data Engine post + Metrics summary → legacy Grid/Reel visual bridge → `migration/legacy-renderer-handoff.js`**
+- Data Engine post + Metrics summary → legacy Grid/Reel visual bridge → `migration/legacy-renderer-handoff.js`
 - active Reel DOM evidence/context → `migration/reel-context-adapter.js`
 - modern Reel context → legacy visual bridge/DOM enrichment → `migration/reel-context-handoff.js`
 - ER/24h/account-relative → `metrics/metrics.js`
+- **staged Frozen Grid 2행/8-slot markup + label projection → `ui/grid-metrics-renderer.js`**
+- staged Reel overlay → `ui/reel-overlay.js`
 - media resolution/filename → `media/media-resolver.js`; save → `media/download-manager.js`
 - Workspace/Layout/RI/UI → 각 `ui/*`
 
@@ -60,12 +62,30 @@ Verified Store
 ├→ History Store → Metrics
 ├→ common media[]
 ├→ modern UI/context
-└→ legacy-renderer-handoff → frozen legacy Grid/Reel DOM visual
+└→ legacy-renderer-handoff → frozen active legacy Grid/Reel DOM visual
 ```
 
-legacy-renderer-handoff는 Grid에서는 stored post를, Reel에서는 scoped native likes/comments/reposts를 stored post에 merge한 뒤 **동일 Metrics Engine**으로 ER/24h/account-relative를 계산합니다. legacy 시각 markup/position/string은 바꾸지 않습니다.
+legacy-renderer-handoff는 Grid에서는 stored post를, Reel에서는 scoped native likes/comments/reposts를 merge한 post를 동일 Metrics Engine에 넘깁니다. active legacy markup/position/string은 현재 유지합니다.
 
 missing=`0` 금지, source rank=`legacy < permalink < dom < embedded < network`.
+
+### Staged Frozen Grid renderer
+
+`ui/grid-metrics-renderer.js`는 아직 runtime에 mount하지 않습니다.
+
+```text
+post + derived
+→ 4-slot row1: ▶views | ♥likes | ●comments | ↻reposts
+→ 4-slot row2: ER | 24h | ×account | MM/DD
+```
+
+계약:
+
+- Reel/Video만 views/derived 표시
+- Photo/Carousel views=`▶-`, derived=`-`
+- 실제 `0` count는 `0`, missing은 `-`
+- markup=`ri3-grid-row1` 4 spans + `ri3-grid-row2` 4 spans
+- active switch는 Android Grid parity 뒤에만 수행
 
 ### Active Reel
 
@@ -74,26 +94,11 @@ shared SPA → reel-context-adapter
   scoped link → Data Engine exact media → exact route
   + scoped native metrics
 → reel-context-handoff
-  ├→ Data Engine DOM enrichment
-  ├→ App identity
-  └→ legacy Reel visual context
-→ legacy-renderer-handoff
-  └→ Data Engine post + live metrics → Metrics
+→ legacy-renderer-handoff → Data Engine post + live metrics → Metrics
 → existing legacy Reel overlay DOM
 ```
 
-정상 경로에서 fuzzy context와 legacy metric formula는 사용하지 않습니다. 둘 다 hook 부재/실패 시 emergency fallback입니다.
-
-### Grid
-
-```text
-legacy Grid DOM discovery/card markup (Frozen)
-→ renderer handoff(code)
-→ Data Engine post + Metrics
-→ 기존 2행/8-slot 문자열 렌더
-```
-
-Grid 구조/slot 좌표/no-flicker는 그대로 유지합니다. source renderer extraction은 별도 parity 단계입니다.
+정상 경로에서 fuzzy context와 legacy metric formula는 사용하지 않습니다. hook 부재/실패 시 emergency fallback만 남습니다.
 
 ### Workspace / 위치
 
@@ -126,8 +131,8 @@ Android context/renderer handoff와 placement 확인 뒤 mount, 이후에만 leg
 [완료] modern Grid quick-save / RI Workspace / Reel context → Data Engine read
 [완료] legacy Reel context normal path → modern context
 [완료] legacy Grid/Reel metric normal path → Data Engine + Metrics
-[다음] Device parity → Reel overlay replacement
-→ Frozen Grid DOM source renderer extraction
+[준비] Frozen Grid renderer source/test extraction — runtime 미전환
+[다음] Device parity → Reel overlay replacement / Grid renderer replacement
 → emergency fallback 제거 → legacy-runtime 축소
 ```
 

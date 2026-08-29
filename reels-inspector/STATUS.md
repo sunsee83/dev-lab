@@ -4,7 +4,7 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.13**
+- Runtime version: **v3.2.14**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
@@ -30,23 +30,29 @@ Active:
 - structured JSON + permalink normal capture → Data Engine
 - Grid quick-save / RI Workspace / active Reel context read → Data Engine
 - legacy Reel visual context → modern reel-context-adapter handoff
-- **legacy Grid 8-slot + Reel overlay post/derived read → Data Engine + Metrics handoff**
-- **Reel native likes/comments/reposts는 Metrics 입력에 live merge**
+- legacy Grid/Reel post + 파생지표 normal read → Data Engine + Metrics handoff
+
+Staged, runtime not switched:
+
+- **`ui/grid-metrics-renderer.js` — Frozen Grid 2행/8-slot markup + label contract 추출**
+- Reel/Video: views/likes/comments/reposts + ER/24h/account/date
+- Photo/Carousel: views=`▶-`, 파생지표 `-`, 실제 zero count=`0`
+- `main.js`에는 staged Grid renderer import/mount 없음
+- `ui/reel-overlay.js`도 Android gate 전 mount 금지
 
 Compatibility still active:
 
-- legacy Grid/Reel DOM visual body는 그대로 유지
+- legacy Grid/Reel DOM visual body 유지
 - legacy ER/24h/account formula는 renderer handoff 부재 시 emergency fallback
 - legacy Reel fuzzy context / permalink parser도 hook 부재 시 emergency fallback
 - legacy adapter는 cache/change-tracking migration boundary로만 유지
-- Android gate 전 새 Reel overlay mount/legacy visual 제거 금지
 
 ## Automated Checkpoint
 
-- unit: **54 / 54 pass**
-- build: **v3.2.13 success**
+- unit: **58 / 58 pass**
+- build: **v3.2.14 success**
 - architecture/syntax: **success**
-- source files: **37**
+- source files: **38**
 - architecture warnings: **0**
 - generated userscript: current
 
@@ -71,12 +77,12 @@ Android Edge 실확인 필요:
 - Global RI touch/collision
 - COMPACT/EXPANDED, CONTENT/GLOBAL, keyboard/visualViewport
 - active Reel shortcode/native metrics/exact media mapping
-- modern context + renderer handoff가 vertical Reel 전환마다 동일 콘텐츠/지표 유지
+- modern context + renderer handoff vertical Reel parity
 - staged Reel Overlay rail/caption placement
 - update shortcut → Tampermonkey
 - 영상 / 사진·표지 / 슬라이드별 mode·폴더 선택/복원
 - directory photo/cover CORS / prompt Carousel destination
-- Grid 3열/8-slot/no-flicker/actual cover 및 metric parity
+- Grid 3열/8-slot/no-flicker/actual cover + staged renderer label parity
 
 실기기 전 Verified 승격 금지.
 
@@ -85,7 +91,8 @@ Android Edge 실확인 필요:
 - cache/history writer + structured/permalink capture cutover 완료
 - modern UI/context Data Engine read cutover 완료
 - legacy Reel context normal path modern owner 통합 완료
-- legacy Grid/Reel renderer normal data/formula path Data Engine+Metrics 통합 완료
+- legacy Grid/Reel metric normal path Data Engine+Metrics 통합 완료
+- Frozen Grid renderer source extraction 완료, runtime switch 전
 - legacy DOM visual body와 emergency formulas/parsers 남음
 - staged Reel overlay replacement 미완료
 - Research Content/Comments/Analysis data model 미연결
@@ -94,11 +101,11 @@ Android Edge 실확인 필요:
 
 1. **Device gate** — UI-C/D/E + Reel identity/native metrics + 저장설정 + context/renderer parity
 2. **UI-F2 Reel Overlay replacement** — evidence → mount → parity → legacy Reel visual/formula/fuzzy fallback 제거
-3. **Grid renderer extraction** — Frozen 8-slot DOM을 source renderer로 옮긴 뒤 device parity 확인
+3. **Grid renderer replacement** — staged 8-slot source → device parity → active switch → legacy Grid metric body 제거
 4. **Fallback cleanup** — evidence 후 legacy formula/permalink/Reel emergency parser 제거 → legacy-runtime 축소
 5. **Research data** — Content → Comments → Analysis → STT/OCR/AI
 
-Device gate와 독립적인 Grid renderer extraction source/test 준비는 진행 가능. Frozen visual은 parity 전 제거하지 않습니다.
+Device gate 전 staged source/test 준비는 가능하지만 Frozen visual runtime switch는 하지 않습니다.
 
 ## Work Protocol
 
