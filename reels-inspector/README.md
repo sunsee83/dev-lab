@@ -1,71 +1,26 @@
-# Reels Inspector / Instagram Content Research Tool
+# Instagram Content Research Tool
 
-Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹에서 Instagram 콘텐츠를 빠르게 발굴·비교·저장·조사하기 위한 프로토타입입니다.
+Android Edge + Tampermonkey + Instagram 모바일 웹에서 **발굴 → 비교 → 저장 → 조사 → 분석**을 빠르게 수행하는 userscript입니다.
 
-## 기준 문서
-
-개발 전 확인 순서:
-
-1. `PROJECT_PLAN.md` — 제품 목표/데이터 모델/로드맵
-2. `STATUS.md` — 현재 배포/검증/미해결
-3. `WORK_TRACK.md` — 현재 목표/다음 실행순서
-4. `CODE_STRUCTURE.md` — 실제 owner/dependency/migration
-5. `UI_BASELINE.md` — 모바일 UI visual/interaction 기준
-6. `UI_ARCHITECTURE.md` — UI context/state/component/data flow
-7. `GRID_BASELINE.md` — Grid Frozen UI
-8. `PRESERVATION_BASELINE.md` — PRESERVE/REPLACE/REMOVE gate
-9. `tests/README.md` — regression/실기기 승인 기준
-
-설계가 바뀌면 기존 결정을 먼저 읽고 유지/수정/추가를 구분해 문서와 코드에 통합합니다. 승인된 좋은 동작을 구조 전환 때문에 되돌리지 않습니다.
-
-## 현재 배포
-
-- 버전: **v3.2.4**
-- 개발 원본: `src/*`
-- 배포 파일: `ri-retry.user.js`
-- 단일 self-contained userscript
-- root userscript는 generated artifact이며 직접 수정하지 않음
-- runtime hotfix `@require` 체인 없음
-
-설치/업데이트:
+## 설치 / 업데이트
 
 `https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js`
 
-## 제품 흐름
+Instagram 새로고침만으로 userscript가 갱신되는 것은 아닙니다. raw `.user.js`를 열어 Tampermonkey에서 설치/업데이트합니다.
 
-`발굴 → 콘텐츠 확인 → 상세 조사 → 원본 확보 → 분석 → 참고 소재 저장`
+## 문서 — 5개만 기준으로 사용
 
-지원/목표:
+| 문서 | 역할 |
+|---|---|
+| `PROJECT_PLAN.md` | 제품 목적·범위·장기 로드맵 |
+| `STATUS.md` | **현재 상태·미확인·다음 작업·작업 절차** |
+| `ARCHITECTURE.md` | source 구조·owner·data flow·migration |
+| `BASELINE.md` | **삭제/회귀 금지 기준 + Grid/UI/미디어 승인선** |
+| `tests/README.md` | 자동/실기기 acceptance |
 
-- Reel / Feed Video / Photo / Carousel
-- Caption / Hashtags / Mentions
-- Comments / Replies
-- 공개 성과 지표와 계정 상대 비교
-- 원본 미디어 저장
-- 향후 STT / OCR / AI 분석
-- 향후 소재 Library
+작업 시작 순서: **STATUS → BASELINE → 관련 ARCHITECTURE/PROJECT_PLAN → 코드**.
 
-## 데이터 흐름
-
-```text
-Instagram
-   ↓
-Identity
-   ↓
-Extractor
-   ↓
-Normalizer
-   ↓
-Verified Store
-   ↓
-Metrics Engine
-   ↓
-Grid / Reel / Research Workspace / Download Manager
-```
-
-UI가 raw Instagram parser, 저장정책, Blob transport, metric formula를 제각각 재구현하지 않습니다.
-
-## UI 역할
+## 제품 역할
 
 ```text
 Grid               = 빠른 비교/발굴
@@ -73,155 +28,25 @@ Grid media action  = 현재 카드 빠른 저장
 Reel Overlay       = 시청 중 핵심 파생지표
 Global RI          = 전체 리서치 진입
 Research Workspace = 상세 조사/미디어/설정
-Feedback/Activity  = 저장/분석 진행·성공·오류
+Feedback/Activity  = 진행·성공·오류
 ```
 
-### Grid — Frozen
+Research Workspace CONTENT 탭:
 
-- Instagram 3열 유지
-- 하단 2줄 / 8 fixed slots
-- 1줄: 조회수 / 좋아요 / 댓글 / 리포스트
-- 2줄: ER / 24h / 계정 대비 / 게시일
-- 값이 없으면 `-`
-- Photo/Carousel bogus views 금지
-- no-flicker/renderKey 보존
-- 카드당 custom media action 1개
-- native media-type icon 유지
-- Video/Reel actual cover 우선
-- music/album/avatar artwork 제외
+`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`
 
-### Global RI Launcher
+## 핵심 원칙
 
-v3.1.6 Reel RI visual identity를 전역 launcher 기준으로 사용합니다.
+- `src/*`만 개발 source; `ri-retry.user.js`는 generated artifact
+- good behavior는 refactor 때문에 되돌리지 않음
+- 기존 기능 교체는 `PRESERVE / REPLACE / REMOVE-APPROVED` gate 적용
+- Grid 3열/8-slot/no-flicker/actual cover 보존
+- metric missing을 `0`으로 추정하지 않음
+- 지정폴더 실패 시 Downloads로 silent fallback하지 않음
+- runtime hotfix `@require` chain 없음
+- Android Edge 동작은 실기기 확인 전 Verified로 기록하지 않음
 
-```text
-44×44 touch target
-└ 34×34 light visual circle
-  └ 21×21 original research icon
-```
-
-Layout Manager가 launcher anchor를 소유합니다. Android Edge 실제 시각/충돌 parity는 실기기 확인 전입니다.
-
-### Contextual Research Workspace
-
-현재 source는 모바일 bottom Research Sheet 구조입니다.
-
-```text
-CLOSED
-→ COMPACT  약 48~56vh
-→ EXPANDED 약 78~84vh
-```
-
-Context:
-
-```text
-CONTENT
-→ 요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정
-
-GLOBAL
-→ RI Home + 전역 설정 + 업데이트 바로가기
-```
-
-- 명시적 확장/축소
-- 닫기 항상 접근 가능
-- CONTENT tab rail 유지
-- active body만 render
-- route/identity 변경 시 stale context invalidation + scroll reset
-- Compact는 배경을 과도하게 막지 않음
-- Expanded는 soft scrim 허용
-- browser Back/history를 별도 닫기 동작으로 가로채지 않음
-- 큰 `업데이트 바로가기` 보존
-
-### Feedback / Activity
-
-UI-E에서는 저장 진행상태와 transient toast를 분리했습니다.
-
-```text
-Download Manager
-→ structured activity event
-→ Activity Store
-→ Activity Indicator / Toast
-```
-
-- Carousel `1/N ... N/N 저장 중`
-- success/non-actionable error → 짧은 Toast
-- 동일 Toast 단시간 중복 억제
-- directory/permission/picker 오류 → persistent message
-- persistent message의 `설정 열기` → RI Settings
-- Workspace가 열려 있으면 같은 Activity node를 Workspace host로 이동
-- 향후 STT/OCR/AI job도 같은 Activity model 재사용 가능
-- 지정폴더 실패의 silent Downloads fallback 금지 유지
-
-이 source 구조는 자동검증 대상이지만 Android Edge 시각/터치/Instagram UI 충돌은 실기기 확인 전입니다.
-
-## Metrics
-
-`src/metrics/metrics.js`가 metric owner입니다.
-
-```text
-ER = (likes + comments + reposts) / views × 100
-24h = 실제 18~32시간 snapshot 중 24시간에 가장 가까운 값 비교
-계정 대비 = 동일 account 최근 최대 20개, 최소 5개, views median 대비 배수
-```
-
-missing 값을 0으로 가정해 숫자를 만들지 않습니다.
-
-## 공통 저장 구조
-
-```text
-Grid / Research Workspace
-      ↓
-Download Manager
-      ↓
-global save policy
-      ↓
-지정 폴더 / 기본 Downloads / 매번 선택
-```
-
-- video/cover/photo/carousel 동일 manager
-- Carousel ZIP 없이 개별 파일
-- batch destination 한 번 선택
-- 지정 폴더 실패 시 silent Downloads fallback 금지
-- photo/cover CORS가 실기기에서 확인되기 전 privileged Tampermonkey transport를 선제 도입하지 않음
-
-## 현재 source 구조
-
-```text
-src/
-├ version.js
-├ main.js
-├ legacy-runtime.js
-├ core/
-│  ├ activity.js
-│  ├ app.js
-│  ├ capability.js
-│  └ clipboard.js
-├ migration/
-│  └ legacy-store-adapter.js
-├ store/
-│  └ settings-store.js
-├ metrics/
-│  └ metrics.js
-├ media/
-│  ├ media-resolver.js
-│  └ download-manager.js
-└ ui/
-   ├ activity-indicator.js
-   ├ grid.js
-   ├ layout.js
-   ├ workspace-state.js
-   ├ research-workspace.js
-   ├ ri-primitives.js
-   ├ ri-panel.js
-   ├ ri-settings.js
-   ├ ri-summary.js
-   ├ toast.js
-   └ styles.js
-```
-
-빈 placeholder 파일을 미리 만들지 않습니다.
-
-## Build / Test
+## Build
 
 ```bash
 npm test
@@ -230,20 +55,4 @@ npm run check
 node --check ri-retry.user.js
 ```
 
-UI-E checkpoint:
-
-- unit **26/26**
-- **23 source files / 0 architecture warnings**
-
-자동 gate는 source/generated/doc version alignment, update shortcut preservation, owner boundaries, syntax, file size/duplicate warning, runtime `@require` 금지를 확인합니다.
-
-## 현재 다음 단계
-
-정확한 owner는 `WORK_TRACK.md`입니다.
-
-```text
-UI-F Reel identity/native metrics + Metrics Overlay
-→ UI-G Data Engine / Research tabs
-```
-
-실기기 확인 전 UI 동작을 완료됐다고 기록하지 않습니다.
+현재 버전·검증 상태·다음 정확한 작업은 `STATUS.md`만 확인합니다.
