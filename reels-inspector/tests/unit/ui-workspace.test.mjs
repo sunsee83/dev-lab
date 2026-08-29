@@ -27,5 +27,5 @@ test('Research Workspace separates CONTENT six-tab research from GLOBAL RI Home 
   assert.match(panel, /state\.mode === 'global'/);
   assert.match(panel, /renderGlobalHome\(body\);\s*renderSettings\(body\);/);
   assert.match(workspaceView, /tabsNode\.hidden = !contentMode/);
-  assert.match(workspaceView, /onUpdate:\s*openUpdateShortcut/);
+  assert.match(panel, /onUpdate:\s*openUpdateShortcut/);
 });
