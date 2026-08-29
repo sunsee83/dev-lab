@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.9
+// @version      3.2.10
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.9
+// Build version: 3.2.10
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.9";
+  var VERSION = "3.2.10";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -862,6 +862,39 @@
       if (!snapshot) return verified.snapshot();
       return verified.replaceSnapshot(snapshot);
     }
+    function getIdentityFromUrl(url = "") {
+      const shortcode = shortcodeFromUrl(url);
+      if (!shortcode) return null;
+      const post = verified.getPost(shortcode) || { shortcode };
+      return normalizeIdentity({ ...post, shortcode }, url);
+    }
+    function findPostByMediaUrls(urls) {
+      const targets = new Set((Array.isArray(urls) ? urls : [urls]).map(mediaUrlKey).filter(Boolean));
+      if (!targets.size) return null;
+      let best = null;
+      let bestScore = 0;
+      const snapshot = verified.snapshot();
+      for (const shortcode of Object.keys(snapshot)) {
+        const post = verified.getPost(shortcode);
+        if (!post) continue;
+        const candidates = [
+          [post.videoUrl, 4],
+          [post.coverUrl, 3],
+          [post.thumbUrl, 2],
+          ...(post.carouselImages || []).map((url) => [url, 1])
+        ];
+        let score = 0;
+        for (const [url, weight] of candidates) {
+          const key = mediaUrlKey(url);
+          if (key && targets.has(key)) score = Math.max(score, weight);
+        }
+        if (score <= bestScore) continue;
+        bestScore = score;
+        best = post;
+        if (score === 4) break;
+      }
+      return best;
+    }
     function applyPatch(shortcode, patch = {}, { source = "dom", confidence } = {}) {
       const result2 = verified.upsert(shortcode, patch, { source, confidence });
       if (!result2.item) return null;
@@ -893,6 +926,8 @@
     return {
       getPost: verified.getPost,
       getIdentity: verified.getIdentity,
+      getIdentityFromUrl,
+      findPostByMediaUrls,
       getItem: verified.getItem,
       getSnapshots: history3?.getSnapshots,
       getAccountPosts: history3?.getAccountPosts,
@@ -2064,7 +2099,7 @@
       const root = findScopedRoot(video, viewport, env) || video.parentElement || doc;
       const native = readNativeMetrics(root, env);
       const username2 = readUsername(root, videoRect, viewport, env);
-      const scopedCode = scopedShortcode(root, store, env);
+      const scopedCode = scopedShortcode(root, env);
       const mediaPost = store.findPostByMediaUrls?.(mediaUrls(video)) || null;
       const mediaCode = mediaPost?.shortcode || "";
       const urlCode = exactReelCode(env.location?.href || "");
@@ -2216,12 +2251,12 @@
     }
     return best || "";
   }
-  function scopedShortcode(root, store, env) {
+  function scopedShortcode(root, env) {
     const anchors = root?.querySelectorAll?.('a[href*="/reel/"],a[href*="/reels/"]') || [];
     for (let index = 0; index < anchors.length && index < 120; index += 1) {
       const anchor = anchors[index];
       if (!isVisible(anchor, env)) continue;
-      const code = store.codeFromUrl?.(anchor.href || anchor.getAttribute?.("href")) || exactReelCode(anchor.href || anchor.getAttribute?.("href"));
+      const code = shortcodeFromUrl(anchor.href || anchor.getAttribute?.("href")) || exactReelCode(anchor.href || anchor.getAttribute?.("href"));
       if (code) return code;
     }
     return "";
@@ -2474,8 +2509,8 @@
 
   // src/ui/grid.js
   var MENU_ID = "ri32-grid-menu";
-  function mountGridActions({ app: app2, adapter, downloads: downloads2, capabilities: capabilities2, doc = globalThis.document, env = globalThis } = {}) {
-    if (!doc?.documentElement || !adapter || !downloads2) throw new Error("Grid actions require document, adapter and Download Manager");
+  function mountGridActions({ app: app2, data: data2, downloads: downloads2, capabilities: capabilities2, doc = globalThis.document, env = globalThis } = {}) {
+    if (!doc?.documentElement || !data2 || !downloads2) throw new Error("Grid actions require document, Data Engine and Download Manager");
     let destroyed = false;
     doc.addEventListener("pointerdown", onPointerDown, true);
     doc.addEventListener("click", onClick, true);
@@ -2502,7 +2537,7 @@
       openMenu(anchor, mediaButton);
     }
     function openMenu(anchor, trigger) {
-      const shortcode = anchor.dataset.ri315Code || adapter.codeFromUrl(anchor.href);
+      const shortcode = anchor.dataset.ri315Code || shortcodeFromUrl(anchor.href);
       if (!shortcode) return;
       const existing = doc.getElementById(MENU_ID);
       if (existing?.dataset.code === shortcode) {
@@ -2511,7 +2546,7 @@
       }
       closeMenu();
       doc.getElementById("ri3-grid-menu")?.remove();
-      const post = adapter.getPost(shortcode) || { shortcode };
+      const post = data2.getPost(shortcode) || { shortcode };
       const media = resolveGridCardMedia({ anchor, post, shortcode });
       const menu = doc.createElement("div");
       menu.id = MENU_ID;
@@ -3354,7 +3389,7 @@
     capabilities: capabilities2,
     downloads: downloads2,
     metrics: metrics2,
-    adapter,
+    data: data2,
     workspace: workspace2 = createWorkspaceState(),
     layout: layout2,
     version = "",
@@ -3568,11 +3603,11 @@
       if (env.location) env.location.href = url;
     }
     function currentIdentity() {
-      return app2?.getCurrentIdentity?.() || adapter?.getCurrentIdentity?.() || null;
+      return app2?.getCurrentIdentity?.() || data2?.getIdentityFromUrl?.(env.location?.href || "") || null;
     }
     function currentPost() {
       const identity = currentIdentity();
-      return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
+      return identity?.shortcode ? data2?.getPost?.(identity.shortcode) || identity : null;
     }
     function isOpen() {
       return workspace2.getState().open;
@@ -5340,13 +5375,13 @@
     }
   });
   var stopCaptureHandoff = installLegacyCaptureHandoff({ env: globalThis, data });
-  var reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
+  var reelContext = createReelContextAdapter({ store: data, doc: document, env: globalThis });
   var metrics = createMetricsEngine({ history: history2 });
   var workspace = createWorkspaceState();
   var storeTracker = legacyStore.createChangeTracker((change) => {
     data.syncLegacy();
     const activeIdentity = reelContext.resolveActivityIdentity();
-    app.setCurrentIdentity(activeIdentity === void 0 ? legacyStore.getCurrentIdentity() : activeIdentity);
+    app.setCurrentIdentity(activeIdentity === void 0 ? data.getIdentityFromUrl(globalThis.location?.href || "") : activeIdentity);
     app.emit(EVENTS.STORE_CHANGED, change);
   });
   app.services = { capabilities, settings, downloads, metrics, workspace, activity, history: history2, data };
@@ -5355,7 +5390,7 @@
   var stopRouteTracking = app.startRouteTracking({
     env: globalThis,
     resolveIdentity(url) {
-      return reelContext.getCurrent()?.identity || legacyStore.getCurrentIdentity(url);
+      return reelContext.getCurrent()?.identity || data.getIdentityFromUrl(url);
     },
     resolveActivityIdentity() {
       return reelContext.resolveActivityIdentity();
@@ -5365,14 +5400,14 @@
     }
   });
   var layout = createLayoutManager({ app, doc: document, env: globalThis });
-  var grid = mountGridActions({ app, adapter: legacyStore, downloads, capabilities, doc: document, env: globalThis });
+  var grid = mountGridActions({ app, data, downloads, capabilities, doc: document, env: globalThis });
   var riPanel = mountRiPanel({
     app,
     settings,
     capabilities,
     downloads,
     metrics,
-    adapter: legacyStore,
+    data,
     workspace,
     layout,
     version: VERSION,
