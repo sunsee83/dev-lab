@@ -1,6 +1,8 @@
 import { EVENTS } from '../core/app.js';
 import { copyText } from '../core/clipboard.js';
 import { updateInstallUrl } from '../version.js';
+import { addAction, addRow, createSection, renderEmpty } from './ri-primitives.js';
+import { createWorkspaceState } from './workspace-state.js';
 import { injectStyles } from './styles.js';
 import { showResult, showToast } from './toast.js';
 import { renderRiSummary } from './ri-summary.js';
@@ -14,12 +16,22 @@ const TABS = [
   ['settings', '설정']
 ];
 
-export function mountRiPanel({ app, settings, capabilities, downloads, metrics, adapter, version = '', doc = globalThis.document, env = globalThis } = {}) {
+export function mountRiPanel({
+  app,
+  settings,
+  capabilities,
+  downloads,
+  metrics,
+  adapter,
+  workspace = createWorkspaceState(),
+  layout,
+  version = '',
+  doc = globalThis.document,
+  env = globalThis
+} = {}) {
   if (!doc?.documentElement || !settings) throw new Error('RI Panel requires document and Settings Store');
   injectStyles(doc);
 
-  let open = false;
-  let activeTab = 'summary';
   let settingsState = settings.getState();
   let destroyed = false;
   let button = doc.getElementById('ri32-tool');
@@ -37,44 +49,54 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
     doc.documentElement.appendChild(button);
   }
 
+  workspace.rebindContext(currentIdentity());
+  layout?.schedule?.();
+
   const unsubscribeSettings = settings.subscribe((next) => {
     settingsState = next;
-    if (open && activeTab === 'settings') renderBody();
+    if (isOpen() && activeTab() === 'settings') renderBody();
   });
   const unsubscribeRoute = app?.on?.(EVENTS.ROUTE_CHANGED, scheduleContextRender) || (() => {});
   const unsubscribeIdentity = app?.on?.(EVENTS.IDENTITY_CHANGED, scheduleContextRender) || (() => {});
   const unsubscribeStore = app?.on?.(EVENTS.STORE_CHANGED, scheduleContextRender) || (() => {});
+  const unsubscribeWorkspace = workspace.subscribe(({ current, reason }) => {
+    button?.setAttribute('aria-expanded', String(current.open));
+    if (reason === 'context') panel?.setAttribute('data-context-epoch', String(current.contextEpoch));
+  });
 
   button.addEventListener('click', toggle);
 
   function toggle() {
-    if (open) closePanel();
+    if (isOpen()) closePanel();
     else openPanel();
   }
 
   function openPanel() {
-    if (destroyed || open) return;
-    open = true;
-    syncCurrentIdentity();
-    button.setAttribute('aria-expanded', 'true');
+    if (destroyed || isOpen()) return;
+    workspace.rebindContext(currentIdentity());
+    workspace.open();
     ensurePanel();
     renderTabs();
     renderBody();
+    layout?.schedule?.();
   }
 
   function closePanel() {
-    if (!open) return;
-    open = false;
-    button.setAttribute('aria-expanded', 'false');
+    if (!isOpen()) return;
+    workspace.close();
     panel?.remove();
     panel = null;
+    layout?.schedule?.();
   }
 
   function scheduleContextRender() {
-    if (!open || activeTab === 'settings') return;
+    const identity = currentIdentity();
+    workspace.rebindContext(identity);
+    layout?.schedule?.();
+    if (!isOpen() || activeTab() === 'settings') return;
     if (app?.scheduleRender) {
       app.scheduleRender('ri32-panel-context', () => {
-        if (open && activeTab !== 'settings') renderBody();
+        if (isOpen() && activeTab() !== 'settings') renderBody();
       });
       return;
     }
@@ -86,6 +108,7 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
     if (panel) return;
     panel = doc.createElement('aside');
     panel.id = 'ri32-panel';
+    panel.setAttribute('data-context-epoch', String(workspace.getState().contextEpoch));
     panel.innerHTML = [
       '<div class="ri32-head">',
       '<strong>Instagram Research</strong>',
@@ -111,12 +134,12 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
       tab.className = 'ri32-tab';
       tab.dataset.tab = key;
       tab.setAttribute('role', 'tab');
-      tab.setAttribute('aria-selected', String(activeTab === key));
+      tab.setAttribute('aria-selected', String(activeTab() === key));
       tab.textContent = label;
       tab.addEventListener('click', () => {
-        if (activeTab === key) return;
-        activeTab = key;
-        syncCurrentIdentity();
+        if (activeTab() === key) return;
+        workspace.setActiveTab(key);
+        workspace.rebindContext(currentIdentity());
         renderTabs();
         renderBody();
       });
@@ -129,10 +152,10 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
     if (!body) return;
     body.replaceChildren();
 
-    if (activeTab === 'settings') return renderSettings(body);
+    if (activeTab() === 'settings') return renderSettings(body);
     const post = currentPost();
-    if (activeTab === 'summary') return renderSummary(body, post);
-    if (activeTab === 'media') return renderMedia(body, post);
+    if (activeTab() === 'summary') return renderSummary(body, post);
+    if (activeTab() === 'media') return renderMedia(body, post);
     renderPlaceholder(body, post);
   }
 
@@ -141,30 +164,30 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
   }
 
   function renderMedia(body, post) {
-    if (!post?.shortcode) return renderEmpty(body, '현재 콘텐츠가 선택되지 않았습니다.');
-    const section = createSection(body, '미디어');
+    if (!post?.shortcode) return renderEmpty(body, '현재 콘텐츠가 선택되지 않았습니다.', doc);
+    const section = createSection(body, '미디어', doc);
     const type = String(post.mediaType || '').toUpperCase();
     let actionCount = 0;
 
     if ((type === 'REEL' || type === 'VIDEO') && post.videoUrl) {
-      addAction(section, '영상 다운로드', () => save({ kind: 'video', shortcode: post.shortcode, url: post.videoUrl }));
+      addMediaAction(section, '영상 다운로드', () => save({ kind: 'video', shortcode: post.shortcode, url: post.videoUrl }));
       actionCount += 1;
     }
     if ((type === 'REEL' || type === 'VIDEO') && (post.coverUrl || post.thumbUrl)) {
       const url = post.coverUrl || post.thumbUrl;
-      addAction(section, '썸네일 다운로드', () => save({ kind: 'cover', shortcode: post.shortcode, url }));
+      addMediaAction(section, '썸네일 다운로드', () => save({ kind: 'cover', shortcode: post.shortcode, url }));
       actionCount += 1;
     }
     if (type === 'PHOTO' && (post.coverUrl || post.thumbUrl)) {
       const url = post.coverUrl || post.thumbUrl;
-      addAction(section, '이미지 다운로드', () => save({ kind: 'photo', shortcode: post.shortcode, url }));
+      addMediaAction(section, '이미지 다운로드', () => save({ kind: 'photo', shortcode: post.shortcode, url }));
       actionCount += 1;
     }
     if (type === 'CAROUSEL' && post.carouselImages?.length) {
-      addAction(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
+      addMediaAction(section, `전체 이미지 다운로드 (${post.carouselImages.length})`, () => saveBatch(post));
       actionCount += 1;
     }
-    addAction(section, '링크 복사', () => copyCurrentLink(post));
+    addMediaAction(section, '링크 복사', () => copyCurrentLink(post));
     if (!actionCount) {
       const note = doc.createElement('div');
       note.className = 'ri32-note';
@@ -174,12 +197,12 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
   }
 
   function renderPlaceholder(body, post) {
-    const label = tabLabel(activeTab);
-    renderEmpty(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`);
+    const label = tabLabel(activeTab());
+    renderEmpty(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`, doc);
   }
 
   function renderSettings(body) {
-    const section = createSection(body, '저장 방식');
+    const section = createSection(body, '저장 방식', doc);
     const options = doc.createElement('div');
     options.className = 'ri32-options';
     addModeOption(options, 'directory', '지정 폴더', !!capabilities?.directoryPicker);
@@ -187,23 +210,17 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
     addModeOption(options, 'prompt', '매번 선택', !!(capabilities?.saveFilePicker || capabilities?.directoryPicker));
     section.appendChild(options);
 
-    const folder = createSection(body, '저장 폴더');
-    addRow(folder, '현재 폴더', settingsState.directoryName || '선택 안 됨');
-    addRow(folder, '권한', permissionLabel(settingsState.directoryPermission));
-    const action = doc.createElement('button');
-    action.type = 'button';
-    action.className = 'ri32-action';
-    action.disabled = !capabilities?.directoryPicker;
-    action.textContent = settingsState.directoryHandle ? '폴더 변경' : '폴더 선택';
-    action.addEventListener('click', async () => {
+    const folder = createSection(body, '저장 폴더', doc);
+    addRow(folder, '현재 폴더', settingsState.directoryName || '선택 안 됨', doc);
+    addRow(folder, '권한', permissionLabel(settingsState.directoryPermission), doc);
+    const action = addAction(folder, settingsState.directoryHandle ? '폴더 변경' : '폴더 선택', async () => {
       action.disabled = true;
       const result = await settings.selectDirectory();
       settingsState = settings.getState();
       renderBody();
       if (result.ok) showToast(doc, `저장 폴더: ${result.folderName || '선택 완료'}`);
       else if (result.code !== 'cancelled') showToast(doc, result.message || '폴더를 선택하지 못했습니다.');
-    });
-    folder.appendChild(action);
+    }, { doc, className: 'ri32-action', disabled: !capabilities?.directoryPicker });
     const note = doc.createElement('div');
     note.className = 'ri32-note';
     note.textContent = '영상 · 썸네일 · 사진 · 캐러셀 전체에 같은 저장 정책을 적용합니다. 지정 폴더 저장 실패 시 기본 Downloads로 몰래 전환하지 않습니다.';
@@ -228,6 +245,10 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
       showToast(doc, `저장 방식: ${label}`);
     });
     parent.appendChild(option);
+  }
+
+  function addMediaAction(parent, label, action) {
+    return addAction(parent, label, action, { doc, className: 'ri32-action ri32-media-action' });
   }
 
   async function save(request) {
@@ -259,53 +280,22 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
     if (env.location) env.location.href = url;
   }
 
-  function syncCurrentIdentity() {
-    const identity = adapter?.getCurrentIdentity?.() || null;
-    app?.setCurrentIdentity?.(identity);
-    return identity;
+  function currentIdentity() {
+    return app?.getCurrentIdentity?.() || adapter?.getCurrentIdentity?.() || null;
   }
 
   function currentPost() {
-    const identity = app?.getCurrentIdentity?.() || syncCurrentIdentity();
+    const identity = currentIdentity();
+    workspace.rebindContext(identity);
     return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
   }
 
-  function createSection(body, title) {
-    const section = doc.createElement('section');
-    section.className = 'ri32-section';
-    const heading = doc.createElement('div');
-    heading.className = 'ri32-section-title';
-    heading.textContent = title;
-    section.appendChild(heading);
-    body.appendChild(section);
-    return section;
+  function isOpen() {
+    return workspace.getState().open;
   }
 
-  function addRow(parent, label, value) {
-    const row = doc.createElement('div');
-    row.className = 'ri32-setting-row';
-    const left = doc.createElement('span');
-    const right = doc.createElement('strong');
-    left.textContent = label;
-    right.textContent = value ?? '—';
-    row.append(left, right);
-    parent.appendChild(row);
-  }
-
-  function addAction(parent, label, action) {
-    const button = doc.createElement('button');
-    button.type = 'button';
-    button.className = 'ri32-action ri32-media-action';
-    button.textContent = label;
-    button.addEventListener('click', () => void action());
-    parent.appendChild(button);
-  }
-
-  function renderEmpty(body, text) {
-    const empty = doc.createElement('div');
-    empty.className = 'ri32-empty';
-    empty.textContent = text;
-    body.appendChild(empty);
+  function activeTab() {
+    return workspace.getState().activeTab;
   }
 
   function destroy() {
@@ -315,6 +305,7 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
     unsubscribeRoute();
     unsubscribeIdentity();
     unsubscribeStore();
+    unsubscribeWorkspace();
     button?.removeEventListener('click', toggle);
     panel?.remove();
     button?.remove();
@@ -322,7 +313,12 @@ export function mountRiPanel({ app, settings, capabilities, downloads, metrics, 
     button = null;
   }
 
-  return { open: openPanel, close: closePanel, destroy, getState: () => ({ open, activeTab }) };
+  return {
+    open: openPanel,
+    close: closePanel,
+    destroy,
+    getState: () => workspace.getState()
+  };
 }
 
 function tabLabel(key) {
