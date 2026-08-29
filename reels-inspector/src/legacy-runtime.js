@@ -880,6 +880,15 @@
     function renderGridCard(anchor, data) {
         var row1 = anchor.querySelector('.ri3-grid-row1');
         var row2 = anchor.querySelector('.ri3-grid-row2');
+        var code = data && (data.code || data.shortcode) || anchor.dataset.ri315Code || codeFromUrl(anchor.href);
+        var modern = null, summary = null;
+        if (code && typeof window.__RI32_RENDER_VIEW__ === 'function') {
+            try {
+                modern = window.__RI32_RENDER_VIEW__(code);
+                if (modern && modern.post) data = modern.post;
+                if (modern && modern.derived) summary = modern.derived;
+            } catch (e) {}
+        }
         var views = fieldValue(data, 'views');
         var likes = fieldValue(data, 'likes');
         var comments = fieldValue(data, 'comments');
@@ -887,9 +896,9 @@
         var date = fieldValue(data, 'date');
         var videoCard = isVideoCard(anchor, data);
         var type = effectiveCardType(anchor, data);
-        var er = videoCard ? engagement(views, likes, comments, reposts) : null;
-        var growth = videoCard && views ? growth24h(data.code, views) : null;
-        var multiple = videoCard && views ? accountMultiple(data.code, fieldValue(data, 'owner'), views) : null;
+        var er = videoCard ? (summary ? summary.engagementRate : engagement(views, likes, comments, reposts)) : null;
+        var growth = videoCard && views ? (summary ? summary.growth24h : growth24h(code, views)) : null;
+        var multiple = videoCard && views ? (summary ? summary.accountMultiple : accountMultiple(code, fieldValue(data, 'owner'), views)) : null;
         var line1, line2, key, actions, safe;
         if (!row1 || !row2) return;
 
@@ -1071,13 +1080,20 @@
     }
 
     function renderReelOverlay(ctx) {
-        var box = ensureOverlay(), data, views, er, growth, multiple, lines = [], key;
+        var box = ensureOverlay(), data, modern = null, summary = null, views, er, growth, multiple, lines = [], key;
         if (!ctx || !ctx.code) { box.style.display = 'none'; return; }
-        data = items[ctx.code] || {};
+        if (typeof window.__RI32_RENDER_VIEW__ === 'function') {
+            try {
+                modern = window.__RI32_RENDER_VIEW__(ctx.code, ctx.native || {});
+                if (modern && modern.post) data = modern.post;
+                if (modern && modern.derived) summary = modern.derived;
+            } catch (e) {}
+        }
+        if (!data) data = items[ctx.code] || {};
         views = fieldValue(data, 'views');
-        er = engagement(views, ctx.native.likes, ctx.native.comments, ctx.native.reposts);
-        growth = views ? growth24h(ctx.code, views) : null;
-        multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue(data, 'owner'), views) : null;
+        er = summary ? summary.engagementRate : engagement(views, ctx.native.likes, ctx.native.comments, ctx.native.reposts);
+        growth = views ? (summary ? summary.growth24h : growth24h(ctx.code, views)) : null;
+        multiple = views ? (summary ? summary.accountMultiple : accountMultiple(ctx.code, ctx.owner || fieldValue(data, 'owner'), views)) : null;
         if (views) lines.push('▶ ' + fmt(views));
         if (er != null) lines.push('ER ' + fmtPercent(er));
         if (growth != null) lines.push('24h ' + (growth >= 0 ? '+' : '') + fmtPercent(growth));

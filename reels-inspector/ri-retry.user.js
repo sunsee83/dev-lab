@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.12
+// @version      3.2.13
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.12
+// Build version: 3.2.13
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.12";
+  var VERSION = "3.2.13";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -2207,6 +2207,41 @@
     } catch {
       return String(url || "").split("?")[0].split("#")[0];
     }
+  }
+
+  // src/migration/legacy-renderer-handoff.js
+  var LEGACY_RENDER_VIEW_HOOK = "__RI32_RENDER_VIEW__";
+  function installLegacyRendererHandoff({ env = globalThis, data: data2, metrics: metrics2 } = {}) {
+    const previous = env[LEGACY_RENDER_VIEW_HOOK];
+    function getView(shortcode, liveMetrics = {}) {
+      if (!shortcode) return null;
+      const stored = data2?.getPost?.(shortcode) || null;
+      if (!stored) return null;
+      const post = {
+        ...stored,
+        shortcode,
+        likes: liveMetric(liveMetrics.likes, stored.likes),
+        comments: liveMetric(liveMetrics.comments, stored.comments),
+        reposts: liveMetric(liveMetrics.reposts, stored.reposts)
+      };
+      return {
+        post,
+        derived: metrics2?.summarize?.(post) || {
+          engagementRate: void 0,
+          growth24h: void 0,
+          accountMultiple: void 0
+        }
+      };
+    }
+    env[LEGACY_RENDER_VIEW_HOOK] = getView;
+    function destroy() {
+      if (previous === void 0) delete env[LEGACY_RENDER_VIEW_HOOK];
+      else env[LEGACY_RENDER_VIEW_HOOK] = previous;
+    }
+    return { getView, destroy };
+  }
+  function liveMetric(nativeValue, storedValue) {
+    return nativeValue == null ? storedValue : nativeValue;
   }
 
   // src/migration/reel-context-adapter.js
@@ -4732,6 +4767,16 @@
     function renderGridCard(anchor, data2) {
       var row1 = anchor.querySelector(".ri3-grid-row1");
       var row2 = anchor.querySelector(".ri3-grid-row2");
+      var code = data2 && (data2.code || data2.shortcode) || anchor.dataset.ri315Code || codeFromUrl2(anchor.href);
+      var modern = null, summary = null;
+      if (code && typeof window.__RI32_RENDER_VIEW__ === "function") {
+        try {
+          modern = window.__RI32_RENDER_VIEW__(code);
+          if (modern && modern.post) data2 = modern.post;
+          if (modern && modern.derived) summary = modern.derived;
+        } catch (e) {
+        }
+      }
       var views = fieldValue3(data2, "views");
       var likes = fieldValue3(data2, "likes");
       var comments = fieldValue3(data2, "comments");
@@ -4739,9 +4784,9 @@
       var date = fieldValue3(data2, "date");
       var videoCard = isVideoCard(anchor, data2);
       var type = effectiveCardType(anchor, data2);
-      var er = videoCard ? engagement(views, likes, comments, reposts) : null;
-      var growth = videoCard && views ? growth24h(data2.code, views) : null;
-      var multiple = videoCard && views ? accountMultiple(data2.code, fieldValue3(data2, "owner"), views) : null;
+      var er = videoCard ? summary ? summary.engagementRate : engagement(views, likes, comments, reposts) : null;
+      var growth = videoCard && views ? summary ? summary.growth24h : growth24h(code, views) : null;
+      var multiple = videoCard && views ? summary ? summary.accountMultiple : accountMultiple(code, fieldValue3(data2, "owner"), views) : null;
       var line1, line2, key, actions, safe;
       if (!row1 || !row2) return;
       line1 = [
@@ -4919,16 +4964,24 @@
       return box;
     }
     function renderReelOverlay(ctx) {
-      var box = ensureOverlay(), data2, views, er, growth, multiple, lines = [], key;
+      var box = ensureOverlay(), data2, modern = null, summary = null, views, er, growth, multiple, lines = [], key;
       if (!ctx || !ctx.code) {
         box.style.display = "none";
         return;
       }
-      data2 = items[ctx.code] || {};
+      if (typeof window.__RI32_RENDER_VIEW__ === "function") {
+        try {
+          modern = window.__RI32_RENDER_VIEW__(ctx.code, ctx.native || {});
+          if (modern && modern.post) data2 = modern.post;
+          if (modern && modern.derived) summary = modern.derived;
+        } catch (e) {
+        }
+      }
+      if (!data2) data2 = items[ctx.code] || {};
       views = fieldValue3(data2, "views");
-      er = engagement(views, ctx.native.likes, ctx.native.comments, ctx.native.reposts);
-      growth = views ? growth24h(ctx.code, views) : null;
-      multiple = views ? accountMultiple(ctx.code, ctx.owner || fieldValue3(data2, "owner"), views) : null;
+      er = summary ? summary.engagementRate : engagement(views, ctx.native.likes, ctx.native.comments, ctx.native.reposts);
+      growth = views ? summary ? summary.growth24h : growth24h(ctx.code, views) : null;
+      multiple = views ? summary ? summary.accountMultiple : accountMultiple(ctx.code, ctx.owner || fieldValue3(data2, "owner"), views) : null;
       if (views) lines.push("▶ " + fmt(views));
       if (er != null) lines.push("ER " + fmtPercent(er));
       if (growth != null) lines.push("24h " + (growth >= 0 ? "+" : "") + fmtPercent(growth));
@@ -5583,6 +5636,7 @@
   var reelContext = createReelContextAdapter({ store: data, doc: document, env: globalThis });
   var reelContextHandoff = installLegacyReelContextHandoff({ env: globalThis, reelContext, data });
   var metrics = createMetricsEngine({ history: history2 });
+  var rendererHandoff = installLegacyRendererHandoff({ env: globalThis, data, metrics });
   var workspace = createWorkspaceState();
   var storeTracker = legacyStore.createChangeTracker((change) => {
     data.syncLegacy();
@@ -5594,6 +5648,7 @@
   app.adapters.legacyStore = legacyStore;
   app.adapters.reelContext = reelContext;
   app.adapters.reelContextHandoff = reelContextHandoff;
+  app.adapters.rendererHandoff = rendererHandoff;
   var stopRouteTracking = app.startRouteTracking({
     env: globalThis,
     resolveIdentity(url) {
@@ -5634,6 +5689,7 @@
   app.adapters.stopStoreTracking = () => storeTracker.destroy();
   app.adapters.stopCaptureHandoff = stopCaptureHandoff;
   app.adapters.stopReelContextHandoff = () => reelContextHandoff.destroy();
+  app.adapters.stopRendererHandoff = () => rendererHandoff.destroy();
   app.adapters.stopData = () => data.destroy();
   app.adapters.stopLayout = () => layout.destroy();
   app.adapters.grid = grid;
