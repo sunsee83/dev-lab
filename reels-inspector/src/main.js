@@ -10,6 +10,7 @@ import { createDownloadManager } from './media/download-manager.js';
 import { createMetricsEngine } from './metrics/metrics.js';
 import { installLegacyCaptureHandoff } from './migration/capture-handoff.js';
 import { createLegacyStoreAdapter } from './migration/legacy-store-adapter.js';
+import { installLegacyRendererHandoff } from './migration/legacy-renderer-handoff.js';
 import { createReelContextAdapter } from './migration/reel-context-adapter.js';
 import { installLegacyReelContextHandoff } from './migration/reel-context-handoff.js';
 import { mountActivityIndicator } from './ui/activity-indicator.js';
@@ -57,6 +58,7 @@ const stopCaptureHandoff = installLegacyCaptureHandoff({ env: globalThis, data }
 const reelContext = createReelContextAdapter({ store: data, doc: document, env: globalThis });
 const reelContextHandoff = installLegacyReelContextHandoff({ env: globalThis, reelContext, data });
 const metrics = createMetricsEngine({ history });
+const rendererHandoff = installLegacyRendererHandoff({ env: globalThis, data, metrics });
 const workspace = createWorkspaceState();
 const storeTracker = legacyStore.createChangeTracker((change) => {
   data.syncLegacy();
@@ -69,6 +71,7 @@ app.services = { capabilities, settings, downloads, metrics, workspace, activity
 app.adapters.legacyStore = legacyStore;
 app.adapters.reelContext = reelContext;
 app.adapters.reelContextHandoff = reelContextHandoff;
+app.adapters.rendererHandoff = rendererHandoff;
 
 const stopRouteTracking = app.startRouteTracking({
   env: globalThis,
@@ -111,6 +114,7 @@ app.adapters.stopRouteTracking = stopRouteTracking;
 app.adapters.stopStoreTracking = () => storeTracker.destroy();
 app.adapters.stopCaptureHandoff = stopCaptureHandoff;
 app.adapters.stopReelContextHandoff = () => reelContextHandoff.destroy();
+app.adapters.stopRendererHandoff = () => rendererHandoff.destroy();
 app.adapters.stopData = () => data.destroy();
 app.adapters.stopLayout = () => layout.destroy();
 app.adapters.grid = grid;
