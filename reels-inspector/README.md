@@ -20,7 +20,7 @@ Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹에서 Instagram 
 
 ## 현재 배포
 
-- 버전: **v3.2.3**
+- 버전: **v3.2.4**
 - 개발 원본: `src/*`
 - 배포 파일: `ri-retry.user.js`
 - 단일 self-contained userscript
@@ -73,6 +73,7 @@ Grid media action  = 현재 카드 빠른 저장
 Reel Overlay       = 시청 중 핵심 파생지표
 Global RI          = 전체 리서치 진입
 Research Workspace = 상세 조사/미디어/설정
+Feedback/Activity  = 저장/분석 진행·성공·오류
 ```
 
 ### Grid — Frozen
@@ -93,8 +94,6 @@ Research Workspace = 상세 조사/미디어/설정
 
 v3.1.6 Reel RI visual identity를 전역 launcher 기준으로 사용합니다.
 
-현재 source 기준:
-
 ```text
 44×44 touch target
 └ 34×34 light visual circle
@@ -105,9 +104,7 @@ Layout Manager가 launcher anchor를 소유합니다. Android Edge 실제 시각
 
 ### Contextual Research Workspace
 
-UI-D source checkpoint에서 기존 우측 작은 panel을 모바일 bottom Research Sheet 구조로 전환했습니다.
-
-State:
+현재 source는 모바일 bottom Research Sheet 구조입니다.
 
 ```text
 CLOSED
@@ -125,8 +122,6 @@ GLOBAL
 → RI Home + 전역 설정 + 업데이트 바로가기
 ```
 
-구조 원칙:
-
 - 명시적 확장/축소
 - 닫기 항상 접근 가능
 - CONTENT tab rail 유지
@@ -137,11 +132,31 @@ GLOBAL
 - browser Back/history를 별도 닫기 동작으로 가로채지 않음
 - 큰 `업데이트 바로가기` 보존
 
+### Feedback / Activity
+
+UI-E에서는 저장 진행상태와 transient toast를 분리했습니다.
+
+```text
+Download Manager
+→ structured activity event
+→ Activity Store
+→ Activity Indicator / Toast
+```
+
+- Carousel `1/N ... N/N 저장 중`
+- success/non-actionable error → 짧은 Toast
+- 동일 Toast 단시간 중복 억제
+- directory/permission/picker 오류 → persistent message
+- persistent message의 `설정 열기` → RI Settings
+- Workspace가 열려 있으면 같은 Activity node를 Workspace host로 이동
+- 향후 STT/OCR/AI job도 같은 Activity model 재사용 가능
+- 지정폴더 실패의 silent Downloads fallback 금지 유지
+
 이 source 구조는 자동검증 대상이지만 Android Edge 시각/터치/Instagram UI 충돌은 실기기 확인 전입니다.
 
 ## Metrics
 
-새 Metrics owner는 `src/metrics/metrics.js`입니다.
+`src/metrics/metrics.js`가 metric owner입니다.
 
 ```text
 ER = (likes + comments + reposts) / views × 100
@@ -177,6 +192,7 @@ src/
 ├ main.js
 ├ legacy-runtime.js
 ├ core/
+│  ├ activity.js
 │  ├ app.js
 │  ├ capability.js
 │  └ clipboard.js
@@ -190,12 +206,14 @@ src/
 │  ├ media-resolver.js
 │  └ download-manager.js
 └ ui/
+   ├ activity-indicator.js
    ├ grid.js
    ├ layout.js
    ├ workspace-state.js
    ├ research-workspace.js
    ├ ri-primitives.js
    ├ ri-panel.js
+   ├ ri-settings.js
    ├ ri-summary.js
    ├ toast.js
    └ styles.js
@@ -212,27 +230,19 @@ npm run check
 node --check ri-retry.user.js
 ```
 
-자동 gate는 다음을 포함합니다.
+UI-E checkpoint:
 
-- source/generated/doc version alignment
-- update URL / 업데이트 바로가기 preservation
-- UI storage/network/direct clipboard 금지
-- Metrics DOM 독립
-- circular dependency
-- source size/duplicate warning
-- UI baseline/architecture/work-track checkpoint
-- runtime `@require` 금지
+- unit **26/26**
+- **23 source files / 0 architecture warnings**
+
+자동 gate는 source/generated/doc version alignment, update shortcut preservation, owner boundaries, syntax, file size/duplicate warning, runtime `@require` 금지를 확인합니다.
 
 ## 현재 다음 단계
 
 정확한 owner는 `WORK_TRACK.md`입니다.
 
-현재 순서:
-
 ```text
-UI-D Android Edge validation
-→ UI-E Feedback / Activity
-→ UI-F Reel identity/native metrics + Metrics Overlay
+UI-F Reel identity/native metrics + Metrics Overlay
 → UI-G Data Engine / Research tabs
 ```
 
