@@ -1313,8 +1313,23 @@
     };
 
     saveItem = function (code, patch, source, confidence) {
-        var item, keys, i, key, changed = false;
+        var item, keys, i, key, changed = false, captured;
         if (!code) return null;
+        if (typeof window.__RI32_CAPTURE_PATCH__ === 'function') {
+            try {
+                captured = window.__RI32_CAPTURE_PATCH__({
+                    shortcode: code,
+                    patch: patch || {},
+                    source: source || 'embedded',
+                    confidence: confidence
+                });
+                if (captured && captured.item) {
+                    items[code] = captured.item;
+                    if (captured.changed) scheduleRefresh();
+                    return items[code];
+                }
+            } catch (e) {}
+        }
         item = items[code] || { code: code, fields: {}, conflicts: {} };
         patch = patch || {};
         if (!patch.mediaType && isReelUrl(patch.pageUrl || patch.canonicalUrl || '')) patch.mediaType = 'REEL';

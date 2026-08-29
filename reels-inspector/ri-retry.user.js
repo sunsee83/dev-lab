@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
 // @namespace    dev-lab/reels-inspector
-// @version      3.2.7
+// @version      3.2.8
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
@@ -10,11 +10,11 @@
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
-// Build version: 3.2.7
+// Build version: 3.2.8
 
 (() => {
   // src/version.js
-  var VERSION = "3.2.7";
+  var VERSION = "3.2.8";
   var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
@@ -793,23 +793,40 @@
   }
 
   // src/data/engine.js
-  function createDataEngine({ legacyAdapter, history: history3, now = () => Date.now() } = {}) {
-    const verified = createVerifiedStore({
-      initialItems: legacyAdapter?.getItemsSnapshot?.() || {},
-      now
-    });
+  function createDataEngine({ legacyAdapter, history: history3, persistence, now = () => Date.now(), onChange } = {}) {
+    const initialItems = persistence?.load?.() || legacyAdapter?.getItemsSnapshot?.() || {};
+    const verified = createVerifiedStore({ initialItems, now });
     function syncLegacy() {
       const snapshot = legacyAdapter?.getItemsSnapshot?.();
       if (!snapshot) return verified.snapshot();
       return verified.replaceSnapshot(snapshot);
     }
+    function applyPatch(shortcode, patch = {}, { source = "dom", confidence } = {}) {
+      const result2 = verified.upsert(shortcode, patch, { source, confidence });
+      if (!result2.item) return null;
+      const post = verified.getPost(shortcode);
+      const identity = verified.getIdentity(shortcode);
+      if (result2.changed) {
+        history3?.record?.(post);
+        persistence?.schedule?.(verified.snapshot());
+        if (typeof onChange === "function") onChange({ shortcode, identity, post, item: result2.item });
+      }
+      return { identity, post, item: result2.item, changed: result2.changed };
+    }
+    function ingestPatch(shortcode, patch = {}, options = {}) {
+      return applyPatch(shortcode, patch, options);
+    }
     function ingest(input, { pageUrl = "", source = "network", confidence } = {}) {
       const extracted = extractInstagramMedia(input, { pageUrl });
       if (!extracted?.shortcode) return null;
-      const result2 = verified.upsert(extracted.shortcode, extracted.patch, { source, confidence });
-      const post = verified.getPost(extracted.shortcode);
-      if (result2.changed) history3?.record?.(post);
-      return { identity: verified.getIdentity(extracted.shortcode), post, changed: result2.changed };
+      return applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
+    }
+    function flush() {
+      return persistence?.flush?.(verified.snapshot()) ?? false;
+    }
+    function destroy() {
+      flush();
+      persistence?.destroy?.();
     }
     return {
       getPost: verified.getPost,
@@ -819,6 +836,9 @@
       getAccountPosts: history3?.getAccountPosts,
       syncLegacy,
       ingest,
+      ingestPatch,
+      flush,
+      destroy,
       snapshot: verified.snapshot
     };
   }
@@ -1200,6 +1220,60 @@
   function safeNow(now) {
     const value = Number(now());
     return Number.isFinite(value) && value > 0 ? value : Date.now();
+  }
+
+  // src/store/verified-cache-store.js
+  var VERIFIED_CACHE_KEY = "ri311:items:v1";
+  function createVerifiedCacheStore({ env = globalThis, delayMs = 300 } = {}) {
+    let timer2 = 0;
+    let pending = null;
+    let destroyed = false;
+    function load() {
+      try {
+        const parsed = JSON.parse(env.localStorage?.getItem?.(VERIFIED_CACHE_KEY) || "{}");
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    function schedule(items) {
+      if (destroyed) return false;
+      pending = clone2(items) || {};
+      const delay = Math.max(0, Number(delayMs) || 0);
+      if (!delay) return flush();
+      if (timer2) return true;
+      const setTimer = env.setTimeout || setTimeout;
+      timer2 = setTimer(() => {
+        timer2 = 0;
+        flush();
+      }, delay);
+      return true;
+    }
+    function flush(items) {
+      if (items !== void 0) pending = clone2(items) || {};
+      if (pending == null) return false;
+      const next = pending;
+      pending = null;
+      try {
+        env.localStorage?.setItem?.(VERIFIED_CACHE_KEY, JSON.stringify(next));
+        return true;
+      } catch {
+        pending = next;
+        return false;
+      }
+    }
+    function destroy() {
+      if (destroyed) return;
+      if (timer2) (env.clearTimeout || clearTimeout)(timer2);
+      timer2 = 0;
+      flush();
+      destroyed = true;
+    }
+    return { load, schedule, flush, destroy };
+  }
+  function clone2(value) {
+    if (value === void 0) return void 0;
+    return JSON.parse(JSON.stringify(value));
   }
 
   // src/media/media-resolver.js
@@ -1677,6 +1751,23 @@
     if (value == null || value === "") return void 0;
     const number = Number(value);
     return Number.isFinite(number) && number >= 0 ? number : void 0;
+  }
+
+  // src/migration/capture-handoff.js
+  var LEGACY_CAPTURE_HOOK = "__RI32_CAPTURE_PATCH__";
+  function installLegacyCaptureHandoff({ env = globalThis, data: data2 } = {}) {
+    const previous = env[LEGACY_CAPTURE_HOOK];
+    env[LEGACY_CAPTURE_HOOK] = (capture = {}) => {
+      if (!data2?.ingestPatch) return null;
+      return data2.ingestPatch(capture.shortcode, capture.patch, {
+        source: capture.source || "embedded",
+        confidence: capture.confidence
+      });
+    };
+    return () => {
+      if (previous === void 0) delete env[LEGACY_CAPTURE_HOOK];
+      else env[LEGACY_CAPTURE_HOOK] = previous;
+    };
   }
 
   // src/migration/legacy-store-adapter.js
@@ -4797,8 +4888,24 @@
       return out;
     };
     saveItem = function(code, patch, source, confidence) {
-      var item, keys, i, key, changed = false;
+      var item, keys, i, key, changed = false, captured;
       if (!code) return null;
+      if (typeof window.__RI32_CAPTURE_PATCH__ === "function") {
+        try {
+          captured = window.__RI32_CAPTURE_PATCH__({
+            shortcode: code,
+            patch: patch || {},
+            source: source || "embedded",
+            confidence
+          });
+          if (captured && captured.item) {
+            items[code] = captured.item;
+            if (captured.changed) scheduleRefresh();
+            return items[code];
+          }
+        } catch (e) {
+        }
+      }
       item = items[code] || { code, fields: {}, conflicts: {} };
       patch = patch || {};
       if (!patch.mediaType && isReelUrl(patch.pageUrl || patch.canonicalUrl || "")) patch.mediaType = "REEL";
@@ -5116,8 +5223,21 @@
     }
   });
   var history2 = createHistoryStore({ env: globalThis });
+  var verifiedCache = createVerifiedCacheStore({ env: globalThis });
   var legacyStore = createLegacyStoreAdapter({ env: globalThis, history: history2 });
-  var data = createDataEngine({ legacyAdapter: legacyStore, history: history2 });
+  var data = createDataEngine({
+    legacyAdapter: legacyStore,
+    history: history2,
+    persistence: verifiedCache,
+    onChange(change) {
+      app.emit(EVENTS.STORE_CHANGED, {
+        reason: "data-engine",
+        changedKeys: [VERIFIED_CACHE_KEY],
+        shortcode: change.shortcode
+      });
+    }
+  });
+  var stopCaptureHandoff = installLegacyCaptureHandoff({ env: globalThis, data });
   var reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
   var metrics = createMetricsEngine({ history: history2 });
   var workspace = createWorkspaceState();
@@ -5168,6 +5288,8 @@
   app.services.layout = layout;
   app.adapters.stopRouteTracking = stopRouteTracking;
   app.adapters.stopStoreTracking = () => storeTracker.destroy();
+  app.adapters.stopCaptureHandoff = stopCaptureHandoff;
+  app.adapters.stopData = () => data.destroy();
   app.adapters.stopLayout = () => layout.destroy();
   app.adapters.grid = grid;
   app.adapters.riPanel = riPanel;
