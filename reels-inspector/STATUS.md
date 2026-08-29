@@ -4,11 +4,11 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.5**
+- Runtime version: **v3.2.6**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
-- Phase: **v3.2 Mobile UI/Foundation + Active Reel Context migration**
+- Phase: **v3.2 Mobile UI/Foundation + Data Engine migration**
 
 ## Current Objective
 
@@ -23,7 +23,7 @@ Grid 빠른 비교
 → Content/Comments/Analysis
 ```
 
-위치는 항상 `[기준 영역 · 위치]`로 정의하며 실제 좌표/충돌은 Android gate 전 확정하지 않습니다.
+위치는 `[기준 영역 · 위치]`로 정의하며 실제 좌표/충돌은 Android gate 전 확정하지 않습니다.
 
 ## Current Source Checkpoint
 
@@ -32,17 +32,21 @@ Runtime/source active:
 - AppContext + shared SPA activity
 - Settings Store / Capability / Clipboard
 - Download Manager + Activity Store
-- **미디어별 저장 정책: 영상 / 사진·표지 / 슬라이드** (`directory | default | prompt` 각각 독립)
+- **미디어별 저장 정책: 영상 / 사진·표지 / 슬라이드** (`directory | default | prompt` 독립)
 - v1 전역 저장설정 → v2 미디어별 정책 migration
 - Grid quick-save / Global RI launcher / Contextual Bottom Research Workspace
 - CONTENT 6탭 / GLOBAL RI Home / persistent Activity + Toast dedupe
 - Metrics Engine + RI Summary / legacy verified-cache-history adapter
 - active Reel context adapter
 
-Staged, not visual-switched:
+Staged, runtime not switched:
 
+- `data/identity.js` — shortcode/canonical/media identity normalization
+- `data/extractor.js` — Instagram media payload → verified patch 후보
+- `store/verified-store.js` — source rank/provenance/conflict 보호
 - `ui/reel-overlay.js` + `ui/metric-format.js`
-- Android Edge replacement gate 전 새 overlay를 runtime mount하지 않고 기존 `#ri3-reels-overlay`를 먼저 제거하지 않음
+- legacy runtime write/renderer는 아직 active이며 새 Data Engine source를 runtime writer로 연결하지 않음
+- Android gate 전 새 overlay mount 및 legacy `#ri3-reels-overlay` 선제 제거 금지
 
 Active Reel evidence:
 
@@ -52,9 +56,10 @@ scope shortcode → exact media URL → exact Reel route → unresolved
 
 ## Automated Checkpoint
 
-- unit: **34 / 34 pass**
-- build: **v3.2.5 success**
+- unit: **38 / 38 pass**
+- build: **v3.2.6 success**
 - architecture/syntax: **success**
+- source files: **29**
 - architecture warnings: **0**
 - generated userscript: current
 
@@ -66,11 +71,12 @@ scope shortcode → exact media URL → exact Reel route → unresolved
 
 - Grid 3열 / 8-slot / no-flicker / Photo·Carousel bogus views 차단
 - actual Video/Reel cover / native media-type icon
-- 기존 Reel RI visual identity와 legacy Reel overlay의 선제 삭제 금지
+- 기존 Reel RI visual identity와 legacy Reel overlay 선제 삭제 금지
 - CONTENT 6탭 / 큰 업데이트 바로가기
 - Carousel individual files / no ZIP / prompt destination 1회
 - 지정 폴더 실패 시 silent default fallback 금지
 - missing metric → fabricated zero 금지
+- verified provenance/conflict 보호
 - one shared SPA observer; 900ms full polling 복귀 금지
 
 ## Unverified / Device
@@ -84,7 +90,7 @@ Android Edge에서 아직 실제 확인이 필요한 것:
 - vertical Reel active shortcode / scoped native metrics / exact media mapping
 - staged Reel Overlay rail/caption placement
 - update shortcut → Tampermonkey
-- **영상 / 사진·표지 / 슬라이드별 mode·폴더 선택 및 복원**
+- 영상 / 사진·표지 / 슬라이드별 mode·폴더 선택 및 복원
 - directory photo/cover CORS / prompt mode / Carousel same destination
 - Grid 3열/8-slot/no-flicker/actual cover regression
 
@@ -92,7 +98,8 @@ Android Edge에서 아직 실제 확인이 필요한 것:
 
 ## Technical Debt
 
-- Identity / Extractor / Verified Store write owner가 아직 legacy runtime에 남음
+- **Identity / Extractor / Verified Store foundation source는 준비됐지만 runtime write owner는 아직 legacy runtime**
+- history / media[] write owner 이동 전
 - Grid/Reel legacy renderer와 compatibility metric body 남음
 - `ri-panel.js`가 migration adapter를 직접 읽는 임시 coupling
 - staged Reel overlay runtime replacement 미완료
@@ -110,7 +117,7 @@ Research Analysis 예정 구조:
 
 1. **Device gate** — UI-C/D/E + active Reel identity/native metrics + 새 저장설정 실기기 확인
 2. **UI-F2 Reel Overlay replacement** — evidence → new overlay mount → parity → legacy visual 제거
-3. **UI-G1 Data Engine foundation** — Identity → Extractor → Verified Store → history/media[] owner 이동
+3. **UI-G1 Data Engine migration** — staged Identity/Extractor/Verified Store → history → media[] owner 이동 → runtime wiring
 4. **Renderer migration** — Grid/Reel callsite 전환 후 legacy formula/renderer 제거
 5. **Research data** — Content → Comments → Analysis(포맷/전환 장치) → STT/OCR/AI
 

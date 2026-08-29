@@ -17,8 +17,9 @@ src/
 ├ main.js
 ├ legacy-runtime.js
 ├ core/ activity.js app.js capability.js clipboard.js
+├ data/ identity.js extractor.js
 ├ migration/ legacy-store-adapter.js reel-context-adapter.js
-├ store/ settings-store.js
+├ store/ settings-store.js verified-store.js
 ├ metrics/ metrics.js
 ├ media/ media-resolver.js download-manager.js
 └ ui/
@@ -36,12 +37,15 @@ src/
 - async activity → `core/activity.js`
 - capability/permission → `core/capability.js`
 - clipboard → `core/clipboard.js`
-- **영상 / 사진·표지 / 슬라이드 저장정책·directory handle·v1→v2 migration** → `store/settings-store.js`
+- **staged identity normalization/key** → `data/identity.js`
+- **staged Instagram media payload extraction** → `data/extractor.js`
+- **staged verified field provenance/source-rank/conflict** → `store/verified-store.js`
+- 영상 / 사진·표지 / 슬라이드 저장정책·directory handle·v1→v2 migration → `store/settings-store.js`
 - legacy verified cache/history read → `migration/legacy-store-adapter.js`
 - active Reel identity/native metric evidence → `migration/reel-context-adapter.js`
 - ER / 24h / account-relative → `metrics/metrics.js`
 - cover/media/default filename → `media/media-resolver.js`
-- media kind→저장 profile 선택 / destination/write/batch → `media/download-manager.js`
+- media kind→저장 profile / destination/write/batch → `media/download-manager.js`
 - Workspace state → `ui/workspace-state.js`
 - viewport/safe-area/collision → `ui/layout.js`
 - Research Sheet shell → `ui/research-workspace.js`
@@ -53,19 +57,37 @@ src/
 - persistent / transient feedback → `ui/activity-indicator.js` / `ui/toast.js`
 - shared CSS → `ui/styles.js`
 
+`data/*` + `store/verified-store.js`는 foundation owner source이며 아직 runtime writer가 아닙니다. runtime write side effect는 migration 완료 전 legacy path 하나만 유지합니다.
+
 ## 4. Main flows
 
 ### Data / metrics
 
+목표:
+
 ```text
 Instagram
-→ Identity / Extractor (legacy migration 중)
+→ Identity
+→ Extractor
 → Verified Store
+→ History / media[]
 → Metrics Engine
 → Grid / Reel / Research Workspace
 ```
 
-미확보 값을 `0`으로 만들지 않고 UI가 metric formula를 재구현하지 않습니다.
+현재:
+
+```text
+legacy runtime writer
+→ ri311 cache/history
+→ migration adapter
+→ Metrics/UI
+
+staged:
+Identity → Extractor → Verified Store
+```
+
+Verified Store는 `legacy < permalink < dom < embedded < network` source rank, provenance/confidence, conflict를 보존합니다. 약한 evidence가 강한 verified 값을 덮지 않고 missing을 `0`으로 만들지 않습니다.
 
 ### Workspace / 위치
 
@@ -80,7 +102,7 @@ AppContext identity
 
 CONTENT=`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`, GLOBAL=`RI Home + Settings + 업데이트 바로가기`.
 
-UI 위치 계약은 숫자 좌표보다 `[기준 영역 · 위치]`를 먼저 사용합니다.
+UI 위치 계약:
 
 ```text
 전체 화면        → Global RI fixed anchor
@@ -106,7 +128,7 @@ Grid / RI action
 → indicator / Toast
 ```
 
-각 profile은 독립 mode/directory handle을 가집니다. v1 전역 설정은 처음 migration 때 세 profile에 승계합니다. Carousel prompt는 destination 1회 선택 후 개별 파일을 순차 저장하며 지정폴더 실패를 silent fallback하지 않습니다.
+각 profile은 독립 mode/directory handle. v1 전역 설정은 migration 때 세 profile에 승계합니다. Carousel prompt는 destination 1회 선택 후 개별 저장하며 지정폴더 실패를 silent fallback하지 않습니다.
 
 ### Active Reel
 
@@ -129,22 +151,25 @@ fuzzy owner/metric shortcode 추측 금지. 같은 URL 세로 이동도 shared o
 ▶ views → ER → 24h → × account-relative → date
 ```
 
-1. source/test 준비
-2. Android identity/native metric/placement 확인
-3. 새 overlay mount
-4. 이후에만 legacy `#ri3-reels-overlay` hide/remove
-5. renderer/Data Engine migration 뒤 compatibility metric body 제거
+1. source/test
+2. Android identity/native metric/placement
+3. new overlay mount
+4. 이후 legacy `#ri3-reels-overlay` hide/remove
+5. renderer/Data Engine migration 뒤 compatibility body 제거
 
 ## 6. Migration boundary
 
-`legacy-runtime.js`에는 Identity/Extractor/Verified Store/Grid/Reel renderer 고위험 경로가 남아 있습니다.
+`legacy-runtime.js`에는 active writer + Grid/Reel renderer 고위험 경로가 남아 있습니다.
 
 ```text
-Identity → Extractor → Verified Store → history → media[]
+[staged 완료] Identity → Extractor → Verified Store
+[다음] history → media[] → runtime writer wiring
 → Grid/Reel renderer → legacy-runtime 제거
 ```
 
-Research data는 Data Engine 이후 연결합니다. Analysis 목표 schema는 런타임 값이 확보된 뒤 owner를 추가합니다.
+runtime wiring 전에는 새 Verified Store와 legacy runtime이 같은 cache를 동시에 쓰지 않습니다.
+
+Research data는 Data Engine 이후 연결합니다.
 
 ```text
 포맷
