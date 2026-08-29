@@ -1,10 +1,10 @@
 # Instagram Content Research Tool — 개발 상태
 
-이 문서는 `PROJECT_PLAN.md`의 실행 현황입니다. 코드 ownership/build/migration은 `CODE_STRUCTURE.md`, Grid 세부 기준은 `GRID_BASELINE.md`, 검증 기준은 `tests/README.md`를 함께 봅니다.
+이 문서는 `PROJECT_PLAN.md`의 실행 현황입니다. 코드 ownership/build/migration은 `CODE_STRUCTURE.md`, Grid 세부 기준은 `GRID_BASELINE.md`, 보존 기준은 `PRESERVATION_BASELINE.md`, 현재 작업 순서는 `WORK_TRACK.md`, 검증 기준은 `tests/README.md`를 함께 봅니다.
 
 ## 현재 배포
 
-- 버전: **v3.2.2**
+- 버전: **v3.2.3**
 - 실행 대상: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
 - 개발 원본: `src/*`
 - 배포 파일: `ri-retry.user.js`
@@ -15,7 +15,7 @@
 
 ---
 
-# 1. v3.2에서 유지하는 v3.1 승인 기능
+# 1. v3.2에서 유지하는 승인 기능
 
 다음은 구조 전환 때문에 되돌리면 안 됩니다.
 
@@ -37,12 +37,18 @@
 - Carousel parent slide 구조 지원
 - ZIP 없이 개별 slide 저장
 - `ri311:*` 기존 cache/history 보존
+- RI Panel의 **업데이트 바로가기**
+- userscript raw 설치/업데이트 경로
+- 지정 폴더 실패 시 기본 Downloads로 silent fallback 금지
+- Grid 카드 메뉴에 전역 폴더 설정 재도입 금지
 
 실기기에서 이전에 확인된 사실:
 
 - Grid 숫자 깜빡임 제거 상태
 - Video/Reel 썸네일이 실제 영상 cover로 정상 저장된 사례
 - 사용 환경에서 영상의 폴더 선택 저장이 실제 동작한 사례
+
+업데이트 바로가기는 v3.1.6의 기존 `ri3-panel`에 `새 버전` 액션으로 존재했습니다. v3.2에서 구형 Panel을 숨기는 과정에서 새 Panel로 먼저 이관하지 않아 사라진 것은 회귀로 기록합니다. 이 기능은 삭제 승인된 적이 없으며 `PRESERVATION_BASELINE.md`의 `PRESERVE` 항목입니다.
 
 ---
 
@@ -68,7 +74,10 @@ npm run check
 node --check ri-retry.user.js
 ```
 
-버전 단일 원본은 `src/version.js`입니다.
+버전과 update URL의 단일 원본은 `src/version.js`입니다.
+
+- `VERSION` → userscript `@version` / STATUS / WORK_TRACK
+- `UPDATE_URL` → userscript `@updateURL` / `@downloadURL` / RI Panel 업데이트 바로가기
 
 ---
 
@@ -212,7 +221,74 @@ STORE_CHANGED
 
 ---
 
-# 5. 현재 runtime 조립
+# 5. v3.2.3 변경 — 보존 회귀 복구 + 제거 게이트
+
+이번 단계는 새로운 기능 확장이 아니라 **기존에 있던 업데이트 접근 기능을 복구하고 같은 종류의 삭제 회귀가 다시 생기지 않도록 시스템으로 막는 작업**입니다.
+
+## 5.1 업데이트 바로가기 복구
+
+v3.1.6의 구형 RI 상세 Panel에는 `새 버전` 액션이 있었습니다.
+
+v3.2 migration에서 `#ri3-panel`을 숨겼지만 해당 액션을 새 `#ri32-panel`로 먼저 옮기지 않았습니다.
+
+v3.2.3에서 새 전역 RI Panel 하단에 큰 고정 버튼을 복구합니다.
+
+```text
+업데이트 바로가기
+       ↓
+UPDATE_URL + cache-busting query
+       ↓
+Tampermonkey raw userscript 설치/업데이트 경로
+```
+
+이 버튼은 현재 콘텐츠 종류/탭과 무관한 운영 기능이므로 Panel 하단의 공통 접근경로로 둡니다.
+
+실기기에서 실제 Tampermonkey 설치 intercept까지 확인되기 전에는 실기기 Verified라고 기록하지 않습니다.
+
+## 5.2 update URL 단일 owner
+
+`src/version.js`가 다음을 함께 소유합니다.
+
+- `VERSION`
+- `UPDATE_URL`
+- cache-busting update URL 생성
+
+`build.mjs`도 같은 `UPDATE_URL`로 `@updateURL`과 `@downloadURL`을 생성합니다.
+
+UI와 metadata에 주소를 따로 복사하지 않습니다.
+
+## 5.3 Preservation Baseline 추가
+
+새 기준 문서:
+
+`PRESERVATION_BASELINE.md`
+
+기존 component를 숨기거나 제거하기 전에 모든 사용자 액션을 다음 중 하나로 분류합니다.
+
+```text
+PRESERVE
+REPLACE
+REMOVE-APPROVED
+```
+
+`PRESERVE/REPLACE`는 새 접근경로가 준비되기 전 기존 기능을 숨기거나 제거할 수 없습니다.
+
+## 5.4 CI preservation gate
+
+`check.mjs`가 이제 다음도 검사합니다.
+
+- `src/version.js`의 `UPDATE_URL` 존재
+- generated `@updateURL` 일치
+- generated `@downloadURL` 일치
+- generated userscript에 `ri32-update-shortcut` 존재
+- `업데이트 바로가기` 문구 존재
+- `PRESERVATION_BASELINE.md`에 업데이트 바로가기 보존 규칙 존재
+
+즉 같은 기능이 다시 사라지면 architecture check가 실패하게 합니다.
+
+---
+
+# 6. 현재 runtime 조립
 
 ```text
 main.js
@@ -237,7 +313,7 @@ main.js
 
 ---
 
-# 6. 현재 migration 중복에 대한 처리
+# 7. 현재 migration 중복에 대한 처리
 
 새 RI 요약은 `metrics/metrics.js`를 사용합니다.
 
@@ -251,44 +327,57 @@ main.js
 
 순서로 없앱니다. 새 지표 공식을 legacy 쪽에 추가하거나 두 군데서 따로 발전시키지 않습니다.
 
+현재 architecture check에는 `ri-panel.js`와 `ri-summary.js`의 section/row DOM primitive 중복 warning이 남아 있으며 다음 일반 작업의 첫 항목에서 공통화합니다.
+
 ---
 
-# 7. 아직 실기기 검증이 필요한 항목
+# 8. 아직 실기기 검증이 필요한 항목
 
-v3.2.2 설치 후 확인 대상:
+v3.2.3 설치 후 확인 대상:
 
 1. 전역 RI 버튼이 화면당 정확히 1개인지
-2. RI Panel이 Reel/Grid/Post 이동 뒤 이전 shortcode를 계속 표시하지 않는지
-3. 열린 `요약`에서 새 network/cache 데이터가 들어온 뒤 값이 갱신되는지
-4. ER이 원시 지표가 모두 있을 때만 표시되는지
-5. 실제 약 24h snapshot이 없는 콘텐츠에는 24h가 `—`인지
-6. 동일 계정 비교표본 5개 미만이면 계정 대비가 `—`인지
-7. Grid 3열/8-slot/no-flicker/cover가 그대로인지
-8. Grid 저장 메뉴에 폴더설정이 다시 생기지 않았는지
-9. 지정 폴더 mode의 사진/썸네일 cross-origin 저장 결과
-10. Carousel batch 저장 결과
+2. RI Panel 하단에 큰 `업데이트 바로가기`가 보이는지
+3. 업데이트 바로가기 클릭 시 raw userscript가 열리고 Tampermonkey 설치/업데이트 흐름으로 연결되는지
+4. RI Panel이 Reel/Grid/Post 이동 뒤 이전 shortcode를 계속 표시하지 않는지
+5. 열린 `요약`에서 새 network/cache 데이터가 들어온 뒤 값이 갱신되는지
+6. ER이 원시 지표가 모두 있을 때만 표시되는지
+7. 실제 약 24h snapshot이 없는 콘텐츠에는 24h가 `—`인지
+8. 동일 계정 비교표본 5개 미만이면 계정 대비가 `—`인지
+9. Grid 3열/8-slot/no-flicker/cover가 그대로인지
+10. Grid 저장 메뉴에 폴더설정이 다시 생기지 않았는지
+11. 지정 폴더 mode의 사진/썸네일 cross-origin 저장 결과
+12. prompt mode 실제 동작
+13. Carousel batch 저장 결과
 
 특히 사진/썸네일 지정폴더의 CORS 문제는 아직 실기기 결과가 없으므로 해결됐다고 단정하지 않습니다.
 
 ---
 
-# 8. 다음 작업
+# 9. 다음 작업
+
+보존 회귀 복구를 먼저 완료한 뒤 기존 작업 순서로 복귀합니다.
+
+## Step A — UI duplicate cleanup
+
+1. RI section/row/empty primitive 공통화
+2. `ri-panel.js` / `ri-summary.js` duplicate warning 제거
+3. architecture warning 0 확인
+4. 사용자 기능/배치 변경 없음 확인
 
 ## Phase 4 계속 — RI/Data 연결
 
-1. v3.2.2 Metrics/live binding 실기기 확인
-2. Reel current identity/native likes/comments/reposts 정확도 개선
-3. Reel overlay와 RI summary가 같은 Metrics owner를 사용하도록 renderer 호출부 migration
-4. 그 시점에 legacy metrics 함수 제거
+5. Reel current identity/native likes/comments/reposts 정확도 개선
+6. Reel overlay와 RI summary가 같은 Metrics owner를 사용하도록 renderer 호출부 migration
+7. 그 시점에 legacy metrics 함수 제거
 
 ## Phase 5 — Data Engine migration
 
-5. `instagram/identity.js`
-6. `instagram/extractor.js`
-7. `store/verified-store.js`
-8. legacy cache adapter 제거 방향으로 공통 Store 전환
-9. media resolver를 공통 `media[]` 모델로 전환
-10. Grid/Reel renderer migration
+8. `instagram/identity.js`
+9. `instagram/extractor.js`
+10. `store/verified-store.js`
+11. legacy cache adapter 제거 방향으로 공통 Store 전환
+12. media resolver를 공통 `media[]` 모델로 전환
+13. Grid/Reel renderer migration
 
 ## Download transport 분기
 
@@ -296,10 +385,12 @@ v3.2.2 설치 후 확인 대상:
 
 ---
 
-# 9. 작업 규칙
+# 10. 작업 규칙
 
-- 기존 설계/STATUS/CODE_STRUCTURE/baseline을 먼저 확인
-- 관련 없는 승인 기능 삭제/rollback 금지
+- 기존 설계/STATUS/CODE_STRUCTURE/baseline/WORK_TRACK을 먼저 확인
+- 기존 component를 제거/숨기기 전에 `PRESERVATION_BASELINE.md` 기준으로 기능 inventory 수행
+- `PRESERVE/REPLACE` 기능은 새 접근경로가 먼저 존재해야 함
+- `REMOVE-APPROVED`가 아닌 승인 기능 삭제/rollback 금지
 - 새 책임은 owner module에 구현
 - UI에서 raw Instagram parsing/storage/File System/Blob transport 직접 구현 금지
 - 미확보 지표 추정 금지
