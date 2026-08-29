@@ -164,7 +164,7 @@ const requiredBaseline = [
   '0–32%',
   '32–59%',
   '0–26%',
-  '25–51%',
+  '26–51%',
   '업데이트 바로가기',
   'legacy `#ri3-reels-overlay`',
   'silent default fallback 금지',
