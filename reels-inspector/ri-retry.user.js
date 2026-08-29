@@ -1445,6 +1445,173 @@
     return empty;
   }
 
+  // src/ui/research-workspace.js
+  function createResearchWorkspaceView({
+    doc = globalThis.document,
+    version = "",
+    launcherId = "ri32-tool",
+    onClose,
+    onToggleDetent,
+    onSelectTab,
+    onUpdate
+  } = {}) {
+    if (!doc?.documentElement) throw new Error("Research Workspace requires document");
+    let scrim = null;
+    let panel = null;
+    let title = null;
+    let mediaType = null;
+    let versionNode = null;
+    let detentButton = null;
+    let tabsNode = null;
+    let body = null;
+    let updateButton = null;
+    let lastState = null;
+    const tabButtons = /* @__PURE__ */ new Map();
+    function mount(tabs = []) {
+      if (panel) return panel;
+      scrim = doc.createElement("div");
+      scrim.id = "ri32-scrim";
+      scrim.hidden = true;
+      scrim.setAttribute("aria-hidden", "true");
+      panel = doc.createElement("aside");
+      panel.id = "ri32-panel";
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-label", "Instagram Research");
+      panel.innerHTML = [
+        '<div class="ri32-grabber" aria-hidden="true"><span></span></div>',
+        '<div class="ri32-head">',
+        '<div class="ri32-context"><strong></strong><span class="ri32-media-type"></span></div>',
+        '<span class="ri32-version"></span>',
+        '<button type="button" class="ri32-detent"></button>',
+        '<button type="button" class="ri32-close" aria-label="닫기">×</button>',
+        "</div>",
+        '<div class="ri32-tabs" role="tablist"></div>',
+        '<div class="ri32-body"></div>',
+        '<div class="ri32-footer"><button type="button" class="ri32-update-shortcut">업데이트 바로가기</button></div>'
+      ].join("");
+      title = panel.querySelector(".ri32-context strong");
+      mediaType = panel.querySelector(".ri32-media-type");
+      versionNode = panel.querySelector(".ri32-version");
+      detentButton = panel.querySelector(".ri32-detent");
+      tabsNode = panel.querySelector(".ri32-tabs");
+      body = panel.querySelector(".ri32-body");
+      updateButton = panel.querySelector(".ri32-update-shortcut");
+      panel.querySelector(".ri32-close")?.addEventListener("click", handleClose);
+      detentButton?.addEventListener("click", handleToggleDetent);
+      updateButton?.addEventListener("click", handleUpdate);
+      scrim.addEventListener("pointerdown", handleScrimPointerDown, true);
+      doc.addEventListener("pointerdown", handleDocumentPointerDown, true);
+      createTabs(tabs);
+      doc.documentElement.append(scrim, panel);
+      return panel;
+    }
+    function sync({ state, context, tabs = [] } = {}) {
+      mount(tabs);
+      lastState = state || lastState;
+      const current = lastState || {};
+      const contentMode = current.mode === "content";
+      const expanded = current.detent === "expanded";
+      panel.dataset.detent = current.detent || "compact";
+      panel.dataset.mode = current.mode || "global";
+      panel.dataset.contextEpoch = String(current.contextEpoch ?? 0);
+      panel.setAttribute("aria-modal", String(expanded));
+      if (title) title.textContent = contentMode ? contentTitle(context) : "RI Research";
+      if (mediaType) {
+        mediaType.textContent = contentMode ? String(context?.mediaType || "") : "";
+        mediaType.hidden = !mediaType.textContent;
+      }
+      if (versionNode) versionNode.textContent = version ? `v${version}` : "";
+      if (detentButton) {
+        detentButton.textContent = expanded ? "축소" : "확장";
+        detentButton.setAttribute("aria-label", expanded ? "리서치 시트 축소" : "리서치 시트 확장");
+      }
+      if (tabsNode) tabsNode.hidden = !contentMode;
+      if (contentMode) {
+        if (!tabButtons.size) createTabs(tabs);
+        for (const [key, button] of tabButtons) {
+          const selected = key === current.activeTab;
+          button.setAttribute("aria-selected", String(selected));
+          button.tabIndex = selected ? 0 : -1;
+          if (selected) ensureTabVisible(button);
+        }
+      }
+      if (scrim) scrim.hidden = !expanded;
+    }
+    function createTabs(tabs) {
+      if (!tabsNode || tabButtons.size) return;
+      for (const [key, label] of tabs) {
+        const button = doc.createElement("button");
+        button.type = "button";
+        button.className = "ri32-tab";
+        button.dataset.tab = key;
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", "false");
+        button.tabIndex = -1;
+        button.textContent = label;
+        button.addEventListener("click", () => onSelectTab?.(key));
+        tabButtons.set(key, button);
+        tabsNode.appendChild(button);
+      }
+    }
+    function getBody() {
+      return body;
+    }
+    function resetScroll() {
+      if (body) body.scrollTop = 0;
+    }
+    function destroy() {
+      doc.removeEventListener("pointerdown", handleDocumentPointerDown, true);
+      panel?.querySelector(".ri32-close")?.removeEventListener("click", handleClose);
+      detentButton?.removeEventListener("click", handleToggleDetent);
+      updateButton?.removeEventListener("click", handleUpdate);
+      scrim?.removeEventListener("pointerdown", handleScrimPointerDown, true);
+      scrim?.remove();
+      panel?.remove();
+      scrim = null;
+      panel = null;
+      title = null;
+      mediaType = null;
+      versionNode = null;
+      detentButton = null;
+      tabsNode = null;
+      body = null;
+      updateButton = null;
+      tabButtons.clear();
+      lastState = null;
+    }
+    function handleClose() {
+      onClose?.();
+    }
+    function handleToggleDetent() {
+      onToggleDetent?.();
+    }
+    function handleUpdate() {
+      onUpdate?.();
+    }
+    function handleScrimPointerDown(event) {
+      if (event.target === scrim) onClose?.();
+    }
+    function handleDocumentPointerDown(event) {
+      if (!lastState?.open || lastState.detent !== "compact") return;
+      const target = event.target;
+      if (panel?.contains(target)) return;
+      if (doc.getElementById(launcherId)?.contains(target)) return;
+      onClose?.();
+    }
+    return { mount, sync, getBody, resetScroll, destroy };
+  }
+  function contentTitle(context) {
+    const username = String(context?.username || "").replace(/^@/, "").trim();
+    return username ? `RI · @${username}` : "RI · 콘텐츠";
+  }
+  function ensureTabVisible(button) {
+    if (typeof button?.scrollIntoView !== "function") return;
+    try {
+      button.scrollIntoView({ block: "nearest", inline: "nearest" });
+    } catch {
+    }
+  }
+
   // src/ui/workspace-state.js
   var VALID_DETENTS = /* @__PURE__ */ new Set(["closed", "compact", "expanded"]);
   var VALID_MODES = /* @__PURE__ */ new Set(["content", "global"]);
@@ -1659,8 +1826,10 @@
     let settingsState = settings2.getState();
     let destroyed = false;
     let button = doc.getElementById("ri32-tool");
-    let panel = doc.getElementById("ri32-panel");
+    let workspaceView = null;
     doc.getElementById("ri3-panel")?.remove();
+    doc.getElementById("ri32-panel")?.remove();
+    doc.getElementById("ri32-scrim")?.remove();
     if (!button) {
       button = doc.createElement("button");
       button.id = "ri32-tool";
@@ -1674,7 +1843,8 @@
     layout2?.schedule?.();
     const unsubscribeSettings = settings2.subscribe((next) => {
       settingsState = next;
-      if (isOpen() && activeTab() === "settings") renderBody();
+      const state = workspace2.getState();
+      if (state.open && (state.mode === "global" || state.activeTab === "settings")) renderBody();
     });
     const unsubscribeRoute = app2?.on?.(EVENTS.ROUTE_CHANGED, scheduleContextRender) || (() => {
     });
@@ -1682,9 +1852,9 @@
     });
     const unsubscribeStore = app2?.on?.(EVENTS.STORE_CHANGED, scheduleContextRender) || (() => {
     });
-    const unsubscribeWorkspace = workspace2.subscribe(({ current, reason }) => {
+    const unsubscribeWorkspace = workspace2.subscribe(({ current }) => {
       button?.setAttribute("aria-expanded", String(current.open));
-      if (reason === "context") panel?.setAttribute("data-context-epoch", String(current.contextEpoch));
+      if (workspaceView && current.open) syncWorkspaceView();
     });
     button.addEventListener("click", toggle);
     function toggle() {
@@ -1695,85 +1865,89 @@
       if (destroyed || isOpen()) return;
       workspace2.rebindContext(currentIdentity());
       workspace2.open();
-      ensurePanel();
-      renderTabs();
+      ensureWorkspaceView();
+      syncWorkspaceView();
       renderBody();
       layout2?.schedule?.();
     }
     function closePanel() {
       if (!isOpen()) return;
       workspace2.close();
-      panel?.remove();
-      panel = null;
+      workspaceView?.destroy();
+      workspaceView = null;
       layout2?.schedule?.();
     }
-    function scheduleContextRender() {
-      const identity = currentIdentity();
-      workspace2.rebindContext(identity);
+    function toggleDetent() {
+      const state = workspace2.getState();
+      if (state.detent === "expanded") workspace2.collapse();
+      else workspace2.expand();
       layout2?.schedule?.();
-      if (!isOpen() || activeTab() === "settings") return;
-      if (app2?.scheduleRender) {
-        app2.scheduleRender("ri32-panel-context", () => {
-          if (isOpen() && activeTab() !== "settings") renderBody();
-        });
-        return;
-      }
+    }
+    function selectTab(key) {
+      if (workspace2.getState().activeTab === key) return;
+      workspace2.setActiveTab(key);
+      workspaceView?.resetScroll();
+      syncWorkspaceView();
       renderBody();
     }
-    function ensurePanel() {
-      panel = doc.getElementById("ri32-panel");
-      if (panel) return;
-      panel = doc.createElement("aside");
-      panel.id = "ri32-panel";
-      panel.setAttribute("data-context-epoch", String(workspace2.getState().contextEpoch));
-      panel.innerHTML = [
-        '<div class="ri32-head">',
-        "<strong>Instagram Research</strong>",
-        `<span class="ri32-version">v${escapeHtml(version || app2?.version || "")}</span>`,
-        '<button type="button" class="ri32-close" aria-label="닫기">×</button>',
-        "</div>",
-        '<div class="ri32-tabs" role="tablist"></div>',
-        '<div class="ri32-body"></div>',
-        '<button type="button" class="ri32-update-shortcut">업데이트 바로가기</button>'
-      ].join("");
-      panel.querySelector(".ri32-close").addEventListener("click", closePanel);
-      panel.querySelector(".ri32-update-shortcut").addEventListener("click", openUpdateShortcut);
-      doc.documentElement.appendChild(panel);
+    function scheduleContextRender() {
+      const previousEpoch = workspace2.getState().contextEpoch;
+      const next = workspace2.rebindContext(currentIdentity());
+      const contextChanged = next.contextEpoch !== previousEpoch;
+      layout2?.schedule?.();
+      if (!isOpen()) return;
+      const render = () => {
+        if (!isOpen()) return;
+        ensureWorkspaceView();
+        syncWorkspaceView();
+        if (contextChanged) workspaceView?.resetScroll();
+        renderBody();
+      };
+      if (app2?.scheduleRender) app2.scheduleRender("ri32-panel-context", render);
+      else render();
     }
-    function renderTabs() {
-      const tabs = panel?.querySelector(".ri32-tabs");
-      if (!tabs) return;
-      tabs.replaceChildren();
-      for (const [key, label] of TABS) {
-        const tab = doc.createElement("button");
-        tab.type = "button";
-        tab.className = "ri32-tab";
-        tab.dataset.tab = key;
-        tab.setAttribute("role", "tab");
-        tab.setAttribute("aria-selected", String(activeTab() === key));
-        tab.textContent = label;
-        tab.addEventListener("click", () => {
-          if (activeTab() === key) return;
-          workspace2.setActiveTab(key);
-          workspace2.rebindContext(currentIdentity());
-          renderTabs();
-          renderBody();
-        });
-        tabs.appendChild(tab);
-      }
+    function ensureWorkspaceView() {
+      if (workspaceView) return workspaceView;
+      workspaceView = createResearchWorkspaceView({
+        doc,
+        version: version || app2?.version || "",
+        onClose: closePanel,
+        onToggleDetent: toggleDetent,
+        onSelectTab: selectTab,
+        onUpdate: openUpdateShortcut
+      });
+      workspaceView.mount(TABS);
+      return workspaceView;
+    }
+    function syncWorkspaceView() {
+      workspaceView?.sync({
+        state: workspace2.getState(),
+        context: currentPost(),
+        tabs: TABS
+      });
     }
     function renderBody() {
-      const body = panel?.querySelector(".ri32-body");
+      const body = workspaceView?.getBody();
       if (!body) return;
       body.replaceChildren();
-      if (activeTab() === "settings") return renderSettings(body);
+      const state = workspace2.getState();
+      if (state.mode === "global") {
+        renderGlobalHome(body);
+        renderSettings(body);
+        return;
+      }
       const post = currentPost();
-      if (activeTab() === "summary") return renderSummary(body, post);
-      if (activeTab() === "media") return renderMedia(body, post);
-      renderPlaceholder(body, post);
+      if (state.activeTab === "settings") return renderSettings(body);
+      if (state.activeTab === "summary") return renderRiSummary({ body, post, metrics: metrics2, doc });
+      if (state.activeTab === "media") return renderMedia(body, post);
+      renderPlaceholder(body, post, state.activeTab);
     }
-    function renderSummary(body, post) {
-      renderRiSummary({ body, post, metrics: metrics2, doc });
+    function renderGlobalHome(body) {
+      const section = createSection(body, "RI Home", doc);
+      const note = doc.createElement("div");
+      note.className = "ri32-note ri32-home-note";
+      note.textContent = "현재 화면에서 특정 콘텐츠가 선택되지 않았습니다. Reel·사진·영상·캐러셀 상세를 열면 콘텐츠 리서치 6탭이 연결됩니다.";
+      section.appendChild(note);
     }
     function renderMedia(body, post) {
       if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.", doc);
@@ -1806,9 +1980,9 @@
         section.appendChild(note);
       }
     }
-    function renderPlaceholder(body, post) {
-      const label = tabLabel(activeTab());
-      renderEmpty(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`, doc);
+    function renderPlaceholder(body, post, tab) {
+      const label = tabLabel(tab);
+      renderEmpty(body, post?.shortcode ? `${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`, doc);
     }
     function renderSettings(body) {
       const section = createSection(body, "저장 방식", doc);
@@ -1889,14 +2063,10 @@
     }
     function currentPost() {
       const identity = currentIdentity();
-      workspace2.rebindContext(identity);
       return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
     }
     function isOpen() {
       return workspace2.getState().open;
-    }
-    function activeTab() {
-      return workspace2.getState().activeTab;
     }
     function destroy() {
       if (destroyed) return;
@@ -1907,9 +2077,9 @@
       unsubscribeStore();
       unsubscribeWorkspace();
       button?.removeEventListener("click", toggle);
-      panel?.remove();
+      workspaceView?.destroy();
       button?.remove();
-      panel = null;
+      workspaceView = null;
       button = null;
     }
     return {
@@ -1930,9 +2100,6 @@
   }
   function researchIcon() {
     return '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V13M9 19V9M14 19V5"/><circle cx="17.5" cy="14.5" r="3.5"/><path d="M20 17l2 2"/></svg>';
-  }
-  function escapeHtml(value) {
-    return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   }
 
   // src/legacy-runtime.js
