@@ -213,7 +213,7 @@
       getCurrentIdentity() {
         return currentIdentity;
       },
-      startRouteTracking({ env = globalThis, resolveIdentity, onActivity } = {}) {
+      startRouteTracking({ env = globalThis, resolveIdentity, resolveActivityIdentity, onActivity } = {}) {
         stopRouteTracking2?.();
         if (destroyed) return () => {
         };
@@ -221,24 +221,39 @@
         let stopped = false;
         let queued = false;
         let lastHref = "";
+        let pendingReason = "init";
         const sync = () => {
           queued = false;
           if (stopped || destroyed) return;
+          const reason = pendingReason;
+          pendingReason = "";
           const href = String(env.location?.href || "");
-          if (href === lastHref) return;
-          lastHref = href;
-          app2.setRoute({ href, pathname: String(env.location?.pathname || "") });
-          if (typeof resolveIdentity === "function") {
+          const hrefChanged = href !== lastHref;
+          if (hrefChanged) {
+            lastHref = href;
+            app2.setRoute({ href, pathname: String(env.location?.pathname || "") });
+            if (typeof resolveIdentity === "function") {
+              try {
+                app2.setCurrentIdentity(resolveIdentity(href) || null);
+              } catch (error) {
+                console.warn("[RI] route identity sync failed", error);
+                app2.setCurrentIdentity(null);
+              }
+            }
+            return;
+          }
+          if (reason && typeof resolveActivityIdentity === "function") {
             try {
-              app2.setCurrentIdentity(resolveIdentity(href) || null);
+              const nextIdentity = resolveActivityIdentity(href, reason);
+              if (nextIdentity !== void 0) app2.setCurrentIdentity(nextIdentity || null);
             } catch (error) {
-              console.warn("[RI] route identity sync failed", error);
-              app2.setCurrentIdentity(null);
+              console.warn("[RI] activity identity sync failed", error);
             }
           }
         };
         const schedule = (reason = "activity") => {
           if (stopped || destroyed) return;
+          pendingReason = reason;
           if (typeof onActivity === "function") {
             try {
               onActivity(reason);
