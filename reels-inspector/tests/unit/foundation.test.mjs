@@ -39,7 +39,7 @@ test('AppContext publishes events and dedupes scheduled render by key', async ()
   }
 });
 
-test('AppContext route tracker updates identity on SPA URL changes without polling', () => {
+test('AppContext route tracker updates identity and shares observed activity without a second DOM observer', () => {
   let observerCallback = null;
   let queuedFrame = null;
   const listeners = new Map();
@@ -58,11 +58,15 @@ test('AppContext route tracker updates identity on SPA URL changes without polli
   };
   const app = createApp();
   const identities = [];
+  const activity = [];
   app.on(EVENTS.IDENTITY_CHANGED, ({ current }) => identities.push(current?.shortcode || ''));
   const stop = app.startRouteTracking({
     env,
     resolveIdentity(url) {
       return { shortcode: url.match(/\/reel\/([^/]+)/)?.[1] || '' };
+    },
+    onActivity(reason) {
+      activity.push(reason);
     }
   });
 
@@ -75,6 +79,7 @@ test('AppContext route tracker updates identity on SPA URL changes without polli
   assert.equal(app.getRoute().pathname, '/reel/BBB222/');
   assert.equal(app.getCurrentIdentity().shortcode, 'BBB222');
   assert.deepEqual(identities, ['AAA111', 'BBB222']);
+  assert.deepEqual(activity, ['dom']);
   stop();
   assert.equal(listeners.size, 0);
 });
