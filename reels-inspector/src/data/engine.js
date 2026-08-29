@@ -31,7 +31,8 @@ export function createDataEngine({ legacyAdapter, history, persistence, now = ()
   function ingest(input, { pageUrl = '', source = 'network', confidence } = {}) {
     const extracted = extractInstagramMedia(input, { pageUrl });
     if (!extracted?.shortcode) return null;
-    return applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
+    const result = applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
+    return result ? { ...result, evidence: extracted.evidence } : null;
   }
 
   function flush() {

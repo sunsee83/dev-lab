@@ -47,6 +47,57 @@ test('Extractor maps exact Instagram media payload fields and leaves missing met
   assert.equal(result.patch.reposts, undefined);
   assert.equal(result.patch.videoUrl, 'https://cdn.example.test/high.mp4');
   assert.equal(result.patch.coverUrl, 'https://cdn.example.test/cover.jpg');
+  assert.deepEqual(result.evidence.videoUrls, [
+    'https://cdn.example.test/low.mp4',
+    'https://cdn.example.test/high.mp4'
+  ]);
+});
+
+test('Extractor keeps legacy-shaped nested metrics and alternate media URL evidence', () => {
+  const result = extractInstagramMedia({
+    short_code: 'LEGACY9',
+    media_id: '991',
+    media_type: 2,
+    product_type: 'clips',
+    owner_user: { id: '77', username: 'Creator' },
+    insights: { play_count: 4321, like_count: 210, comment_count: 19, reshare_count: 4 },
+    assets: {
+      video_src: 'https://cdn.test/alternate.mp4',
+      poster_url: 'https://cdn.test/alternate.jpg'
+    }
+  });
+
+  assert.equal(result.shortcode, 'LEGACY9');
+  assert.equal(result.patch.owner, 'creator');
+  assert.equal(result.patch.ownerId, '77');
+  assert.equal(result.patch.views, 4321);
+  assert.equal(result.patch.likes, 210);
+  assert.equal(result.patch.comments, 19);
+  assert.equal(result.patch.reposts, 4);
+  assert.equal(result.patch.videoUrl, 'https://cdn.test/alternate.mp4');
+  assert.equal(result.patch.coverUrl, 'https://cdn.test/alternate.jpg');
+  assert.deepEqual(result.evidence.videoUrls, ['https://cdn.test/alternate.mp4']);
+});
+
+test('Extractor preserves edge-sidecar Carousel slide order and count', () => {
+  const result = extractInstagramMedia({
+    shortcode: 'SIDE123',
+    media_type: 8,
+    edge_sidecar_to_children: {
+      edges: [
+        { node: { display_url: 'https://cdn.test/a.jpg' } },
+        { node: { display_url: 'https://cdn.test/a.jpg' } },
+        { node: { display_url: 'https://cdn.test/c.jpg' } }
+      ]
+    }
+  });
+
+  assert.equal(result.patch.mediaType, 'CAROUSEL');
+  assert.deepEqual(result.patch.carouselImages, [
+    'https://cdn.test/a.jpg',
+    'https://cdn.test/a.jpg',
+    'https://cdn.test/c.jpg'
+  ]);
 });
 
 test('Verified Store preserves provenance, blocks weaker evidence and marks suspicious metric conflicts', () => {

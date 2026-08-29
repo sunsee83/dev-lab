@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 import { buildMediaList } from '../../src/data/media-model.js';
 import { createDataEngine } from '../../src/data/engine.js';
-import { installLegacyCaptureHandoff, LEGACY_CAPTURE_HOOK } from '../../src/migration/capture-handoff.js';
+import { installLegacyCaptureHandoff, LEGACY_CAPTURE_HOOK, LEGACY_RAW_CAPTURE_HOOK } from '../../src/migration/capture-handoff.js';
 import { createHistoryStore, HISTORY_STORAGE_KEYS } from '../../src/store/history-store.js';
 import { createVerifiedCacheStore, VERIFIED_CACHE_KEY } from '../../src/store/verified-cache-store.js';
 
@@ -100,6 +100,7 @@ test('Data Engine owns verified cache/history writes for raw payloads and compat
   assert.equal(raw.post.views, 100);
   assert.equal(raw.post.likes, undefined);
   assert.equal(raw.post.media[0].kind, 'video');
+  assert.deepEqual(raw.evidence.videoUrls, ['https://cdn.test/reel.mp4']);
 
   const compatibility = engine.ingestPatch('DOM1', {
     owner: 'creator', mediaType: 'PHOTO', views: 25, thumbUrl: 'https://cdn.test/dom.jpg'
@@ -111,29 +112,39 @@ test('Data Engine owns verified cache/history writes for raw payloads and compat
   assert.equal(persisted.at(-1).DOM1.views, 25);
 });
 
-test('legacy capture handoff delegates active saveItem before legacy cache/history side effects', () => {
+test('legacy capture handoff exposes raw and compatibility paths and active raw parser precedes fallback', () => {
   const env = {};
   const calls = [];
   const stop = installLegacyCaptureHandoff({
     env,
     data: {
+      ingest(input, options) {
+        calls.push({ kind: 'raw', input, options });
+        return { changed: true, item: { code: input.code }, evidence: { videoUrls: [], imageUrls: [] } };
+      },
       ingestPatch(shortcode, patch, options) {
-        calls.push({ shortcode, patch, options });
+        calls.push({ kind: 'patch', shortcode, patch, options });
         return { changed: true, item: { code: shortcode, views: patch.views } };
       }
     }
   });
-  const result = env[LEGACY_CAPTURE_HOOK]({
-    shortcode: 'ABC123', patch: { views: 99 }, source: 'network', confidence: 'high'
-  });
-  assert.equal(result.item.views, 99);
-  assert.equal(calls[0].options.source, 'network');
+
+  env[LEGACY_RAW_CAPTURE_HOOK]({ input: { code: 'RAW123' }, source: 'network', confidence: 'high' });
+  env[LEGACY_CAPTURE_HOOK]({ shortcode: 'ABC123', patch: { views: 99 }, source: 'dom' });
+  assert.deepEqual(calls.map((entry) => entry.kind), ['raw', 'patch']);
   stop();
+  assert.equal(env[LEGACY_RAW_CAPTURE_HOOK], undefined);
   assert.equal(env[LEGACY_CAPTURE_HOOK], undefined);
 
-  const start = legacyRuntimeSource.lastIndexOf('saveItem = function (code, patch, source, confidence)');
-  const end = legacyRuntimeSource.indexOf('rememberObject = function', start);
-  const activeSaveItem = legacyRuntimeSource.slice(start, end);
+  const rememberStart = legacyRuntimeSource.lastIndexOf('rememberObject = function (obj, source)');
+  const rememberEnd = legacyRuntimeSource.indexOf('parsePermalink = function', rememberStart);
+  const activeRemember = legacyRuntimeSource.slice(rememberStart, rememberEnd);
+  assert.match(activeRemember, /window\.__RI32_CAPTURE_RAW__/);
+  assert.ok(activeRemember.indexOf('__RI32_CAPTURE_RAW__') < activeRemember.indexOf('sameMediaNumber'));
+
+  const saveStart = legacyRuntimeSource.lastIndexOf('saveItem = function (code, patch, source, confidence)');
+  const saveEnd = legacyRuntimeSource.indexOf('rememberObject = function', saveStart);
+  const activeSaveItem = legacyRuntimeSource.slice(saveStart, saveEnd);
   assert.match(activeSaveItem, /window\.__RI32_CAPTURE_PATCH__/);
   assert.ok(activeSaveItem.indexOf('__RI32_CAPTURE_PATCH__') < activeSaveItem.indexOf('scheduleStoreWrite()'));
   assert.match(mainSource, /installLegacyCaptureHandoff\(\{ env: globalThis, data \}\)/);
