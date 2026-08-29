@@ -14,7 +14,7 @@
 src/
 ├ version.js main.js legacy-runtime.js
 ├ core/ activity.js app.js capability.js clipboard.js
-├ data/ engine.js identity.js extractor.js permalink-extractor.js media-model.js
+├ data/ content-model.js engine.js identity.js extractor.js permalink-extractor.js media-model.js
 ├ migration/ capture-handoff.js legacy-store-adapter.js legacy-renderer-handoff.js
 │             reel-context-adapter.js reel-context-handoff.js
 ├ store/ history-store.js settings-store.js verified-cache-store.js verified-store.js
@@ -32,18 +32,15 @@ src/
 - version/update → `version.js`
 - route/shared SPA → `core/app.js`; activity → `core/activity.js`
 - identity → `data/identity.js`
+- **caption/hashtags/mentions extraction contract → `data/content-model.js`**
 - structured payload → `data/extractor.js`; permalink HTML fallback → `data/permalink-extractor.js`
 - verified ingest + post/context read → `data/engine.js`
 - common `media[]` → `data/media-model.js`
-- provenance/rank/conflict → `store/verified-store.js`
+- provenance/rank/conflict + common post projection → `store/verified-store.js`
 - cache persistence → `store/verified-cache-store.js`; history → `store/history-store.js`
-- legacy raw/permalink/patch bridge → `migration/capture-handoff.js`
-- legacy cache/change tracking → `migration/legacy-store-adapter.js`
-- Data Engine post + Metrics summary → legacy Grid/Reel visual bridge → `migration/legacy-renderer-handoff.js`
-- active Reel DOM evidence/context → `migration/reel-context-adapter.js`
-- modern Reel context → legacy visual bridge/DOM enrichment → `migration/reel-context-handoff.js`
+- legacy bridges → `migration/*`
 - ER/24h/account-relative → `metrics/metrics.js`
-- **staged Frozen Grid 2행/8-slot markup + label projection → `ui/grid-metrics-renderer.js`**
+- staged Frozen Grid projection → `ui/grid-metrics-renderer.js`
 - staged Reel overlay → `ui/reel-overlay.js`
 - media resolution/filename → `media/media-resolver.js`; save → `media/download-manager.js`
 - Workspace/Layout/RI/UI → 각 `ui/*`
@@ -53,52 +50,39 @@ src/
 ### Data / metrics
 
 ```text
-structured JSON → Extractor ┐
-permalink HTML → Permalink Extractor ├→ Data Engine → Verified Store
-DOM identity enrichment → ingestPatch ┘
-
-Verified Store
-├→ Verified Cache Store
-├→ History Store → Metrics
-├→ common media[]
-├→ modern UI/context
-└→ legacy-renderer-handoff → frozen active legacy Grid/Reel DOM visual
+Instagram structured payload
+→ Extractor
+   ├→ identity/metrics/media
+   └→ Content Model → caption/hashtags/mentions
+→ Data Engine → Verified Store
+   ├→ Verified Cache Store
+   ├→ History Store → Metrics
+   ├→ common media[]
+   └→ post.content
 ```
 
-legacy-renderer-handoff는 Grid에서는 stored post를, Reel에서는 scoped native likes/comments/reposts를 merge한 post를 동일 Metrics Engine에 넘깁니다. active legacy markup/position/string은 현재 유지합니다.
-
-missing=`0` 금지, source rank=`legacy < permalink < dom < embedded < network`.
-
-### Staged Frozen Grid renderer
-
-`ui/grid-metrics-renderer.js`는 아직 runtime에 mount하지 않습니다.
+Caption/content fields는 Instagram에서 실제 evidence가 있을 때만 patch에 포함합니다. Caption edit가 가능한 점을 반영해 `caption|hashtags|mentions`는 replaceable verified fields이며, source rank가 더 약하면 기존 값을 덮지 못합니다.
 
 ```text
-post + derived
-→ 4-slot row1: ▶views | ♥likes | ●comments | ↻reposts
-→ 4-slot row2: ER | 24h | ×account | MM/DD
+post.content
+├ caption: string
+├ hashtags: string[]
+└ mentions: string[]
 ```
 
-계약:
+Hashtag는 Unicode 문자/숫자/underscore를 인식하고 원문 순서를 보존합니다. Mention은 Instagram username 문자집합을 사용하며 case-insensitive dedupe 후 첫 표기를 보존합니다.
 
-- Reel/Video만 views/derived 표시
-- Photo/Carousel views=`▶-`, derived=`-`
-- 실제 `0` count는 `0`, missing은 `-`
-- markup=`ri3-grid-row1` 4 spans + `ri3-grid-row2` 4 spans
-- active switch는 Android Grid parity 뒤에만 수행
+missing=`0`/빈 문자열 생성으로 대체하지 않습니다.
 
-### Active Reel
+### Active renderer migration
 
 ```text
-shared SPA → reel-context-adapter
-  scoped link → Data Engine exact media → exact route
-  + scoped native metrics
-→ reel-context-handoff
-→ legacy-renderer-handoff → Data Engine post + live metrics → Metrics
-→ existing legacy Reel overlay DOM
+Data Engine post + Metrics
+→ legacy-renderer-handoff
+→ current frozen Grid/Reel DOM
 ```
 
-정상 경로에서 fuzzy context와 legacy metric formula는 사용하지 않습니다. hook 부재/실패 시 emergency fallback만 남습니다.
+active visual은 device parity 전 유지. staged `ui/grid-metrics-renderer.js`, `ui/reel-overlay.js`는 `main.js`에서 아직 mount하지 않습니다.
 
 ### Workspace / 위치
 
@@ -109,30 +93,32 @@ GLOBAL | CONTENT
 
 CONTENT=`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`, GLOBAL=`RI Home + Settings + 업데이트 바로가기`.
 
+현재 `콘텐츠` 탭 UI는 placeholder지만 Data Engine `post.content`는 준비됐습니다. 향후 연결 순서:
+
 ```text
-전체 화면 → Global RI
-카드·썸네일 내부 → Grid
-Reel 영상 영역 → minimal overlay
-Workspace 내부 → header/tab/body/action/activity
+caption → 전체 본문
+hashtags → 해시태그
+mentions → 언급 계정
+→ STT/OCR 추가 evidence는 별도 owner로 확장
 ```
 
-실제 placement=`ui/layout.js` + Android evidence.
+실제 mobile density/scroll은 Android evidence가 owner입니다.
 
-## 5. Staged Reel overlay replacement
+## 5. Staged visual replacements
 
-`ui/reel-overlay.js`: `▶ views → ER → 24h → × account-relative → date`.
-Android context/renderer handoff와 placement 확인 뒤 mount, 이후에만 legacy `#ri3-reels-overlay`와 fallback formula/context 제거.
+- Grid: Frozen 4+4 slot source projection 준비, runtime 미전환.
+- Reel: `▶ views → ER → 24h → × account-relative → date` source 준비, runtime 미전환.
+- Android context/layout parity 뒤에만 active switch 및 legacy visual 제거.
 
 ## 6. Migration boundary
 
 ```text
 [완료] Identity/Extractor/Verified Store/History/media[]
 [완료] cache/history writer + structured/permalink capture
-[완료] modern Grid quick-save / RI Workspace / Reel context → Data Engine read
-[완료] legacy Reel context normal path → modern context
-[완료] legacy Grid/Reel metric normal path → Data Engine + Metrics
-[준비] Frozen Grid renderer source/test extraction — runtime 미전환
-[다음] Device parity → Reel overlay replacement / Grid renderer replacement
+[완료] modern UI/context + legacy normal renderer reads → Data Engine/Metrics
+[준비] Frozen Grid / Reel visual replacements — runtime 미전환
+[완료] Research Content data foundation — UI 미연결
+[다음] Device parity / Content UI → Comments → Analysis → STT/OCR/AI
 → emergency fallback 제거 → legacy-runtime 축소
 ```
 

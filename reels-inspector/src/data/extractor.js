@@ -1,3 +1,4 @@
+import { extractContentModel } from './content-model.js';
 import { normalizeIdentity } from './identity.js';
 
 const VIEW_KEYS = [
@@ -18,6 +19,7 @@ export function extractInstagramMedia(input, { pageUrl = '' } = {}) {
   const user = media.user || media.owner || media.owner_user || {};
   const mediaType = detectMediaType(media);
   const evidence = collectMediaEvidence(media, shortcode);
+  const content = extractContentModel(media);
   const coverUrl = bestImageFromMedia(media) || evidence.imageUrls[0] || '';
   const videoUrl = bestVideoUrl(media, evidence.videoUrls);
   const canonicalUrl = media.permalink || media.canonical_url || pageUrl || '';
@@ -37,7 +39,10 @@ export function extractInstagramMedia(input, { pageUrl = '' } = {}) {
     videoUrl,
     coverUrl,
     thumbUrl: coverUrl,
-    carouselImages: carouselImagesFromMedia(media)
+    carouselImages: carouselImagesFromMedia(media),
+    caption: content.caption,
+    hashtags: content.hashtags,
+    mentions: content.mentions
   });
 
   const identity = normalizeIdentity({

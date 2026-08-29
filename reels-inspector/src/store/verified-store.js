@@ -3,11 +3,15 @@ import { buildMediaList } from '../data/media-model.js';
 
 const SOURCE_RANK = Object.freeze({ legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 });
 const METRIC_FIELDS = new Set(['views', 'likes', 'comments', 'reposts']);
-const REPLACEABLE_FIELDS = new Set(['videoUrl', 'coverUrl', 'thumbUrl', 'carouselImages']);
+const REPLACEABLE_FIELDS = new Set([
+  'videoUrl', 'coverUrl', 'thumbUrl', 'carouselImages',
+  'caption', 'hashtags', 'mentions'
+]);
 const FIELDS = [
   'views', 'likes', 'comments', 'reposts', 'date', 'owner',
   'videoUrl', 'coverUrl', 'thumbUrl', 'carouselImages',
-  'mediaId', 'ownerId', 'mediaType', 'productType', 'canonicalUrl'
+  'mediaId', 'ownerId', 'mediaType', 'productType', 'canonicalUrl',
+  'caption', 'hashtags', 'mentions'
 ];
 
 export function createVerifiedStore({ initialItems = {}, now = () => Date.now(), onChange } = {}) {
@@ -21,7 +25,7 @@ export function createVerifiedStore({ initialItems = {}, now = () => Date.now(),
   function getPost(shortcode) {
     if (!shortcode) return null;
     const item = items[shortcode];
-    if (!item) return { shortcode, media: [] };
+    if (!item) return { shortcode, media: [], caption: '', hashtags: [], mentions: [], content: emptyContent() };
     const read = (key) => fieldValue(item, key);
     const post = { shortcode };
     post.mediaId = read('mediaId') || '';
@@ -39,7 +43,15 @@ export function createVerifiedStore({ initialItems = {}, now = () => Date.now(),
     post.coverUrl = read('coverUrl') || '';
     post.thumbUrl = read('thumbUrl') || '';
     const carouselImages = read('carouselImages');
-    post.carouselImages = Array.isArray(carouselImages) ? [...carouselImages] : [];
+    post.carouselImages = arrayValue(carouselImages);
+    post.caption = read('caption') || '';
+    post.hashtags = arrayValue(read('hashtags'));
+    post.mentions = arrayValue(read('mentions'));
+    post.content = {
+      caption: post.caption,
+      hashtags: [...post.hashtags],
+      mentions: [...post.mentions]
+    };
     post.media = buildMediaList(post);
     return post;
   }
@@ -185,6 +197,14 @@ function optional(value) {
 
 function hasValue(value) {
   return value !== undefined && value !== null && value !== '';
+}
+
+function arrayValue(value) {
+  return Array.isArray(value) ? [...value] : [];
+}
+
+function emptyContent() {
+  return { caption: '', hashtags: [], mentions: [] };
 }
 
 function cleanShortcode(value) {

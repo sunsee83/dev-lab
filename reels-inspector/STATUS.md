@@ -4,7 +4,7 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.14**
+- Runtime version: **v3.2.15**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
@@ -29,30 +29,32 @@ Active:
 - Data Engine: Verified Store + `media[]` + structured/permalink/patch ingest
 - structured JSON + permalink normal capture → Data Engine
 - Grid quick-save / RI Workspace / active Reel context read → Data Engine
-- legacy Reel visual context → modern reel-context-adapter handoff
-- legacy Grid/Reel post + 파생지표 normal read → Data Engine + Metrics handoff
+- legacy Reel context + Grid/Reel metric normal path → modern owners/Data Engine/Metrics
+- **Research Content foundation: caption + hashtags + mentions extraction/provenance/store projection**
 
 Staged, runtime not switched:
 
-- **`ui/grid-metrics-renderer.js` — Frozen Grid 2행/8-slot markup + label contract 추출**
-- Reel/Video: views/likes/comments/reposts + ER/24h/account/date
-- Photo/Carousel: views=`▶-`, 파생지표 `-`, 실제 zero count=`0`
-- `main.js`에는 staged Grid renderer import/mount 없음
-- `ui/reel-overlay.js`도 Android gate 전 mount 금지
+- `ui/grid-metrics-renderer.js` — Frozen Grid 2행/8-slot markup + label contract
+- `ui/reel-overlay.js` — Android gate 전 mount 금지
+- Research Workspace `콘텐츠` 탭은 아직 placeholder; Content data는 post model에만 연결
 
-Compatibility still active:
+Content data contract:
 
-- legacy Grid/Reel DOM visual body 유지
-- legacy ER/24h/account formula는 renderer handoff 부재 시 emergency fallback
-- legacy Reel fuzzy context / permalink parser도 hook 부재 시 emergency fallback
-- legacy adapter는 cache/change-tracking migration boundary로만 유지
+```text
+post.content
+├ caption   → 전체 본문
+├ hashtags  → 순서 보존 + 중복 제거
+└ mentions  → 순서 보존 + 대소문자 중복 제거
+```
+
+Caption은 편집 가능하므로 같은/더 강한 verified source의 변경은 갱신하고, 더 약한 source rollback은 차단합니다. 근거 없는 text/entity는 생성하지 않습니다.
 
 ## Automated Checkpoint
 
-- unit: **58 / 58 pass**
-- build: **v3.2.14 success**
+- unit: **61 / 61 pass**
+- build: **v3.2.15 success**
 - architecture/syntax: **success**
-- source files: **38**
+- source files: **39**
 - architecture warnings: **0**
 - generated userscript: current
 
@@ -83,29 +85,29 @@ Android Edge 실확인 필요:
 - 영상 / 사진·표지 / 슬라이드별 mode·폴더 선택/복원
 - directory photo/cover CORS / prompt Carousel destination
 - Grid 3열/8-slot/no-flicker/actual cover + staged renderer label parity
+- Content tab 실제 모바일 밀도/스크롤은 UI 연결 후 device 확인
 
 실기기 전 Verified 승격 금지.
 
 ## Technical Debt
 
 - cache/history writer + structured/permalink capture cutover 완료
-- modern UI/context Data Engine read cutover 완료
-- legacy Reel context normal path modern owner 통합 완료
-- legacy Grid/Reel metric normal path Data Engine+Metrics 통합 완료
+- modern UI/context + legacy normal renderer data path Data Engine 전환 완료
 - Frozen Grid renderer source extraction 완료, runtime switch 전
+- Research Content data foundation 완료, Workspace renderer 미연결
 - legacy DOM visual body와 emergency formulas/parsers 남음
 - staged Reel overlay replacement 미완료
-- Research Content/Comments/Analysis data model 미연결
+- Comments/Analysis/STT/OCR data model 미연결
 
 ## Next Execution Order
 
 1. **Device gate** — UI-C/D/E + Reel identity/native metrics + 저장설정 + context/renderer parity
-2. **UI-F2 Reel Overlay replacement** — evidence → mount → parity → legacy Reel visual/formula/fuzzy fallback 제거
-3. **Grid renderer replacement** — staged 8-slot source → device parity → active switch → legacy Grid metric body 제거
-4. **Fallback cleanup** — evidence 후 legacy formula/permalink/Reel emergency parser 제거 → legacy-runtime 축소
-5. **Research data** — Content → Comments → Analysis → STT/OCR/AI
+2. **UI-F2 Reel Overlay replacement** — evidence → mount → parity → legacy Reel fallback 제거
+3. **Grid renderer replacement** — staged 8-slot source → device parity → active switch
+4. **Research Content UI** — post.content → 콘텐츠 탭; 이후 Comments → Analysis → STT/OCR/AI
+5. **Fallback cleanup** — evidence 후 legacy emergency parser/formula 제거 → legacy-runtime 축소
 
-Device gate 전 staged source/test 준비는 가능하지만 Frozen visual runtime switch는 하지 않습니다.
+Device gate 전에도 visual switch와 독립적인 Research data source/test 작업은 진행할 수 있습니다.
 
 ## Work Protocol
 
