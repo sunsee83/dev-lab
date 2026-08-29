@@ -14,12 +14,12 @@
 
 ## 현재 배포
 
-- 버전: **v3.2.3**
+- 버전: **v3.2.4**
 - 대상: Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹
 - 개발 원본: `src/*`
 - 배포 파일: `ri-retry.user.js`
 - single self-contained userscript
-- 현재 단계: **v3.2 Contextual Mobile Research Workspace 전환**
+- 현재 단계: **v3.2 Contextual Mobile Research Workspace + Feedback/Activity**
 
 `ri-retry.user.js`는 build artifact이며 직접 수정하지 않습니다.
 
@@ -56,6 +56,7 @@
 - Video/Reel actual cover
 - music/audio/album/avatar reject
 - Carousel individual batch / no ZIP
+- Carousel prompt destination 1회
 - directory failure silent fallback 금지
 - Grid menu global folder setting 금지
 
@@ -84,6 +85,7 @@ src/
 ├ main.js
 ├ legacy-runtime.js
 ├ core/
+│  ├ activity.js
 │  ├ app.js
 │  ├ capability.js
 │  └ clipboard.js
@@ -97,12 +99,14 @@ src/
 │  ├ media-resolver.js
 │  └ download-manager.js
 └ ui/
+   ├ activity-indicator.js
    ├ grid.js
    ├ layout.js
    ├ workspace-state.js
    ├ research-workspace.js
    ├ ri-primitives.js
    ├ ri-panel.js
+   ├ ri-settings.js
    ├ ri-summary.js
    ├ toast.js
    └ styles.js
@@ -170,8 +174,6 @@ UI-B checkpoint에서 duplicate warning 0을 확보했습니다.
 
 # 5. UI-C Launcher Restoration — Source Complete / Device Unverified
 
-v3.1.6 audit 결과 research SVG는 이미 같은 아이콘이었습니다. 회귀 지점은 wrapper visual이었습니다.
-
 현재 source:
 
 ```text
@@ -191,9 +193,7 @@ Android Edge actual size/position/overlap/parity는 확인 전입니다.
 
 # 6. UI-D Contextual Research Workspace — Source Complete / Device Unverified
 
-이번 checkpoint에서 `ui/research-workspace.js`를 실제 DOM shell owner로 추가했습니다.
-
-## 구조
+`ui/research-workspace.js`가 DOM shell owner입니다.
 
 ```text
 Global RI
@@ -207,59 +207,72 @@ Bottom Research Sheet
      └ RI Home + Settings
 ```
 
-## 구현
+구현:
 
-- 기존 right floating shell 대신 bottom sheet source
 - COMPACT / EXPANDED Layout Manager height
 - explicit `확장 / 축소`
-- close header에 항상 존재
-- Compact: no scrim + outside tap close
-- Expanded: soft scrim
+- close 항상 접근
+- Compact no scrim + outside tap close
+- Expanded soft scrim
 - body만 scroll
-- header/tab/footer는 scroll 밖
 - CONTENT에서만 6 tabs
-- GLOBAL은 RI Home + global settings
+- GLOBAL RI Home + global settings
 - active body만 render
 - contextEpoch change 시 body scroll reset
-- big `업데이트 바로가기` footer 보존
-- Summary / Media / Settings action 보존
-- browser Back/history manipulation 추가 없음
-
-자동검증은 source/구조를 확인할 뿐 Android Edge 조작성을 의미하지 않습니다.
+- big `업데이트 바로가기` 보존
+- browser Back/history manipulation 없음
 
 ---
 
-# 7. Update Preservation
+# 7. UI-E Feedback / Activity — Source Complete / Device Unverified
 
-기존 v3.1.6 `새 버전` action 누락 회귀 이후 다음을 gate로 유지합니다.
+새 공용 경로:
+
+```text
+Download Manager
+→ structured Activity event
+→ core/activity.js
+→ ui/activity-indicator.js / ui/toast.js
+```
+
+구현:
+
+- `running | success | error` Activity model
+- future `analysis | stt | ocr` 재사용 가능
+- 동일 id progress merge
+- Carousel `1/N ... N/N 저장 중`
+- success/non-actionable error → transient Toast
+- 동일 Toast 1.4초 내 duplicate suppression
+- directory/permission/picker actionable error → persistent feedback
+- persistent error의 `설정 열기` → RI Settings
+- Workspace 닫힘 → global feedback anchor
+- Workspace 열림 → 동일 Activity node를 `.ri32-activity-host`로 이동
+- cancel → activity 제거
+- launcher badge는 근거가 없어 추가하지 않음
+- Settings presentation을 `ui/ri-settings.js`로 분리하여 `ri-panel.js` size warning 제거
+
+기존 download destination 정책과 silent fallback 금지는 변경하지 않았습니다.
+
+---
+
+# 8. Update Preservation / Tests / Build
+
+업데이트 gate:
 
 - 큰 `업데이트 바로가기`
 - `UPDATE_URL` single owner
 - userscript `@updateURL / @downloadURL`
 - raw install URL
 
-Android Edge → Tampermonkey install/update intercept는 실기기 Unverified.
+UI-E 자동검증 checkpoint:
 
----
-
-# 8. Current Tests / Build
-
-UI-D 최종 자동검증 checkpoint:
-
-- unit tests: **21 / 21 pass**
+- unit tests: **26 / 26 pass**
 - userscript build: **success**
 - architecture/syntax check: **success**
-- source files: **20**
+- source files: **23**
 - architecture warnings: **0**
 - generated userscript syntax: **success**
-- generated userscript: **v3.2.3**
-
-추가 UI guards:
-
-- launcher visual geometry preservation
-- Research Workspace compact/expanded structure
-- CONTENT/GLOBAL split
-- update shortcut preservation
+- target generated userscript: **v3.2.4**
 
 자동검증은 Android Edge visual/touch 검증을 대신하지 않습니다.
 
@@ -267,18 +280,19 @@ UI-D 최종 자동검증 checkpoint:
 
 # 9. Current Device Validation Needed
 
-## UI-C / UI-D
+## UI-C / UI-D / UI-E
 
 - Global RI visible 1개
 - 34px visual / 44px touch 체감
 - bottom nav/app banner/right rail overlap
-- COMPACT 화면 가림
-- EXPANDED long-content usability
-- expand/collapse/close accessibility
-- CONTENT 6 tabs
-- GLOBAL RI Home + Settings
+- COMPACT / EXPANDED usability
+- close/expand/collapse
+- CONTENT 6 tabs / GLOBAL RI Home
 - keyboard/visualViewport
 - route stale context
+- Activity global/Workspace 위치
+- Carousel progress 실제 표시
+- persistent error → Settings action 실제 터치 흐름
 
 ## Download / Update
 
@@ -305,14 +319,12 @@ UI-D 최종 자동검증 checkpoint:
 정확한 순서는 `WORK_TRACK.md`가 owner입니다.
 
 ```text
-UI-E Feedback / Activity
-↓
 UI-F Reel identity/native metrics + Metrics Overlay
 ↓
 UI-G Data Engine / Research Tabs
 ```
 
-UI-E에서는 short toast와 long-running/persistent activity를 분리하고, Carousel progress와 actionable directory error를 Workspace에 연결합니다.
+UI-F에서는 current Reel identity와 native metric 결합 정확도를 먼저 audit하고, Reel overlay 계산을 기존 legacy formula가 아니라 `metrics/metrics.js` owner로 이동합니다.
 
 Data Engine은 이후:
 
