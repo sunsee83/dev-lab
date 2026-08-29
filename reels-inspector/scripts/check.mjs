@@ -139,12 +139,14 @@ const statusPath = path.join(root, 'STATUS.md');
 const workTrackPath = path.join(root, 'WORK_TRACK.md');
 const preservationPath = path.join(root, 'PRESERVATION_BASELINE.md');
 const uiBaselinePath = path.join(root, 'UI_BASELINE.md');
+const uiArchitecturePath = path.join(root, 'UI_ARCHITECTURE.md');
 const versionPath = path.join(srcRoot, 'version.js');
 const generated = await readFile(generatedPath, 'utf8');
 const statusText = await readFile(statusPath, 'utf8');
 const workTrackText = await readFile(workTrackPath, 'utf8');
 const preservationText = await readFile(preservationPath, 'utf8');
 const uiBaselineText = await readFile(uiBaselinePath, 'utf8');
+const uiArchitectureText = await readFile(uiArchitecturePath, 'utf8');
 const versionText = await readFile(versionPath, 'utf8');
 const sourceVersion = versionText.match(/VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1];
 const sourceUpdateUrl = versionText.match(/UPDATE_URL\s*=\s*['"]([^'"]+)['"]/)?.[1];
@@ -183,7 +185,32 @@ for (const heading of requiredUiSections) {
 }
 if (!uiBaselineText.includes('기존 Reel RI')) errors.push('UI_BASELINE.md: preserved Reel RI visual identity rule missing');
 if (!uiBaselineText.includes('업데이트 바로가기')) errors.push('UI_BASELINE.md: update shortcut rule missing');
+
+const requiredUiArchitectureSections = [
+  '# 2. 5-Layer UI Model',
+  '# 3. Context Model',
+  '# 4. Single UI Root',
+  '# 5. Workspace State Machine',
+  '# 6. Route / Identity Change Policy',
+  '# 7. Workspace Navigation',
+  '# 10. Layout Manager',
+  '# 16. Feedback & Activity Layer',
+  '# 19. UI Read Model Boundary',
+  '# 20. UI State Ownership',
+  '# 22. Improved Migration Plan',
+  '# 23. Acceptance / Definition of Done'
+];
+for (const heading of requiredUiArchitectureSections) {
+  if (!uiArchitectureText.includes(heading)) errors.push(`UI_ARCHITECTURE.md: required section missing: ${heading}`);
+}
+if (!uiArchitectureText.includes('CONTENT') || !uiArchitectureText.includes('GLOBAL')) errors.push('UI_ARCHITECTURE.md: context modes missing');
+if (!uiArchitectureText.includes('CLOSED') || !uiArchitectureText.includes('COMPACT') || !uiArchitectureText.includes('EXPANDED')) errors.push('UI_ARCHITECTURE.md: workspace state machine markers missing');
+if (!uiArchitectureText.includes('active tab만 mount')) errors.push('UI_ARCHITECTURE.md: active-tab lazy mount rule missing');
+if (!uiArchitectureText.includes('브라우저 Back')) errors.push('UI_ARCHITECTURE.md: browser navigation preservation rule missing');
+
 if (!workTrackText.includes('UI_BASELINE.md')) errors.push('WORK_TRACK.md: UI_BASELINE.md reference missing');
+if (!workTrackText.includes('UI_ARCHITECTURE.md')) errors.push('WORK_TRACK.md: UI_ARCHITECTURE.md reference missing');
+if (!workTrackText.includes('UI-B — Primitive + Layout + Workspace State Foundation')) errors.push('WORK_TRACK.md: next UI architecture execution step missing');
 
 const requiredWorkSections = [
   '# 2. Current Objective',
