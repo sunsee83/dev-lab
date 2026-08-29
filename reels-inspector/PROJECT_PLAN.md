@@ -8,11 +8,11 @@
 
 - 실행 환경: **Android Microsoft Edge + Tampermonkey + Instagram 모바일 웹**
 - 배포 파일: `ri-retry.user.js`
-- 현재 배포 버전: **v3.2.4**
+- 현재 배포 버전: **v3.2.5**
 - 개발 원본: **`src/*`**
 - 배포 방식: 단일 self-contained userscript
 - runtime `@require` hotfix chain 없음
-- 현재 단계: **v3.2 Contextual Mobile Research Workspace + Feedback/Activity + Data migration 준비**
+- 현재 단계: **v3.2 Active Reel Context + staged Metrics Overlay + Data migration 준비**
 - Grid는 **Frozen UI + 누적 개선 원칙** 적용
 
 현재 UI 관련 기준 문서:
@@ -56,17 +56,23 @@ WORK_TRACK.md            = 지금 구현할 순서
 - Carousel batch progress
 - persistent actionable download error → Settings 연결
 - RI Settings presentation owner 분리
+- active Reel Context migration adapter
+- same-URL shared SPA activity identity refresh
+- exact media URL Store bridge
+- staged Reel Metrics Overlay source + shared metric formatter
 
 아직 migration/실기기 검증 필요:
 
 - Global RI launcher actual Android Edge 위치/충돌
 - Contextual Research Workspace actual mobile usability
 - Activity global/Workspace feedback actual visibility/touch flow
-- Reel current identity/native metrics 정확도
-- Reel Overlay → Metrics owner 통합
+- active Reel identity/native metrics 실제 정확도
+- staged Reel Overlay device comparison 및 replacement activation
 - Identity / Extractor / Verified Store / common `media[]`
 - photo/cover 지정폴더 cross-origin 저장 실기기 결과
 - Carousel batch 실제 destination/progress 결과
+
+**중요:** 새 Reel Overlay는 source/test만 준비하고 아직 runtime visual로 활성화하지 않습니다. 기존 Reel overlay는 Android Edge replacement 확인 전 숨기거나 삭제하지 않습니다.
 
 ### 이미 확보한 v3.1 개선사항 — 계속 보존
 
@@ -86,6 +92,7 @@ WORK_TRACK.md            = 지금 구현할 순서
 - Carousel parent slide + ZIP 없는 개별 batch 저장
 - `ri311:*` cache/history migration 완료 전 보존
 - RI 업데이트 바로가기
+- 기존 Reel overlay의 가벼운 visual과 native Instagram action 보존
 
 ---
 
@@ -225,7 +232,7 @@ Research Read Model
 UI / Download Manager / Analysis Request
 ```
 
-현재 migration 중에는 `legacy-store-adapter.js`가 Read Model 이전의 임시 read boundary 역할을 합니다.
+현재 migration 중에는 `legacy-store-adapter.js`가 Read Model 이전의 임시 read boundary 역할을 합니다. Active Reel에는 `reel-context-adapter.js`가 **current video/scope/native metric evidence만** 제공하는 임시 boundary로 추가됐습니다.
 
 규칙:
 
@@ -242,6 +249,8 @@ UI / Download Manager / Analysis Request
 11. UI는 storage/network/metric formula를 직접 소유하지 않음
 12. 장기적으로 UI는 parser 대신 `ResearchReadModel`만 읽음
 13. async progress/error를 각 UI가 별도 boolean/toast state로 복제하지 않고 Activity owner를 사용
+14. Reel identity는 owner/likes/comments 유사값으로 fuzzy 선택하지 않고 scoped link / exact media mapping / exact route evidence 순으로 판단
+15. same-URL Reel 이동은 기존 shared SPA observer activity를 재사용하며 second full DOM observer를 만들지 않음
 
 ---
 
@@ -649,7 +658,7 @@ route/identity가 바뀌면:
 
 Instagram native likes/comments/reposts/share를 제거하거나 중복하지 않습니다.
 
-추가 overlay:
+추가 overlay target:
 
 ```text
 ▶ 42.9만
@@ -668,6 +677,20 @@ ER 0.55%
 - 기존 안정적 위치를 시작점으로 사용
 - Layout Manager가 collision 시 lane 조정
 - 일반 Post 상세에서 immersive Reel overlay는 필수 아님
+
+현재 UI-F source는 `reel-context-adapter.js → metrics/metrics.js → ui/metric-format.js → ui/reel-overlay.js` 경로를 준비했습니다.
+
+Replacement gate:
+
+```text
+새 source/test
+→ Android Edge current Reel identity/native metric 비교
+→ 새 overlay placement 비교
+→ 새 overlay runtime mount
+→ 그 다음 legacy overlay hide/remove
+```
+
+따라서 현재 단계에서는 기존 `#ri3-reels-overlay`를 먼저 숨기거나 삭제하지 않습니다.
 
 ---
 
@@ -855,10 +878,16 @@ ri-retry.user.js
 core/
 └ activity.js
 
+migration/
+├ legacy-store-adapter.js
+└ reel-context-adapter.js
+
 ui/
 ├ activity-indicator.js
 ├ grid.js
 ├ layout.js
+├ metric-format.js
+├ reel-overlay.js          # staged; replacement gate 전 runtime mount 안 함
 ├ workspace-state.js
 ├ research-workspace.js
 ├ ri-primitives.js
@@ -918,8 +947,9 @@ ResearchReadModel
 9. 기존 Reel RI visual의 Global Launcher — source 완료, 실기기 검증 전
 10. Mobile Contextual Workspace — source 완료, 실기기 검증 전
 11. Feedback / Activity — source 완료, 실기기 검증 전
-12. Reel identity/native metrics + Metrics Overlay — 다음 UI-F
-13. Data Engine migration — 이후
+12. Active Reel identity/native metric migration boundary — source 완료, 실기기 검증 전
+13. Metrics Overlay replacement source — 준비 완료, runtime activation은 device gate 대기
+14. Data Engine migration — 다음 코드 단계
 
 ## v3.3 — Content Types
 
@@ -989,10 +1019,11 @@ Tampermonkey에서 검증한 엔진을 정식 확장프로그램 구조로 이�
 4. 유지 / 수정 / 추가를 분류해 현재 구조에 통합
 5. UI 교체는 `PRESERVE / REPLACE / REMOVE-APPROVED` 결정 후 진행
 6. REPLACE는 새 접근경로가 준비되기 전 기존 component를 먼저 숨기지 않음
-7. 구조/UI/우선순위/owner가 바뀌면 코드보다 문서를 먼저 또는 같은 작업에서 갱신
-8. 실기기에서 좋아졌다고 확인된 동작은 누적 보존
-9. 실기기 미확인 항목을 Verified라고 기록하지 않음
-10. 현재 실행순서는 `WORK_TRACK.md`가 소유
+7. REPLACE visual은 자동검증만으로 old visual을 선제 hide하지 않고, 필요한 실기기 확인을 통과한 뒤 전환
+8. 구조/UI/우선순위/owner가 바뀌면 코드보다 문서를 먼저 또는 같은 작업에서 갱신
+9. 실기기에서 좋아졌다고 확인된 동작은 누적 보존
+10. 실기기 미확인 항목을 Verified라고 기록하지 않음
+11. 현재 실행순서는 `WORK_TRACK.md`가 소유
 
 ---
 
@@ -1001,6 +1032,7 @@ Tampermonkey에서 검증한 엔진을 정식 확장프로그램 구조로 이�
 - 검증되지 않은 지표를 임의 숫자로 표시
 - 공개되지 않은 지표 추정
 - Reel native action 삭제/중복
+- active Reel shortcode를 owner/metric similarity로 fuzzy 결정
 - 관련 없는 작업으로 Grid Frozen UI 재설계
 - Grid 카드 메뉴에 전역 설정 반복
 - media별 서로 다른 저장 위치 정책
@@ -1008,6 +1040,7 @@ Tampermonkey에서 검증한 엔진을 정식 확장프로그램 구조로 이�
 - 새 hotfix `@require` chain
 - `old/backup/final2/hotfix/copy` 소스
 - UI별 별도 Instagram parser
+- same-URL Reel 대응을 위해 second full DOM observer 추가
 - 서버에 Instagram login cookie 기본 전송
 - deterministic extraction보다 AI를 먼저 사용
 - 기존 사용자 기능 inventory 없이 component 삭제/숨김
