@@ -720,19 +720,29 @@
 
   // src/migration/legacy-store-adapter.js
   var CACHE_KEY = "ri311:items:v1";
+  var SNAP_KEY = "ri311:snap:v1";
+  var POST_KEY = "ri311:posts:v1";
+  var WATCH_KEYS = [CACHE_KEY, SNAP_KEY, POST_KEY];
   function createLegacyStoreAdapter({ env = globalThis } = {}) {
-    function readItems() {
+    function readStore(key) {
       try {
-        const raw = env.localStorage?.getItem(CACHE_KEY);
+        const raw = env.localStorage?.getItem(key);
         const parsed = raw ? JSON.parse(raw) : null;
         return parsed && typeof parsed === "object" ? parsed : {};
       } catch {
         return {};
       }
     }
+    function readRaw(key) {
+      try {
+        return String(env.localStorage?.getItem(key) || "");
+      } catch {
+        return "";
+      }
+    }
     function getItem(shortcode) {
       if (!shortcode) return null;
-      return readItems()[shortcode] || null;
+      return readStore(CACHE_KEY)[shortcode] || null;
     }
     function getPost(shortcode) {
       const item = getItem(shortcode);
@@ -775,7 +785,87 @@
         state: post.mediaType || post.mediaId ? "IDENTIFIED" : "DETECTED"
       };
     }
-    return { getItem, getPost, getCurrentIdentity, codeFromUrl };
+    function getSnapshots(shortcode) {
+      const list = readStore(SNAP_KEY)[shortcode];
+      if (!Array.isArray(list)) return [];
+      return list.map((entry) => ({ t: Number(entry?.t), v: Number(entry?.v) })).filter((entry) => Number.isFinite(entry.t) && entry.t > 0 && Number.isFinite(entry.v) && entry.v > 0);
+    }
+    function getAccountPosts(username) {
+      const owner = String(username || "").toLowerCase();
+      if (!owner) return [];
+      return Object.values(readStore(POST_KEY)).filter((entry) => entry && String(entry.owner || "").toLowerCase() === owner).map((entry) => ({
+        code: String(entry.code || ""),
+        owner,
+        views: Number(entry.views),
+        t: Number(entry.t)
+      })).filter((entry) => entry.code && Number.isFinite(entry.views) && entry.views > 0 && Number.isFinite(entry.t) && entry.t > 0);
+    }
+    function createChangeTracker(listener, { delayMs = 360 } = {}) {
+      if (typeof listener !== "function") return { schedule() {
+      }, checkNow() {
+      }, destroy() {
+      } };
+      const last = new Map(WATCH_KEYS.map((key) => [key, readRaw(key)]));
+      let timer2 = 0;
+      let destroyed = false;
+      let pendingReason = "";
+      const checkNow = (reason = pendingReason || "check") => {
+        if (destroyed) return false;
+        if (timer2) {
+          (env.clearTimeout || clearTimeout)(timer2);
+          timer2 = 0;
+        }
+        pendingReason = "";
+        const changedKeys = [];
+        for (const key of WATCH_KEYS) {
+          const raw = readRaw(key);
+          if (raw === last.get(key)) continue;
+          last.set(key, raw);
+          changedKeys.push(key);
+        }
+        if (!changedKeys.length) return false;
+        listener({ reason, changedKeys });
+        return true;
+      };
+      const schedule = (reason = "activity") => {
+        if (destroyed) return;
+        pendingReason = reason;
+        if (timer2) return;
+        const setTimer = env.setTimeout || setTimeout;
+        timer2 = setTimer(() => {
+          timer2 = 0;
+          checkNow(pendingReason || reason);
+        }, Math.max(0, Number(delayMs) || 0));
+      };
+      const onStorage = (event) => {
+        if (event?.key && !WATCH_KEYS.includes(event.key)) return;
+        checkNow("storage");
+      };
+      const onFocus = () => schedule("focus");
+      const onPageShow = () => schedule("pageshow");
+      env.addEventListener?.("storage", onStorage, true);
+      env.addEventListener?.("focus", onFocus, true);
+      env.addEventListener?.("pageshow", onPageShow, true);
+      const destroy = () => {
+        if (destroyed) return;
+        destroyed = true;
+        if (timer2) (env.clearTimeout || clearTimeout)(timer2);
+        timer2 = 0;
+        env.removeEventListener?.("storage", onStorage, true);
+        env.removeEventListener?.("focus", onFocus, true);
+        env.removeEventListener?.("pageshow", onPageShow, true);
+      };
+      return { schedule, checkNow, destroy };
+    }
+    return {
+      getItem,
+      getPost,
+      getCurrentIdentity,
+      getSnapshots,
+      getAccountPosts,
+      createChangeTracker,
+      codeFromUrl
+    };
   }
   function codeFromUrl(url) {
     const match = String(url || "").match(/\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/);
@@ -1367,8 +1457,8 @@
     var VERSION2 = "3.1.6";
     var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
     var CACHE_KEY2 = "ri311:items:v1";
-    var SNAP_KEY = "ri311:snap:v1";
-    var POST_KEY = "ri311:posts:v1";
+    var SNAP_KEY2 = "ri311:snap:v1";
+    var POST_KEY2 = "ri311:posts:v1";
     var SOURCE_RANK = { legacy: 1, permalink: 2, dom: 3, embedded: 4, network: 5 };
     var METRIC_FIELDS = { views: 1, likes: 1, comments: 1, reposts: 1 };
     var VIEW_KEYS = ["play_count", "ig_play_count", "video_play_count", "video_view_count", "view_count", "clips_play_count", "reel_view_count", "media_view_count", "views", "plays"];
@@ -1556,7 +1646,7 @@
       var store, arr, last, now = Date.now();
       views = Number(views);
       if (!code || !views) return;
-      store = readStore(SNAP_KEY, {});
+      store = readStore(SNAP_KEY2, {});
       arr = Array.isArray(store[code]) ? store[code] : [];
       last = arr.length ? arr[arr.length - 1] : null;
       if (!last || now - Number(last.t || 0) >= 18e5 || Number(last.v) !== views) arr.push({ t: now, v: views });
@@ -1564,10 +1654,10 @@
         return now - Number(x.t || 0) <= 12096e5;
       }).slice(-80);
       store[code] = arr;
-      writeStore(SNAP_KEY, store);
+      writeStore(SNAP_KEY2, store);
     }
     function growth24h(code, views) {
-      var arr = readStore(SNAP_KEY, {})[code] || [];
+      var arr = readStore(SNAP_KEY2, {})[code] || [];
       var now = Date.now(), best = null, bestDelta = Infinity, i, age, delta;
       views = Number(views);
       if (!code || !views) return null;
@@ -1589,7 +1679,7 @@
       owner = String(fieldValue2(item, "owner") || "").toLowerCase();
       views = Number(fieldValue2(item, "views"));
       if (!owner || !views) return;
-      store = readStore(POST_KEY, {});
+      store = readStore(POST_KEY2, {});
       store[item.code] = { code: item.code, owner, views, t: Date.now() };
       keys = Object.keys(store);
       if (keys.length > 500) {
@@ -1600,14 +1690,14 @@
           delete store[k];
         });
       }
-      writeStore(POST_KEY, store);
+      writeStore(POST_KEY2, store);
     }
     function accountMultiple(code, owner, views) {
       var store, list = [], vals, mid, median;
       owner = String(owner || "").toLowerCase();
       views = Number(views);
       if (!owner || !views) return null;
-      store = readStore(POST_KEY, {});
+      store = readStore(POST_KEY2, {});
       Object.keys(store).forEach(function(k) {
         var d = store[k];
         if (k !== code && d && String(d.owner || "").toLowerCase() === owner && Number(d.views)) list.push(d);
