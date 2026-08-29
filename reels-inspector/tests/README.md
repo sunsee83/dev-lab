@@ -12,13 +12,14 @@ UI 기준:
 ## 자동 테스트 파일
 
 - `fixtures/core-cases.json` — mediaType / Verified Store conflict / Grid fixture
+- `unit/activity.test.mjs` — Activity state merge / Carousel progress / actionable directory error
 - `unit/foundation.test.mjs` — AppContext/capability/clipboard/settings/download/workspace/layout
 - `unit/migration.test.mjs` — legacy adapter/history/change tracker/media resolver
 - `unit/metrics.test.mjs` — ER/24h/account relative Metrics Engine
 - `unit/ui-launcher.test.mjs` — v3.1 RI icon + 34px visual / 44px touch geometry preservation
-- `unit/ui-workspace.test.mjs` — Compact/Expanded bottom sheet + CONTENT/GLOBAL + update preservation
+- `unit/ui-workspace.test.mjs` — Bottom Sheet / CONTENT-GLOBAL / Settings owner / Activity host / update preservation
 
-UI-D source checkpoint 예상 unit count: **21 tests**.
+UI-E source checkpoint: **26 tests**.
 
 ---
 
@@ -61,7 +62,8 @@ UI-D source checkpoint 예상 unit count: **21 tests**.
 7. Research Workspace 동시 1개
 8. Workspace State owner 1개
 9. Layout owner 1개
-10. route/store listener 무분별한 중복 금지
+10. Activity State owner 1개
+11. route/store listener 무분별한 중복 금지
 
 ---
 
@@ -132,7 +134,44 @@ UI-D source checkpoint 예상 unit count: **21 tests**.
 
 ---
 
-# 5. Global RI Launcher
+# 5. UI-E Feedback / Activity
+
+`core/activity.js`, `ui/activity-indicator.js`, `ui/toast.js`, `media/download-manager.js` 기준:
+
+1. Activity state는 `running | success | error`
+2. same id update는 새 card를 만들지 않고 merge
+3. progress는 `{ current, total }`
+4. persistent error가 running activity보다 표시 우선
+5. Carousel batch는 destination 선택 후 `1/N ... N/N 저장 중` 순서
+6. batch 완료는 개별 slide 성공 toast 여러 개가 아니라 최종 결과 1개
+7. cancel은 성공/실패 toast로 표시 금지
+8. 짧은 success는 transient Toast
+9. non-actionable error도 transient Toast
+10. 동일 toast는 1.4초 내 duplicate suppression
+11. permission/directory/picker actionable error는 persistent
+12. persistent error에 `설정 열기` action 가능
+13. action은 `riPanel.openSettings()` 경로로 연결
+14. Workspace 닫힘 시 global `feedbackAnchor` 사용
+15. Workspace 열림 시 같은 `#ri32-activity` node를 `.ri32-activity-host`로 이동
+16. global/embedded Activity view를 동시에 복제 금지
+17. launcher badge는 현재 필수 아님
+18. future analysis/STT/OCR job이 같은 Activity model을 재사용 가능
+19. Activity/Settings split 후 architecture warning 0 유지
+
+자동 unit coverage:
+
+- Activity progress merge
+- persistent error priority/dismiss
+- Carousel progress sequence
+- final batch success
+- directory permission error persistent/actionable
+- directory failure no fallback
+- Workspace Activity host/source wiring
+- Settings presentation owner 분리
+
+---
+
+# 6. Global RI Launcher
 
 1. v3.1.6 research SVG identity 보존
 2. visual circle 약 34×34
@@ -147,7 +186,7 @@ UI-D source checkpoint 예상 unit count: **21 tests**.
 
 ---
 
-# 6. Layout Manager
+# 7. Layout Manager
 
 1. pure `computeLayoutSnapshot` 존재
 2. output = launcherAnchor / reelOverlayLane / sheetMetrics / feedbackAnchor
@@ -158,11 +197,12 @@ UI-D source checkpoint 예상 unit count: **21 tests**.
 7. ordinary DOM mutation마다 full layout scan 금지
 8. CSS custom properties shared
 9. sheet compact/expanded height owner는 layout
-10. Instagram actual blocker heuristic은 실기기 전 Verified 금지
+10. Feedback global placement는 `feedbackAnchor` 사용
+11. Instagram actual blocker heuristic은 실기기 전 Verified 금지
 
 ---
 
-# 7. Update Preservation
+# 8. Update Preservation
 
 1. 큰 `업데이트 바로가기` 존재
 2. overflow menu 안에만 숨기지 않음
@@ -173,7 +213,7 @@ UI-D source checkpoint 예상 unit count: **21 tests**.
 
 ---
 
-# 8. Download Manager
+# 9. Download Manager
 
 1. video/cover/photo/carousel same manager
 2. save mode = global
@@ -184,11 +224,12 @@ UI-D source checkpoint 예상 unit count: **21 tests**.
 7. Carousel batch destination 1회
 8. filename media owner
 9. UI network/Blob direct 구현 금지
-10. CORS가 확인되기 전 privileged transport 선제 도입 금지
+10. structured Activity event 발행
+11. CORS가 확인되기 전 privileged transport 선제 도입 금지
 
 ---
 
-# 9. Metrics
+# 10. Metrics
 
 ## ER
 
@@ -217,7 +258,7 @@ UI-D source checkpoint 예상 unit count: **21 tests**.
 
 ---
 
-# 10. Detailed State
+# 11. Detailed State
 
 Grid는 last verified 또는 `-`.
 
@@ -231,7 +272,7 @@ Research Workspace:
 
 ---
 
-# 11. Live Store / Performance
+# 12. Live Store / Performance
 
 1. second full DOM observer 금지
 2. shared SPA observer activity
@@ -243,35 +284,40 @@ Research Workspace:
 8. listener cleanup
 9. layout도 mutation마다 full run 금지
 10. inactive heavy content body 동시 render 금지
+11. Activity same-id progress update로 DOM/state 중복 최소화
 
 ---
 
-# 12. Architecture / Source of Truth
+# 13. Architecture / Source of Truth
 
 1. `src/*` only development source
 2. generated userscript warning
 3. VERSION/UPDATE_URL → `version.js`
 4. route/event/lifecycle → `core/app.js`
-5. clipboard → `core/clipboard.js`
-6. settings → `store/settings-store.js`
-7. legacy read/history → `migration/legacy-store-adapter.js`
-8. metrics → `metrics/metrics.js`
-9. media/cover/filename → `media/media-resolver.js`
-10. file write → `media/download-manager.js`
-11. Workspace state → `ui/workspace-state.js`
-12. Research Workspace DOM shell → `ui/research-workspace.js`
-13. mobile layout → `ui/layout.js`
-14. RI primitives → `ui/ri-primitives.js`
-15. RI controller/actions → `ui/ri-panel.js`
-16. RI summary → `ui/ri-summary.js`
-17. UI storage/FileSystem/network direct 금지
-18. metrics DOM 금지
-19. circular import 금지
-20. new override stack 금지
+5. async activity state → `core/activity.js`
+6. clipboard → `core/clipboard.js`
+7. settings → `store/settings-store.js`
+8. legacy read/history → `migration/legacy-store-adapter.js`
+9. metrics → `metrics/metrics.js`
+10. media/cover/filename → `media/media-resolver.js`
+11. file write/activity emission → `media/download-manager.js`
+12. Workspace state → `ui/workspace-state.js`
+13. Research Workspace DOM shell → `ui/research-workspace.js`
+14. mobile layout → `ui/layout.js`
+15. running/persistent feedback → `ui/activity-indicator.js`
+16. transient toast → `ui/toast.js`
+17. RI primitives → `ui/ri-primitives.js`
+18. RI controller/actions → `ui/ri-panel.js`
+19. RI Settings presentation → `ui/ri-settings.js`
+20. RI summary → `ui/ri-summary.js`
+21. UI storage/FileSystem/network direct 금지
+22. metrics DOM 금지
+23. circular import 금지
+24. new override stack 금지
 
 ---
 
-# 13. 파일 / 중복 관리
+# 14. 파일 / 중복 관리
 
 1. private helper first
 2. second real use → owner API 검토
@@ -282,13 +328,15 @@ Research Workspace:
 7. >500 lines 일반 source error
 8. legacy-runtime only migration size exception
 9. workspace state와 workspace DOM shell을 합치지 않음
-10. legacy metric compatibility는 Reel/Grid migration 후 제거
+10. Settings presentation은 `ri-settings.js` owner
+11. UI-E checkpoint **23 source / 0 warnings**
+12. legacy metric compatibility는 Reel/Grid migration 후 제거
 
 ---
 
-# 14. 실기기 승인 순서
+# 15. 실기기 승인 순서
 
-UI-C/UI-D source 이후 Android Edge에서 반드시 확인:
+Android Edge에서 반드시 확인:
 
 1. Global RI visible 1개
 2. original RI visual identity 체감 유지
@@ -302,7 +350,10 @@ UI-C/UI-D source 이후 Android Edge에서 반드시 확인:
 10. 큰 update shortcut
 11. route 이동 시 stale context 없음
 12. keyboard/visualViewport
-13. Grid 8-slot/no-flicker/cover regression 없음
-14. update shortcut → Tampermonkey install/update flow
+13. Activity global/Workspace 위치와 가독성
+14. Carousel `N/N 저장 중` 실제 진행 표시
+15. persistent error → `설정 열기` touch flow
+16. Grid 8-slot/no-flicker/cover regression 없음
+17. update shortcut → Tampermonkey install/update flow
 
 실기기 확인 전 Android Edge visual/touch behavior를 완료로 기록하지 않습니다.
