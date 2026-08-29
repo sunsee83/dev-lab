@@ -32,7 +32,7 @@
 
 ---
 
-# 2. 현재 실제 구조 — v3.2.3 UI-D source checkpoint
+# 2. 현재 실제 구조 — v3.2.4 UI-E source checkpoint
 
 ```text
 reels-inspector/
@@ -54,6 +54,7 @@ reels-inspector/
 │  ├ legacy-runtime.js
 │  │
 │  ├ core/
+│  │  ├ activity.js
 │  │  ├ app.js
 │  │  ├ capability.js
 │  │  └ clipboard.js
@@ -72,12 +73,14 @@ reels-inspector/
 │  │  └ download-manager.js
 │  │
 │  └ ui/
+│     ├ activity-indicator.js
 │     ├ grid.js
 │     ├ layout.js
 │     ├ workspace-state.js
 │     ├ research-workspace.js
 │     ├ ri-primitives.js
 │     ├ ri-panel.js
+│     ├ ri-settings.js
 │     ├ ri-summary.js
 │     ├ toast.js
 │     └ styles.js
@@ -86,6 +89,7 @@ reels-inspector/
 │  ├ README.md
 │  ├ fixtures/
 │  └ unit/
+│     ├ activity.test.mjs
 │     ├ foundation.test.mjs
 │     ├ migration.test.mjs
 │     ├ metrics.test.mjs
@@ -111,6 +115,7 @@ reels-inspector/
 main.js
   ├ VERSION / UPDATE_URL
   ├ AppContext
+  ├ Activity Store
   ├ Capability Snapshot
   ├ Settings Store
   ├ Download Manager
@@ -119,29 +124,30 @@ main.js
   ├ Workspace State
   ├ Layout Manager
   ├ Grid Actions
-  └ RI Controller
+  ├ RI Controller
+  └ Activity Indicator
 ```
 
 개념:
 
 ```js
 const app = createApp({ version: VERSION });
+const activity = createActivityStore();
 const settings = createSettingsStore(...);
 const legacyStore = createLegacyStoreAdapter(...);
 const metrics = createMetricsEngine({ history: legacyStore });
-const downloads = createDownloadManager(...);
+const downloads = createDownloadManager({
+  ...,
+  onChange(change) {
+    if (change?.activity) activity.apply(change.activity);
+  }
+});
 const workspace = createWorkspaceState();
 const layout = createLayoutManager({ app, doc, env });
-
-mountRiPanel({
-  app,
-  settings,
-  downloads,
-  metrics,
-  adapter: legacyStore,
-  workspace,
-  layout
-});
+const riPanel = mountRiPanel({ app, settings, downloads, metrics, adapter: legacyStore, workspace, layout });
+mountActivityIndicator({ activity, workspace, onAction: (item) => {
+  if (item.action === 'open-settings') riPanel.openSettings();
+}});
 ```
 
 하위 모듈이 global service locator를 찾아다니지 않습니다.
@@ -150,7 +156,7 @@ mountRiPanel({
 
 # 4. Runtime Event / Activity
 
-공식 event:
+공식 AppContext event:
 
 ```text
 route:changed
@@ -172,6 +178,8 @@ AppContext
    └ legacy store fingerprint schedule
 ```
 
+Async 작업 상태는 별도 `core/activity.js` owner를 사용합니다. AppContext event bus가 Activity state 자체를 소유하지 않습니다.
+
 규칙:
 
 - mutation마다 전체 Grid/Store parse 금지
@@ -179,6 +187,7 @@ AppContext
 - listener cleanup 필수
 - route change 후 stale listener 금지
 - Layout Manager도 일반 mutation마다 전체 scan 금지
+- async progress를 각 UI가 별도 boolean/toast state로 복제하지 않음
 
 ---
 
@@ -188,21 +197,24 @@ AppContext
 |---|---|
 | 제품 버전 / update URL | `version.js` |
 | route/event/lifecycle | `core/app.js` |
+| async activity state/lifecycle | `core/activity.js` |
 | capability/permission | `core/capability.js` |
 | clipboard | `core/clipboard.js` |
 | 저장정책 + directory handle | `store/settings-store.js` |
 | legacy cache/history read | `migration/legacy-store-adapter.js` |
 | ER/24h/account relative | `metrics/metrics.js` |
 | media/cover/default filename | `media/media-resolver.js` |
-| destination/Blob write | `media/download-manager.js` |
+| destination/Blob write + download activity emission | `media/download-manager.js` |
 | Workspace open/detent/mode/tab/context | `ui/workspace-state.js` |
 | safe-area/native collision/layout snapshot | `ui/layout.js` |
 | Research Workspace DOM shell/header/tabs/detent/outside-close | `ui/research-workspace.js` |
+| running/persistent Activity presentation | `ui/activity-indicator.js` |
+| transient feedback / toast dedupe | `ui/toast.js` |
 | RI section/row/empty/action primitive | `ui/ri-primitives.js` |
-| RI intent/controller + summary/media/settings wiring | `ui/ri-panel.js` |
+| RI intent/controller + summary/media wiring | `ui/ri-panel.js` |
+| RI Settings presentation | `ui/ri-settings.js` |
 | RI summary presentation | `ui/ri-summary.js` |
 | Grid save intent/menu | `ui/grid.js` |
-| toast | `ui/toast.js` |
 | shared CSS | `ui/styles.js` |
 
 Instagram Identity/Extractor/Verified Store/Grid renderer/Reel renderer는 migration 완료 전까지 legacy runtime에 남아 있습니다.
@@ -263,6 +275,7 @@ compact outside-tap close
 expanded soft scrim
 body scroll reset API
 persistent update shortcut slot
+activity host slot
 ```
 
 소유하지 않음:
@@ -271,6 +284,7 @@ persistent update shortcut slot
 - Settings persistence
 - download side effect
 - Metrics formula
+- Activity business state
 - content data selection
 
 `ui/ri-panel.js`가 controller 역할로 다음을 연결합니다.
@@ -286,7 +300,7 @@ CONTENT
   ├ Comments placeholder/data
   ├ Analysis placeholder/data
   ├ Media actions
-  └ Settings
+  └ Settings → ri-settings.js
 
 GLOBAL
   ├ RI Home
@@ -345,7 +359,7 @@ CSS custom properties:
 ```text
 --ri-launcher-right
 --ri-launcher-bottom
---ri-panel-bottom       # migration compatibility; sheet placement은 own safe-area 사용
+--ri-panel-bottom       # migration compatibility
 --ri-feedback-bottom
 --ri-sheet-compact-height
 --ri-sheet-expanded-height
@@ -357,7 +371,7 @@ Instagram blocker heuristic의 실제 Android Edge 적합성은 실기기 검증
 
 ---
 
-# 9. UI Primitive
+# 9. UI Primitive / Settings Presentation
 
 `ui/ri-primitives.js`:
 
@@ -369,6 +383,17 @@ renderEmpty()
 ```
 
 실제 중복된 표현만 공통화합니다. 의미 없는 `utils.js/helpers.js`로 확장하지 않습니다.
+
+`ui/ri-settings.js`는 실제 Settings tab/global settings 표현 책임이 커져 분리된 owner입니다.
+
+소유:
+
+- download mode option presentation
+- folder name / permission rows
+- folder select/change action
+- settings feedback copy
+
+Settings persistence와 directory handle은 계속 `store/settings-store.js`가 소유합니다.
 
 ---
 
@@ -386,7 +411,7 @@ account relative = 동일 account 최근 최대20 / 최소5 / views median 대�
 
 missing 값을 0으로 만들어 계산하지 않습니다.
 
-legacy Grid/Reel의 compatibility metric 함수는 새 renderer 전환 뒤 제거합니다. 새 metric 변경은 `metrics/metrics.js`에만 적용합니다.
+legacy Grid/Reel compatibility metric 함수는 새 renderer 전환 뒤 제거합니다. 새 metric 변경은 `metrics/metrics.js`에만 적용합니다.
 
 ---
 
@@ -425,20 +450,21 @@ Change Tracker는 interval polling이 아닙니다. AppContext activity에서 de
 
 ---
 
-# 12. Download System
+# 12. Download + Activity System
 
-새 미디어 저장 경로:
+미디어 저장 경로:
 
 ```text
 UI intent
   ↓
 Download Manager
-  ↓
-destination policy
-  ↓
-media transport
-  ↓
-writer
+  ├ destination policy
+  ├ media transport/write
+  └ structured activity event
+        ↓
+     Activity Store
+        ↓
+ Activity Indicator / Toast
 ```
 
 mode:
@@ -447,12 +473,33 @@ mode:
 - directory
 - prompt
 
+Activity contract:
+
+```text
+id
+kind: download | analysis | stt | ocr | ...
+state: running | success | error
+label
+progress: { current, total } | null
+message
+code
+persistent
+action / actionLabel
+```
+
 규칙:
 
 - video/cover/photo/carousel 같은 manager 사용
 - filename owner는 media layer
 - 지정 폴더 실패 시 silent default fallback 금지
 - Carousel prompt destination 한 번 선택 후 batch 재사용
+- batch progress는 동일 id로 `1/N ... N/N` 갱신
+- success/non-actionable error는 transient Toast
+- permission/directory/picker actionable error는 persistent Activity
+- persistent error의 `open-settings` action은 composition root에서 RI Settings에 연결
+- cancellation은 완료/실패처럼 표시하지 않고 Activity 제거
+- open Workspace에서는 같은 Activity DOM node를 host로 이동하며 복제하지 않음
+- launcher badge는 현재 필요성이 없어 만들지 않음
 - cross-origin image/cover 실패가 실기기에서 확인되기 전 `@grant` 변경 금지
 
 CORS 문제가 확인되면 UI가 아니라 `media/transport.js` 분리를 검토합니다.
@@ -494,12 +541,15 @@ native likes/comments/reposts/share는 제거하거나 중복하지 않습니다
 Single Owner 예:
 
 - clipboard → `core/clipboard.js`
+- activity state → `core/activity.js`
 - filename → `media/media-resolver.js`
 - metrics → `metrics/metrics.js`
 - save policy → `settings-store.js`
 - file write → `download-manager.js`
 - workspace state → `workspace-state.js`
 - workspace DOM shell → `research-workspace.js`
+- RI settings presentation → `ri-settings.js`
+- activity presentation → `activity-indicator.js`
 - mobile collision → `layout.js`
 
 금지:
@@ -517,7 +567,7 @@ Single Owner 예:
 - 500줄 초과 일반 source는 architecture error
 - `legacy-runtime.js`만 migration 기간 예외
 
-UI-D에서 shell responsibility가 실제로 분리될 시점이 되었기 때문에 `research-workspace.js`를 만들었고, `ri-panel.js`는 data/action controller 역할에 집중합니다.
+UI-D에서 shell을 `research-workspace.js`로 분리했고, UI-E에서 Settings presentation을 `ri-settings.js`로 분리해 `ri-panel.js`가 다시 controller 역할에 집중하도록 했습니다. UI-E checkpoint는 **23 source files / 0 architecture warnings**입니다.
 
 ---
 
@@ -532,6 +582,7 @@ UI-D에서 shell responsibility가 실제로 분리될 시점이 되었기 때�
 - document-level listener는 owner가 cleanup
 - active research body만 render
 - context change 시 stale view invalidate
+- Activity same-id update는 state merge
 - localStorage/IndexedDB write는 owner만
 - CDN URL을 identity key로 사용 금지
 
@@ -569,9 +620,16 @@ node --check ri-retry.user.js
 - version/update URL/document checkpoints
 - preservation update shortcut
 - UI baseline/architecture/work-track sections
+- UI-E owner files
 - runtime `@require`
 - syntax
 - source size / duplicate warnings
+
+UI-E checkpoint:
+
+- unit 26/26
+- 23 source files
+- 0 warnings
 
 ---
 
@@ -594,6 +652,7 @@ node --check ri-retry.user.js
 
 - Grid/RI intent → common manager
 - global mode
+- Activity lifecycle 연결
 - directory photo/cover CORS device check 대기
 
 ## Phase 4 — UI / Metrics migration — 진행 중
@@ -611,13 +670,15 @@ node --check ri-retry.user.js
 - Contextual bottom Research Workspace source
 - CONTENT / GLOBAL presentation split
 - Compact / Expanded explicit controls
+- Feedback / Activity owner
+- Carousel batch progress
+- persistent actionable download error
 
 다음:
 
-- Feedback / Activity
-- Reel identity/native metrics
+- Reel identity/native metrics audit
 - Reel overlay → Metrics owner
-- legacy metric renderer 제거
+- legacy metric renderer/callsite 제거
 
 ## Phase 5 — Data Engine
 
@@ -644,10 +705,10 @@ Identity
 1. `src/*`만 개발 원본
 2. generated userscript 직접 수정 없음
 3. 기능별 owner 명확
-4. UI/Store/Metrics/Download 책임 분리
+4. UI/Store/Metrics/Download/Activity 책임 분리
 5. interval polling 없음
 6. 핵심 로직 장기 중복 없음
-7. source size gate 유지
+7. source size gate / architecture warning 0 유지
 8. Grid/cover/no-flicker/update shortcut 보존
 9. 기존 component 제거는 replacement gate 이후
 10. unit/build/check 통과
