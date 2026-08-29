@@ -1,15 +1,13 @@
 # Instagram Content Research Tool — Architecture
 
-이 문서는 **현재 코드 구조와 owner**만 다룹니다. 제품 목표는 `PROJECT_PLAN.md`, 보존 기준은 `BASELINE.md`, 현재 상태/다음 작업은 `STATUS.md`가 기준입니다.
+현재 코드 구조와 owner만 다룹니다. 제품 목표=`PROJECT_PLAN.md`, 보존=`BASELINE.md`, 현재 상태/순서=`STATUS.md`.
 
 ## 1. 원칙
 
-- **Single Owner**: 한 책임은 한 모듈이 소유합니다.
-- **Single Data Flow**: UI마다 Instagram parsing/metric 계산을 복제하지 않습니다.
-- **Single Side-Effect Path**: 저장·clipboard·activity는 지정 owner만 수행합니다.
-- **Progressive Migration**: 새 경로를 검증한 뒤 기존 경로를 제거합니다.
-- **No rollback-by-refactor**: 구조 변경 때문에 승인된 동작을 되돌리지 않습니다.
-- 빈 `utils.js`, `backup.js`, `hotfix.js`, override stack을 만들지 않습니다.
+- **Single Owner / Single Data Flow / Single Side-Effect Path**
+- **Progressive Migration**: 새 경로 검증 후 기존 경로 제거
+- **No rollback-by-refactor**: 구조 변경 때문에 승인 동작을 되돌리지 않음
+- 빈 `utils.js`, `backup.js`, `hotfix.js`, override stack 금지
 
 ## 2. 현재 source
 
@@ -18,67 +16,42 @@ src/
 ├ version.js
 ├ main.js
 ├ legacy-runtime.js
-├ core/
-│  ├ activity.js
-│  ├ app.js
-│  ├ capability.js
-│  └ clipboard.js
-├ migration/
-│  ├ legacy-store-adapter.js
-│  └ reel-context-adapter.js
-├ store/
-│  └ settings-store.js
-├ metrics/
-│  └ metrics.js
-├ media/
-│  ├ media-resolver.js
-│  └ download-manager.js
+├ core/ activity.js app.js capability.js clipboard.js
+├ migration/ legacy-store-adapter.js reel-context-adapter.js
+├ store/ settings-store.js
+├ metrics/ metrics.js
+├ media/ media-resolver.js download-manager.js
 └ ui/
-   ├ activity-indicator.js
-   ├ grid.js
-   ├ layout.js
-   ├ metric-format.js
-   ├ reel-overlay.js
-   ├ research-workspace.js
-   ├ ri-panel.js
-   ├ ri-primitives.js
-   ├ ri-settings.js
-   ├ ri-summary.js
-   ├ styles.js
-   ├ toast.js
-   └ workspace-state.js
+   activity-indicator.js grid.js layout.js metric-format.js
+   reel-overlay.js research-workspace.js ri-panel.js ri-primitives.js
+   ri-settings.js ri-summary.js styles.js toast.js workspace-state.js
 ```
 
 `ri-retry.user.js`는 generated artifact이며 직접 수정하지 않습니다.
 
 ## 3. Owner map
 
-| 책임 | Owner |
-|---|---|
-| VERSION / UPDATE_URL | `version.js` |
-| route/event/shared SPA activity | `core/app.js` |
-| async activity state | `core/activity.js` |
-| capability/permission | `core/capability.js` |
-| clipboard | `core/clipboard.js` |
-| global save settings / directory handle | `store/settings-store.js` |
-| legacy verified cache/history read | `migration/legacy-store-adapter.js` |
-| active Reel identity/native metric evidence | `migration/reel-context-adapter.js` |
-| ER / 24h / account-relative formula | `metrics/metrics.js` |
-| cover/media/default filename | `media/media-resolver.js` |
-| destination/write/batch activity | `media/download-manager.js` |
-| Workspace state | `ui/workspace-state.js` |
-| viewport/safe-area/collision | `ui/layout.js` |
-| Research Sheet DOM shell | `ui/research-workspace.js` |
-| RI controller/actions | `ui/ri-panel.js` |
-| RI settings presentation | `ui/ri-settings.js` |
-| RI summary | `ui/ri-summary.js` |
-| shared RI DOM primitives | `ui/ri-primitives.js` |
-| Grid quick-save UI | `ui/grid.js` |
-| metric display formatting | `ui/metric-format.js` |
-| staged Reel overlay | `ui/reel-overlay.js` |
-| persistent/running feedback | `ui/activity-indicator.js` |
-| transient feedback | `ui/toast.js` |
-| shared CSS | `ui/styles.js` |
+- VERSION / UPDATE_URL → `version.js`
+- route/event/shared SPA activity → `core/app.js`
+- async activity → `core/activity.js`
+- capability/permission → `core/capability.js`
+- clipboard → `core/clipboard.js`
+- **영상 / 사진·표지 / 슬라이드 저장정책·directory handle·v1→v2 migration** → `store/settings-store.js`
+- legacy verified cache/history read → `migration/legacy-store-adapter.js`
+- active Reel identity/native metric evidence → `migration/reel-context-adapter.js`
+- ER / 24h / account-relative → `metrics/metrics.js`
+- cover/media/default filename → `media/media-resolver.js`
+- media kind→저장 profile 선택 / destination/write/batch → `media/download-manager.js`
+- Workspace state → `ui/workspace-state.js`
+- viewport/safe-area/collision → `ui/layout.js`
+- Research Sheet shell → `ui/research-workspace.js`
+- RI controller/actions → `ui/ri-panel.js`
+- RI settings presentation → `ui/ri-settings.js`
+- RI summary → `ui/ri-summary.js`
+- Grid quick-save → `ui/grid.js`
+- metric formatting / staged Reel overlay → `ui/metric-format.js` / `ui/reel-overlay.js`
+- persistent / transient feedback → `ui/activity-indicator.js` / `ui/toast.js`
+- shared CSS → `ui/styles.js`
 
 ## 4. Main flows
 
@@ -92,9 +65,9 @@ Instagram
 → Grid / Reel / Research Workspace
 ```
 
-미확보 값을 `0`으로 만들지 않습니다. UI는 metric formula를 재구현하지 않습니다.
+미확보 값을 `0`으로 만들지 않고 UI가 metric formula를 재구현하지 않습니다.
 
-### Workspace
+### Workspace / 위치
 
 ```text
 AppContext identity
@@ -102,77 +75,87 @@ AppContext identity
    CLOSED | COMPACT | EXPANDED
    GLOBAL | CONTENT
 → Research Workspace View
-→ active body 1개만 render
+→ active body 1개
 ```
 
-CONTENT 탭은 `요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`입니다. GLOBAL은 빈 6탭 대신 RI Home/Settings를 사용합니다. browser Back/history를 Workspace 닫기용으로 조작하지 않습니다.
+CONTENT=`요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정`, GLOBAL=`RI Home + Settings + 업데이트 바로가기`.
+
+UI 위치 계약은 숫자 좌표보다 `[기준 영역 · 위치]`를 먼저 사용합니다.
+
+```text
+전체 화면        → Global RI fixed anchor
+카드·썸네일 내부 → Grid custom action/metrics
+Reel 영상 영역   → minimal overlay
+Workspace 내부   → header/tab/body/action/activity
+```
+
+실제 offset/좌우 placement는 `ui/layout.js`와 Android evidence가 owner입니다.
 
 ### Download / Activity
 
 ```text
 Grid / RI action
 → Download Manager
-→ destination policy
+→ media kind profile
+   video          → 영상 정책
+   cover / photo  → 사진·표지 정책
+   carousel-slide → 슬라이드 정책
+→ directory | default | prompt
 → write
-→ Activity event
 → Activity Store
-→ persistent indicator 또는 Toast
+→ indicator / Toast
 ```
 
-Carousel은 destination을 한 번 정하고 개별 파일을 순차 처리합니다. 지정폴더 실패 시 default Downloads로 silent fallback하지 않습니다.
+각 profile은 독립 mode/directory handle을 가집니다. v1 전역 설정은 처음 migration 때 세 profile에 승계합니다. Carousel prompt는 destination 1회 선택 후 개별 파일을 순차 저장하며 지정폴더 실패를 silent fallback하지 않습니다.
 
 ### Active Reel
 
 ```text
 shared SPA activity
-→ reel-context-adapter
+→ migration/reel-context-adapter.js
    scoped Reel link
    → exact media URL mapping
    → exact Reel route
 → scoped native likes/comments/reposts
 ```
 
-owner+metric 유사값으로 shortcode를 fuzzy 추측하지 않습니다. 같은 URL에서 세로 Reel 이동도 기존 SPA observer activity를 재사용합니다.
+fuzzy owner/metric shortcode 추측 금지. 같은 URL 세로 이동도 shared observer를 재사용합니다.
 
 ## 5. Staged Reel overlay replacement
 
 `ui/reel-overlay.js`는 새 Metrics owner 기반 replacement source입니다.
 
 ```text
-▶ views
-ER
-24h
-× account-relative
-date
+▶ views → ER → 24h → × account-relative → date
 ```
 
-현재 원칙:
-
-1. 새 source/test 준비
-2. Android Edge에서 identity/native metric/placement 확인
+1. source/test 준비
+2. Android identity/native metric/placement 확인
 3. 새 overlay mount
-4. 그 뒤에만 legacy `#ri3-reels-overlay` hide/remove
-5. legacy metric compatibility body는 renderer/Data Engine migration 뒤 제거
-
-즉 **새 source가 존재한다는 이유만으로 기존 좋은 visual을 먼저 삭제하지 않습니다.**
+4. 이후에만 legacy `#ri3-reels-overlay` hide/remove
+5. renderer/Data Engine migration 뒤 compatibility metric body 제거
 
 ## 6. Migration boundary
 
-`legacy-runtime.js`에는 아직 Identity/Extractor/Verified Store/Grid/Reel renderer 고위험 경로가 남아 있습니다.
-
-목표 순서:
+`legacy-runtime.js`에는 Identity/Extractor/Verified Store/Grid/Reel renderer 고위험 경로가 남아 있습니다.
 
 ```text
-Identity
-→ Extractor
-→ Verified Store
-→ history
-→ media[]
-→ Grid/Reel renderer
-→ legacy-runtime 제거
+Identity → Extractor → Verified Store → history → media[]
+→ Grid/Reel renderer → legacy-runtime 제거
 ```
 
-각 owner를 옮길 때 호출부와 test를 먼저 준비하고 old path를 마지막에 제거합니다.
+Research data는 Data Engine 이후 연결합니다. Analysis 목표 schema는 런타임 값이 확보된 뒤 owner를 추가합니다.
+
+```text
+포맷
+→ 문제제기형 | 리스트형 | Before/After | 튜토리얼 | 리뷰 | 스토리 | 비교 | 뉴스·정보
+전환 장치
+→ 댓글 유도 | 저장 유도 | 공유 유도 | 프로필 이동 | 링크 클릭 | 구매 | DM
+보조
+→ 훅 | CTA 위치 | 신뢰 장치 | 감정/긴급성
+```
+
+현재 `analysis` 탭에 가짜 결과를 생성하지 않습니다.
 
 ## 7. Build / architecture gate
 
@@ -187,12 +170,9 @@ node --check ri-retry.user.js
 
 - source/generated/`STATUS.md` version 일치
 - update URL/업데이트 바로가기 보존
-- UI의 storage/File System/network 직접 접근 금지
-- metrics DOM 접근 금지
-- circular import 금지
-- runtime `@require` 금지
-- 일반 source 500줄 초과 금지, 350줄 초과 책임 분리 warning
-- 중복 block warning
-- canonical docs의 필수 보존/작업 marker 확인
+- UI storage/File System/network 직접 접근 금지
+- metrics DOM 접근 금지 / circular import / runtime `@require` 금지
+- 일반 source 500줄 초과 금지, 350줄 초과 warning
+- canonical docs marker/크기, duplicate block warning
 
 자동검증과 Android Edge 실기기 검증은 구분합니다.

@@ -20,7 +20,7 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
       return normalized.result;
     }
 
-    const destination = destinationOverride || await resolveDestination(false);
+    const destination = destinationOverride || await resolveDestination(false, normalized.request.kind);
     if (!destination.ok) {
       emitResultActivity(activityId, label, destination.result);
       return destination.result;
@@ -31,7 +31,6 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
     emitResultActivity(activityId, label, result);
     return result;
   }
-
   async function downloadBatch(requests) {
     const normalizedRequests = [];
     for (const request of Array.isArray(requests) ? requests : []) {
@@ -46,7 +45,7 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
     const label = `캐러셀 ${total}장 저장`;
     emitActivity(runningActivity(activityId, label, { current: 0, total }, `${total}장 저장 준비 중…`));
 
-    const destination = await resolveDestination(true);
+    const destination = await resolveDestination(true, normalizedRequests[0].kind);
     if (!destination.ok) {
       emitResultActivity(activityId, label, destination.result, { current: 0, total });
       return destination.result;
@@ -78,23 +77,22 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
     emitResultActivity(activityId, label, batchResult, { current: total, total }, failed);
     return batchResult;
   }
-
-  async function resolveDestination(batch) {
-    const state = settings.getState();
-    const mode = state.downloadMode || 'default';
+  async function resolveDestination(batch, kind) {
+    const policy = resolveDownloadPolicy(settings.getState(), kind);
+    const mode = policy.downloadMode || 'default';
 
     if (mode === 'default') return { ok: true, mode: 'default', folderName: null };
 
     if (mode === 'directory') {
-      const handle = state.directoryHandle;
+      const handle = policy.directoryHandle;
       if (!handle) {
-        return failure('permission-denied', '저장 폴더를 다시 연결해야 합니다.', mode, state.directoryName);
+        return failure('permission-denied', '저장 폴더를 다시 연결해야 합니다.', mode, policy.directoryName);
       }
       const permission = await requestHandlePermission(handle);
       if (permission !== 'granted') {
-        return failure('permission-denied', '저장 폴더 쓰기 권한이 필요합니다.', mode, state.directoryName);
+        return failure('permission-denied', '저장 폴더 쓰기 권한이 필요합니다.', mode, policy.directoryName);
       }
-      return { ok: true, mode, handle, folderName: handle.name || state.directoryName || null };
+      return { ok: true, mode, handle, folderName: handle.name || policy.directoryName || null };
     }
 
     if (mode === 'prompt') {
@@ -130,7 +128,6 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
 
     return failure('unsupported', '알 수 없는 저장 방식입니다.', mode);
   }
-
   async function runJob(request, destination) {
     activeJobs += 1;
     try {
@@ -141,7 +138,6 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
       activeJobs = Math.max(0, activeJobs - 1);
     }
   }
-
   async function saveToDirectory(request, handle, mode, folderName) {
     let blob;
     try {
@@ -160,7 +156,6 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
       return result(false, 'write-failed', request, mode, folderName, '선택한 폴더에 파일을 쓰지 못했습니다.', error);
     }
   }
-
   async function saveWithFilePicker(request) {
     let blob;
     try {
@@ -180,7 +175,6 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
       return result(false, 'write-failed', request, 'prompt', null, '파일을 저장하지 못했습니다.', error);
     }
   }
-
   async function saveBrowserDefault(request) {
     let objectUrl = '';
     try {
@@ -199,14 +193,12 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
       }
     }
   }
-
   async function fetchBlob(url) {
     if (typeof env.fetch !== 'function') throw new Error('fetch unavailable');
     const response = await env.fetch(url, { credentials: 'omit' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.blob();
   }
-
   function clickDownload(url, filename) {
     const doc = env.document;
     if (!doc?.body) throw new Error('document body unavailable');
@@ -220,11 +212,9 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
     anchor.click();
     anchor.remove();
   }
-
   function emitActivity(activity) {
     if (typeof onChange === 'function') onChange({ activeJobs, activity });
   }
-
   function emitResultActivity(activityId, label, downloadResult, progress = null, failedResult = null) {
     if (downloadResult?.code === 'cancelled') {
       emitActivity({ id: activityId, kind: 'download', remove: true });
@@ -261,7 +251,6 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
       actionLabel: feedback.actionLabel
     });
   }
-
   function nextActivityId(prefix = 'download') {
     activitySeq += 1;
     return `${prefix}:${activitySeq}`;
@@ -269,11 +258,22 @@ export function createDownloadManager({ env = globalThis, settings, capabilities
 
   return { download, downloadBatch };
 }
-
+function resolveDownloadPolicy(state, kind) {
+  const profileKey = profileKeyForKind(kind);
+  const policy = profileKey ? state?.downloadPolicies?.[profileKey] : null;
+  if (policy) return policy;
+  if (state && ('downloadMode' in state || 'directoryHandle' in state)) return state;
+  return { downloadMode: 'default', directoryHandle: null, directoryName: null };
+}
+function profileKeyForKind(kind) {
+  if (kind === 'video') return 'video';
+  if (kind === 'cover' || kind === 'photo') return 'image';
+  if (kind === 'carousel-slide') return 'carousel';
+  return null;
+}
 function runningActivity(id, label, progress, message) {
   return { id, kind: 'download', state: 'running', label, progress, message };
 }
-
 function failureFeedback(downloadResult) {
   const code = downloadResult?.code || '';
   const mode = downloadResult?.destinationMode || '';
@@ -283,7 +283,6 @@ function failureFeedback(downloadResult) {
     ? { persistent: true, action: 'open-settings', actionLabel: '설정 열기' }
     : { persistent: false, action: null, actionLabel: null };
 }
-
 function downloadLabel(kind) {
   if (kind === 'video') return '영상 저장';
   if (kind === 'cover') return '썸네일 저장';
@@ -292,7 +291,6 @@ function downloadLabel(kind) {
   if (kind === 'export') return '내보내기';
   return '미디어 저장';
 }
-
 function normalizeRequest(request) {
   if (!request || !VALID_KINDS.has(request.kind) || !/^https?:/i.test(String(request.url || ''))) {
     return { ok: false, result: { ok: false, code: 'invalid-media', message: '다운로드할 미디어 정보가 올바르지 않습니다.' } };
@@ -317,7 +315,6 @@ function normalizeRequest(request) {
     }
   };
 }
-
 function sanitizeFilename(filename) {
   return String(filename || 'Instagram_media')
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
@@ -325,7 +322,6 @@ function sanitizeFilename(filename) {
     .trim()
     .slice(0, 180) || 'Instagram_media';
 }
-
 function result(ok, code, request, destinationMode, folderName, message, error = null) {
   return {
     ok,
@@ -337,7 +333,6 @@ function result(ok, code, request, destinationMode, folderName, message, error =
     error
   };
 }
-
 function failure(code, message, destinationMode, folderName = null, error = null) {
   return { ok: false, result: { ok: false, code, destinationMode, folderName, message, error } };
 }

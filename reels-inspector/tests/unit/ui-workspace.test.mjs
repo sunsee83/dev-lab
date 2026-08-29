@@ -32,13 +32,17 @@ test('Research Workspace separates CONTENT six-tab research from GLOBAL RI Home 
   assert.match(panel, /onUpdate:\s*openUpdateShortcut/);
 });
 
-test('RI Settings presentation stays in its own owner while the panel only delegates', () => {
+test('RI Settings presentation owns independent video/image/carousel policies while the panel only delegates', () => {
   assert.match(panel, /import \{ renderRiSettings \} from '\.\/ri-settings\.js'/);
   assert.match(panel, /return renderRiSettings\(\{ body, settings, settingsState, capabilities, doc \}\)/);
   assert.doesNotMatch(panel, /function permissionLabel\(/);
   assert.match(settingsView, /export function renderRiSettings/);
-  assert.match(settingsView, /settings\.selectDirectory\(\)/);
-  assert.match(settingsView, /settings\.setDownloadMode\(mode\)/);
+  assert.match(settingsView, /\['video', '영상'\]/);
+  assert.match(settingsView, /\['image', '사진 · 표지'\]/);
+  assert.match(settingsView, /\['carousel', '슬라이드'\]/);
+  assert.match(settingsView, /settings\.selectDirectory\(profileKey\)/);
+  assert.match(settingsView, /settings\.setDownloadMode\(profileKey, mode\)/);
+  assert.match(settingsView, /미디어 유형별로 저장 정책을 독립 적용합니다/);
   assert.match(settingsView, /지정 폴더 저장 실패 시 기본 Downloads로 몰래 전환하지 않습니다/);
 });
 

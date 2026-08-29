@@ -1,19 +1,13 @@
 # Instagram Content Research Tool — Project Plan
 
-이 문서는 **제품 목적·범위·장기 방향**만 유지합니다. 현재 버전/진행률은 `STATUS.md`, 구현 owner는 `ARCHITECTURE.md`, 보존선은 `BASELINE.md`가 기준입니다.
+제품 목적·범위·장기 방향만 유지합니다. 현재 버전/진행=`STATUS.md`, 구현 owner=`ARCHITECTURE.md`, 보존선=`BASELINE.md`.
 
 ## 1. 목적
 
-Instagram 콘텐츠를 보면서 별도 앱을 오가지 않고 다음 흐름을 수행합니다.
+Android Instagram mobile web를 그대로 사용하면서 중요 지표를 빠르게 확인하고 필요한 원본/상세 데이터를 확보하는 **모바일 리서치 확장도구**입니다.
 
 ```text
-발굴
-→ 비교
-→ 콘텐츠 확인
-→ 원본 확보
-→ 상세 조사
-→ 분석
-→ 참고 소재 저장
+발굴 → 비교 → 콘텐츠 확인 → 원본 확보 → 상세 조사 → 분석
 ```
 
 대상:
@@ -24,23 +18,24 @@ Instagram 콘텐츠를 보면서 별도 앱을 오가지 않고 다음 흐름을
 - 공개 성과 지표 / 계정 상대 비교
 - 원본 media acquisition
 - 향후 STT / OCR / AI research
-- 향후 content library
+
+즐겨찾기·메모 같은 별도 콘텐츠 관리 기능보다 Instagram 위 리서치 편의성을 우선합니다.
 
 ## 2. UI 역할
 
 ```text
-Grid               = 발굴/비교
-Grid media action  = 빠른 저장
-Reel Overlay       = 현재 콘텐츠 핵심 파생지표
-Global RI          = 상세 조사 진입
-Research Workspace = 요약/콘텐츠/댓글/분석/미디어/설정
+Grid               = 빠른 발굴/비교 + quick-save
+Reel Overlay       = 시청 방해 없는 핵심 파생지표
+Global RI          = 상세 리서치 진입
+Research Workspace = 지표/콘텐츠/댓글/분석/미디어/설정
 ```
 
-Grid에 상세설정과 분석 기능을 반복 배치하지 않습니다. Instagram native action을 제거하거나 불필요하게 복제하지 않습니다.
+- Instagram native action을 제거/중복하지 않음
+- 위치는 `[전체 화면 | 카드·썸네일 | Reel 영상 | Workspace 내부 · 위치]`로 정의
+- 한손 조작, 최소 터치, 하단 nav/Reel rail/caption 충돌 회피
+- 실제 좌표는 Android Edge evidence 후 승인
 
 ## 3. 제품 데이터 흐름
-
-목표 architecture:
 
 ```text
 Instagram
@@ -52,45 +47,38 @@ Instagram
 → Grid / Reel / Research Workspace
 ```
 
-핵심 규칙:
-
-- 한 콘텐츠 identity에 같은 콘텐츠의 metric/media만 결합
-- source/confidence/conflict를 잃지 않음
-- UI별 parser/formula 복제 금지
-- missing을 `0`으로 만들지 않음
+한 identity에 동일 콘텐츠 데이터만 결합하고 source/confidence/conflict를 유지합니다. UI별 parser/formula 복제와 missing=`0` 추정은 금지합니다.
 
 ## 4. Metrics
 
 ```text
 ER = (likes + comments + reposts) / views × 100
 24h = 실제 18–32h snapshot 중 24h에 가장 가까운 값
-계정 대비 = 동일 계정 최근 최대20개, 최소5개, views median 대비 배수
+계정대비 = 동일 계정 최근 최대20개, 최소5개, views median 대비 배수
 ```
 
-불충분하면 숫자를 만들지 않고 `—`를 사용합니다.
+불충분하면 숫자를 만들지 않습니다.
 
 ## 5. Research Workspace
 
-CONTENT 정보구조는 유지합니다.
+CONTENT:
 
 ```text
 요약 | 콘텐츠 | 댓글 | 분석 | 미디어 | 설정
 ```
 
-목표 내용:
-
 - **요약**: identity, views/likes/comments/reposts, ER, 24h, account relative, date
 - **콘텐츠**: caption, hashtags, mentions, transcript, OCR
-- **댓글**: 질문, 구매의도, 후기, 불만, 반론, 팁, 아이디어
-- **분석**: Hook, CTA, 강조, 숫자/가격, 구조, 발화
+- **댓글**: thread, 질문/구매의도/반응/불만/반론/팁
+- **분석**: 훅, 포맷, 구성, 전환 장치, CTA, 표현/신뢰 요소
 - **미디어**: video, actual cover, photo, Carousel slides
-- **설정**: global save mode/directory/update
+- **설정**: 미디어별 save mode/directory + update
 
-콘텐츠 identity가 없는 화면은 빈 6탭 대신 GLOBAL RI Home/Settings를 사용합니다.
+CONTENT identity가 없으면 빈 6탭 대신 GLOBAL RI Home/Settings를 사용합니다.
 
 ## 6. Comments / Analysis
 
-댓글 처리 방향:
+댓글:
 
 ```text
 Instagram comments
@@ -98,48 +86,57 @@ Instagram comments
 → dedupe
 → low-value filter
 → Research Score
-→ 상위 candidate
+→ top candidate
 → AI 분류/요약
 ```
 
-AI category 예:
+분석 목표:
 
-`질문 / 구매의도 / 긍정 / 부정 / 불만 / 반론 / 팁 / 정보 / 콘텐츠 아이디어`
+```text
+포맷
+→ 문제제기형 | 리스트형 | Before/After | 튜토리얼 | 리뷰 | 스토리 | 비교 | 뉴스/정보
 
-AI 이전에 deterministic filtering/scoring을 먼저 적용합니다.
+전환 장치
+→ 댓글 유도 | 저장 유도 | 공유 유도 | 프로필 이동 | 링크 클릭 | 구매 | DM
+
+보조
+→ 훅 | CTA 위치 | 신뢰 장치 | 감정/긴급성
+```
+
+AI 이전에 deterministic extraction/filtering을 먼저 적용하고 근거 데이터가 없으면 분석값을 만들지 않습니다.
 
 ## 7. STT / OCR
-
-장기 구조:
 
 ```text
 browser
 → analysis server
 → STT / OCR
-→ timestamp/coordinate 기반 alignment
+→ timestamp/coordinate alignment
 → AI research
 ```
 
-원칙:
-
-- Instagram 로그인 cookie를 분석 서버로 전달하지 않음
+- Instagram login cookie를 서버로 보내지 않음
 - 전체 영상을 기본적으로 multimodal AI에 직접 보내지 않음
-- FFmpeg + timestamped STT + OCR coordinate/confidence를 먼저 구조화
-- 서버는 async job 형태를 우선
+- FFmpeg + timestamped STT + OCR coordinate/confidence 먼저 구조화
+- async job 우선
 
 ## 8. Media / Storage
 
-전역 저장정책 하나를 video/cover/photo/carousel에 공통 적용합니다.
+미디어 성격에 맞게 저장 설정을 분리합니다.
 
 ```text
-default Downloads
-지정 폴더
-매번 선택
+영상       → directory | default | prompt
+사진·표지  → directory | default | prompt
+슬라이드   → directory | default | prompt
 ```
 
-Carousel은 ZIP이 아니라 개별 파일입니다. 지정폴더 실패는 사용자에게 보이고 silent fallback하지 않습니다.
+- 각 profile은 별도 폴더 지정 가능
+- v1 전역 정책은 v2 첫 migration에서 세 profile에 승계
+- Carousel은 ZIP 금지, individual files
+- prompt Carousel은 destination 1회 선택
+- 지정폴더 실패는 사용자에게 보이고 silent fallback 금지
 
-향후 Library는 다운로드 시스템과 분리된 **research material metadata** 저장소로 설계합니다.
+향후 Library는 다운로드/리서치 핵심 흐름을 복잡하게 만들지 않는 범위에서 별도 검토합니다.
 
 ## 9. Roadmap
 
@@ -158,27 +155,18 @@ v4.4  AI research
 v5.0  MV3/extension packaging 검토
 ```
 
-Migration 순서:
+Migration:
 
 ```text
-Foundation
-→ UI/metrics
-→ Identity/Extractor/Verified Store
-→ common media[] / renderer
-→ legacy removal
-→ Research data
-→ STT/OCR/AI
+Foundation → UI/metrics → Identity/Extractor/Verified Store
+→ common media[]/renderer → legacy removal → Research data → STT/OCR/AI
 ```
 
 ## 10. 계획 변경 규칙
 
-방향을 바꿀 때 기존 문서를 통째로 버리지 않습니다.
-
-1. 기존 결정의 목적 확인
+1. 기존 결정 목적 확인
 2. 유지 / 수정 / 추가 구분
-3. 기존 기능은 `BASELINE.md`에서 `PRESERVE / REPLACE / REMOVE-APPROVED` 분류
-4. `STATUS.md`의 다음 순서 갱신
-5. 구현/테스트
-6. 실제 결과를 `STATUS.md`에 기록
-
-장기 계획은 자주 바꾸지 않고, 실행 상태는 `STATUS.md`에서 짧게 관리합니다.
+3. `BASELINE.md`에서 `PRESERVE / REPLACE / REMOVE-APPROVED`
+4. `STATUS.md` 순서 갱신
+5. 구현/test/build/check
+6. Android 항목은 실기기 확인 전 Unverified
