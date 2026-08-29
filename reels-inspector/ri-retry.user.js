@@ -1219,6 +1219,74 @@
 #ri32-toast{position:fixed;left:50%;bottom:max(134px,calc(env(safe-area-inset-bottom) + 124px));transform:translateX(-50%);z-index:2147483647;max-width:82vw;padding:8px 12px;border-radius:16px;background:rgba(20,20,20,.94);color:#fff;font:650 11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;white-space:normal}
 `;
 
+  // src/ui/ri-summary.js
+  var COUNT_FORMATTER = new Intl.NumberFormat("ko-KR");
+  function renderRiSummary({ body, post, metrics: metrics2, doc = globalThis.document } = {}) {
+    if (!body || !doc) return;
+    if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.", doc);
+    const derived = metrics2?.summarize?.(post) || {};
+    const section = createSection(body, "현재 콘텐츠", doc);
+    addRow(section, "계정", post.username ? `@${post.username}` : "—", doc);
+    addRow(section, "Shortcode", post.shortcode, doc);
+    addRow(section, "유형", post.mediaType || "확인 중", doc);
+    addRow(section, "조회수", countLabel(post.views), doc);
+    addRow(section, "좋아요", countLabel(post.likes), doc);
+    addRow(section, "댓글", countLabel(post.comments), doc);
+    addRow(section, "리포스트", countLabel(post.reposts), doc);
+    addRow(section, "ER", percentLabel(derived.engagementRate), doc);
+    addRow(section, "24h", percentLabel(derived.growth24h, { sign: true }), doc);
+    addRow(section, "계정 대비", multipleLabel(derived.accountMultiple), doc);
+    addRow(section, "게시일", post.date || "—", doc);
+    const note = doc.createElement("div");
+    note.className = "ri32-note";
+    note.textContent = "ER은 검증된 조회수·좋아요·댓글·리포스트가 모두 있을 때만 계산합니다. 24h는 실제 18~32시간 snapshot, 계정 대비는 최근 비교 표본 5개 이상일 때만 표시합니다.";
+    section.appendChild(note);
+  }
+  function createSection(body, title, doc) {
+    const section = doc.createElement("section");
+    section.className = "ri32-section";
+    const heading = doc.createElement("div");
+    heading.className = "ri32-section-title";
+    heading.textContent = title;
+    section.appendChild(heading);
+    body.appendChild(section);
+    return section;
+  }
+  function addRow(parent, label, value, doc) {
+    const row = doc.createElement("div");
+    row.className = "ri32-setting-row";
+    const left = doc.createElement("span");
+    const right = doc.createElement("strong");
+    left.textContent = label;
+    right.textContent = value ?? "—";
+    row.append(left, right);
+    parent.appendChild(row);
+  }
+  function renderEmpty(body, text, doc) {
+    const empty = doc.createElement("div");
+    empty.className = "ri32-empty";
+    empty.textContent = text;
+    body.appendChild(empty);
+  }
+  function countLabel(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return "—";
+    return COUNT_FORMATTER.format(number);
+  }
+  function percentLabel(value, { sign = false } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "—";
+    const digits = Math.abs(number) >= 10 ? 1 : 2;
+    const text = number.toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
+    return `${sign && number >= 0 ? "+" : ""}${text}%`;
+  }
+  function multipleLabel(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return "—";
+    const digits = number >= 10 ? 1 : 2;
+    return `×${number.toFixed(digits).replace(/0+$/, "").replace(/\.$/, "")}`;
+  }
+
   // src/ui/ri-panel.js
   var TABS = [
     ["summary", "요약"],
@@ -1228,7 +1296,7 @@
     ["media", "미디어"],
     ["settings", "설정"]
   ];
-  function mountRiPanel({ app: app2, settings: settings2, capabilities: capabilities2, downloads: downloads2, adapter, version = "", doc = globalThis.document, env = globalThis } = {}) {
+  function mountRiPanel({ app: app2, settings: settings2, capabilities: capabilities2, downloads: downloads2, metrics: metrics2, adapter, version = "", doc = globalThis.document, env = globalThis } = {}) {
     if (!doc?.documentElement || !settings2) throw new Error("RI Panel requires document and Settings Store");
     injectStyles(doc);
     let open = false;
@@ -1254,6 +1322,8 @@
     const unsubscribeRoute = app2?.on?.(EVENTS.ROUTE_CHANGED, scheduleContextRender) || (() => {
     });
     const unsubscribeIdentity = app2?.on?.(EVENTS.IDENTITY_CHANGED, scheduleContextRender) || (() => {
+    });
+    const unsubscribeStore = app2?.on?.(EVENTS.STORE_CHANGED, scheduleContextRender) || (() => {
     });
     button.addEventListener("click", toggle);
     function toggle() {
@@ -1336,24 +1406,11 @@
       renderPlaceholder(body, post);
     }
     function renderSummary(body, post) {
-      if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.");
-      const section = createSection(body, "현재 콘텐츠");
-      addRow(section, "계정", post.username ? `@${post.username}` : "—");
-      addRow(section, "Shortcode", post.shortcode);
-      addRow(section, "유형", post.mediaType || "확인 중");
-      addRow(section, "조회수", countLabel(post.views));
-      addRow(section, "좋아요", countLabel(post.likes));
-      addRow(section, "댓글", countLabel(post.comments));
-      addRow(section, "리포스트", countLabel(post.reposts));
-      addRow(section, "게시일", post.date || "—");
-      const note = doc.createElement("div");
-      note.className = "ri32-note";
-      note.textContent = "현재는 legacy Verified Store의 검증값을 읽습니다. ER · 24h · 계정 대비는 Metrics migration에서 같은 Store 기준으로 연결합니다.";
-      section.appendChild(note);
+      renderRiSummary({ body, post, metrics: metrics2, doc });
     }
     function renderMedia(body, post) {
-      if (!post?.shortcode) return renderEmpty(body, "현재 콘텐츠가 선택되지 않았습니다.");
-      const section = createSection(body, "미디어");
+      if (!post?.shortcode) return renderEmpty2(body, "현재 콘텐츠가 선택되지 않았습니다.");
+      const section = createSection2(body, "미디어");
       const type = String(post.mediaType || "").toUpperCase();
       let actionCount = 0;
       if ((type === "REEL" || type === "VIDEO") && post.videoUrl) {
@@ -1384,19 +1441,19 @@
     }
     function renderPlaceholder(body, post) {
       const label = tabLabel(activeTab);
-      renderEmpty(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`);
+      renderEmpty2(body, post?.shortcode ? `${post.shortcode} · ${label} 데이터 연결 준비 중` : `${label} · 현재 콘텐츠 연결 준비 중`);
     }
     function renderSettings(body) {
-      const section = createSection(body, "저장 방식");
+      const section = createSection2(body, "저장 방식");
       const options = doc.createElement("div");
       options.className = "ri32-options";
       addModeOption(options, "directory", "지정 폴더", !!capabilities2?.directoryPicker);
       addModeOption(options, "default", "기본 Downloads", true);
       addModeOption(options, "prompt", "매번 선택", !!(capabilities2?.saveFilePicker || capabilities2?.directoryPicker));
       section.appendChild(options);
-      const folder = createSection(body, "저장 폴더");
-      addRow(folder, "현재 폴더", settingsState.directoryName || "선택 안 됨");
-      addRow(folder, "권한", permissionLabel(settingsState.directoryPermission));
+      const folder = createSection2(body, "저장 폴더");
+      addRow2(folder, "현재 폴더", settingsState.directoryName || "선택 안 됨");
+      addRow2(folder, "권한", permissionLabel(settingsState.directoryPermission));
       const action = doc.createElement("button");
       action.type = "button";
       action.className = "ri32-action";
@@ -1464,7 +1521,7 @@
       const identity = app2?.getCurrentIdentity?.() || syncCurrentIdentity();
       return identity?.shortcode ? adapter?.getPost?.(identity.shortcode) || identity : null;
     }
-    function createSection(body, title) {
+    function createSection2(body, title) {
       const section = doc.createElement("section");
       section.className = "ri32-section";
       const heading = doc.createElement("div");
@@ -1474,7 +1531,7 @@
       body.appendChild(section);
       return section;
     }
-    function addRow(parent, label, value) {
+    function addRow2(parent, label, value) {
       const row = doc.createElement("div");
       row.className = "ri32-setting-row";
       const left = doc.createElement("span");
@@ -1492,7 +1549,7 @@
       button2.addEventListener("click", () => void action());
       parent.appendChild(button2);
     }
-    function renderEmpty(body, text) {
+    function renderEmpty2(body, text) {
       const empty = doc.createElement("div");
       empty.className = "ri32-empty";
       empty.textContent = text;
@@ -1504,6 +1561,7 @@
       unsubscribeSettings();
       unsubscribeRoute();
       unsubscribeIdentity();
+      unsubscribeStore();
       button?.removeEventListener("click", toggle);
       panel?.remove();
       button?.remove();
@@ -1520,11 +1578,6 @@
     if (permission === "prompt") return "확인 필요";
     if (permission === "denied") return "거부됨";
     return "사용 불가";
-  }
-  function countLabel(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number < 0) return "—";
-    return new Intl.NumberFormat("ko-KR").format(number);
   }
   function researchIcon() {
     return '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V13M9 19V9M14 19V5"/><circle cx="17.5" cy="14.5" r="3.5"/><path d="M20 17l2 2"/></svg>';
