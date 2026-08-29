@@ -1713,6 +1713,7 @@
     style.setProperty("--ri-launcher-right", `${snapshot.launcherAnchor.right}px`);
     style.setProperty("--ri-launcher-bottom", `${snapshot.launcherAnchor.bottom}px`);
     style.setProperty("--ri-panel-bottom", `${snapshot.launcherAnchor.bottom + 44}px`);
+    style.setProperty("--ri-reel-overlay-right", `${snapshot.reelOverlayLane.right}px`);
     style.setProperty("--ri-feedback-bottom", `${snapshot.feedbackAnchor.bottom}px`);
     style.setProperty("--ri-sheet-compact-height", `${snapshot.sheetMetrics.compactHeight}px`);
     style.setProperty("--ri-sheet-expanded-height", `${snapshot.sheetMetrics.expandedHeight}px`);
