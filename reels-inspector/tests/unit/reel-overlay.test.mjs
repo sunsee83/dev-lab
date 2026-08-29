@@ -7,6 +7,7 @@ import { buildReelOverlayLines } from '../../src/ui/reel-overlay.js';
 const overlaySource = await readFile(new URL('../../src/ui/reel-overlay.js', import.meta.url), 'utf8');
 const stylesSource = await readFile(new URL('../../src/ui/styles.js', import.meta.url), 'utf8');
 const layoutSource = await readFile(new URL('../../src/ui/layout.js', import.meta.url), 'utf8');
+const mainSource = await readFile(new URL('../../src/main.js', import.meta.url), 'utf8');
 
 test('Reel overlay keeps the lightweight five-line baseline and hides missing values', () => {
   assert.deepEqual(
@@ -19,11 +20,13 @@ test('Reel overlay keeps the lightweight five-line baseline and hides missing va
   assert.deepEqual(buildReelOverlayLines({}, {}), []);
 });
 
-test('new Reel overlay uses injected Metrics owner and shared layout without another MutationObserver', () => {
+test('staged Reel overlay uses Metrics and shared layout without another MutationObserver', () => {
   assert.match(overlaySource, /metrics\.summarize\(livePost\)/);
   assert.match(overlaySource, /ri32-reel-overlay/);
   assert.doesNotMatch(overlaySource, /MutationObserver/);
-  assert.match(stylesSource, /#ri3-tool,#ri3-panel,#ri3-reels-overlay\{display:none!important\}/);
+  assert.match(stylesSource, /#ri3-tool,#ri3-panel\{display:none!important\}/);
+  assert.doesNotMatch(stylesSource, /#ri3-reels-overlay\{display:none!important\}/);
   assert.match(stylesSource, /#ri32-reel-overlay\{[\s\S]*?var\(--ri-reel-overlay-right,60px\)/);
   assert.match(layoutSource, /--ri-reel-overlay-right/);
+  assert.doesNotMatch(mainSource, /mountReelOverlay/);
 });
