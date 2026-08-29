@@ -1,9 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { buildMediaList } from '../../src/data/media-model.js';
 import { createDataEngine } from '../../src/data/engine.js';
+import { installLegacyCaptureHandoff, LEGACY_CAPTURE_HOOK } from '../../src/migration/capture-handoff.js';
 import { createHistoryStore, HISTORY_STORAGE_KEYS } from '../../src/store/history-store.js';
+import { createVerifiedCacheStore, VERIFIED_CACHE_KEY } from '../../src/store/verified-cache-store.js';
+
+const legacyRuntimeSource = await readFile(new URL('../../src/legacy-runtime.js', import.meta.url), 'utf8');
+const mainSource = await readFile(new URL('../../src/main.js', import.meta.url), 'utf8');
 
 function memoryStorage(seed = {}) {
   const map = new Map(Object.entries(seed));
@@ -33,6 +39,15 @@ test('History Store reads legacy-compatible history and records only real positi
   assert.equal(history.recordSnapshot('ABC', 20), false);
 });
 
+test('Verified Cache Store owns the legacy-compatible item cache side effect', () => {
+  const storage = memoryStorage();
+  const cache = createVerifiedCacheStore({ env: { localStorage: storage }, delayMs: 0 });
+  assert.deepEqual(cache.load(), {});
+  assert.equal(cache.schedule({ ABC: { code: 'ABC', views: 10 } }), true);
+  assert.equal(storage.dump(VERIFIED_CACHE_KEY).ABC.views, 10);
+  cache.destroy();
+});
+
 test('common media[] preserves media roles and Carousel slide order', () => {
   assert.deepEqual(buildMediaList({
     mediaType: 'REEL',
@@ -48,7 +63,7 @@ test('common media[] preserves media roles and Carousel slide order', () => {
   assert.deepEqual(slides.map((item) => item.kind), ['carousel-slide', 'carousel-slide', 'carousel-slide']);
 });
 
-test('Data Engine can sync legacy snapshot and ingest verified payload without UI ownership', () => {
+test('Data Engine owns verified cache/history writes for raw payloads and compatibility patches', () => {
   let legacyItems = {
     OLD1: {
       code: 'OLD1',
@@ -59,9 +74,15 @@ test('Data Engine can sync legacy snapshot and ingest verified payload without U
     }
   };
   const historyCalls = [];
+  const persisted = [];
   const engine = createDataEngine({
     legacyAdapter: { getItemsSnapshot() { return legacyItems; } },
     history: { record(post) { historyCalls.push(post.shortcode); return true; } },
+    persistence: {
+      load() { return legacyItems; },
+      schedule(snapshot) { persisted.push(snapshot); return true; },
+      flush() { return true; }
+    },
     now: () => 10_000
   });
 
@@ -72,12 +93,48 @@ test('Data Engine can sync legacy snapshot and ingest verified payload without U
   assert.equal(engine.getPost('OLD1').media.length, 0);
   assert.equal(engine.getPost('NEW1').media[0].kind, 'photo');
 
-  const result = engine.ingest({
+  const raw = engine.ingest({
     code: 'REEL1', media_type: 2, product_type: 'clips', play_count: 100,
     user: { username: 'creator' }, video_url: 'https://cdn.test/reel.mp4'
   }, { pageUrl: 'https://www.instagram.com/reel/REEL1/', source: 'network' });
-  assert.equal(result.post.views, 100);
-  assert.equal(result.post.likes, undefined);
-  assert.equal(result.post.media[0].kind, 'video');
-  assert.deepEqual(historyCalls, ['REEL1']);
+  assert.equal(raw.post.views, 100);
+  assert.equal(raw.post.likes, undefined);
+  assert.equal(raw.post.media[0].kind, 'video');
+
+  const compatibility = engine.ingestPatch('DOM1', {
+    owner: 'creator', mediaType: 'PHOTO', views: 25, thumbUrl: 'https://cdn.test/dom.jpg'
+  }, { source: 'dom', confidence: 'medium' });
+  assert.equal(compatibility.item.code, 'DOM1');
+  assert.equal(compatibility.post.media[0].kind, 'photo');
+  assert.deepEqual(historyCalls, ['REEL1', 'DOM1']);
+  assert.equal(persisted.length, 2);
+  assert.equal(persisted.at(-1).DOM1.views, 25);
+});
+
+test('legacy capture handoff delegates active saveItem before legacy cache/history side effects', () => {
+  const env = {};
+  const calls = [];
+  const stop = installLegacyCaptureHandoff({
+    env,
+    data: {
+      ingestPatch(shortcode, patch, options) {
+        calls.push({ shortcode, patch, options });
+        return { changed: true, item: { code: shortcode, views: patch.views } };
+      }
+    }
+  });
+  const result = env[LEGACY_CAPTURE_HOOK]({
+    shortcode: 'ABC123', patch: { views: 99 }, source: 'network', confidence: 'high'
+  });
+  assert.equal(result.item.views, 99);
+  assert.equal(calls[0].options.source, 'network');
+  stop();
+  assert.equal(env[LEGACY_CAPTURE_HOOK], undefined);
+
+  const start = legacyRuntimeSource.lastIndexOf('saveItem = function (code, patch, source, confidence)');
+  const end = legacyRuntimeSource.indexOf('rememberObject = function', start);
+  const activeSaveItem = legacyRuntimeSource.slice(start, end);
+  assert.match(activeSaveItem, /window\.__RI32_CAPTURE_PATCH__/);
+  assert.ok(activeSaveItem.indexOf('__RI32_CAPTURE_PATCH__') < activeSaveItem.indexOf('scheduleStoreWrite()'));
+  assert.match(mainSource, /installLegacyCaptureHandoff\(\{ env: globalThis, data \}\)/);
 });

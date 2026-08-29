@@ -1,11 +1,9 @@
 import { extractInstagramMedia } from './extractor.js';
 import { createVerifiedStore } from '../store/verified-store.js';
 
-export function createDataEngine({ legacyAdapter, history, now = () => Date.now() } = {}) {
-  const verified = createVerifiedStore({
-    initialItems: legacyAdapter?.getItemsSnapshot?.() || {},
-    now
-  });
+export function createDataEngine({ legacyAdapter, history, persistence, now = () => Date.now(), onChange } = {}) {
+  const initialItems = persistence?.load?.() || legacyAdapter?.getItemsSnapshot?.() || {};
+  const verified = createVerifiedStore({ initialItems, now });
 
   function syncLegacy() {
     const snapshot = legacyAdapter?.getItemsSnapshot?.();
@@ -13,13 +11,36 @@ export function createDataEngine({ legacyAdapter, history, now = () => Date.now(
     return verified.replaceSnapshot(snapshot);
   }
 
+  function applyPatch(shortcode, patch = {}, { source = 'dom', confidence } = {}) {
+    const result = verified.upsert(shortcode, patch, { source, confidence });
+    if (!result.item) return null;
+    const post = verified.getPost(shortcode);
+    const identity = verified.getIdentity(shortcode);
+    if (result.changed) {
+      history?.record?.(post);
+      persistence?.schedule?.(verified.snapshot());
+      if (typeof onChange === 'function') onChange({ shortcode, identity, post, item: result.item });
+    }
+    return { identity, post, item: result.item, changed: result.changed };
+  }
+
+  function ingestPatch(shortcode, patch = {}, options = {}) {
+    return applyPatch(shortcode, patch, options);
+  }
+
   function ingest(input, { pageUrl = '', source = 'network', confidence } = {}) {
     const extracted = extractInstagramMedia(input, { pageUrl });
     if (!extracted?.shortcode) return null;
-    const result = verified.upsert(extracted.shortcode, extracted.patch, { source, confidence });
-    const post = verified.getPost(extracted.shortcode);
-    if (result.changed) history?.record?.(post);
-    return { identity: verified.getIdentity(extracted.shortcode), post, changed: result.changed };
+    return applyPatch(extracted.shortcode, extracted.patch, { source, confidence });
+  }
+
+  function flush() {
+    return persistence?.flush?.(verified.snapshot()) ?? false;
+  }
+
+  function destroy() {
+    flush();
+    persistence?.destroy?.();
   }
 
   return {
@@ -30,6 +51,9 @@ export function createDataEngine({ legacyAdapter, history, now = () => Date.now(
     getAccountPosts: history?.getAccountPosts,
     syncLegacy,
     ingest,
+    ingestPatch,
+    flush,
+    destroy,
     snapshot: verified.snapshot
   };
 }

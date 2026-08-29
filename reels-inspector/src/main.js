@@ -5,8 +5,10 @@ import { detectCapabilities } from './core/capability.js';
 import { createDataEngine } from './data/engine.js';
 import { createSettingsStore } from './store/settings-store.js';
 import { createHistoryStore } from './store/history-store.js';
+import { createVerifiedCacheStore, VERIFIED_CACHE_KEY } from './store/verified-cache-store.js';
 import { createDownloadManager } from './media/download-manager.js';
 import { createMetricsEngine } from './metrics/metrics.js';
+import { installLegacyCaptureHandoff } from './migration/capture-handoff.js';
 import { createLegacyStoreAdapter } from './migration/legacy-store-adapter.js';
 import { createReelContextAdapter } from './migration/reel-context-adapter.js';
 import { mountActivityIndicator } from './ui/activity-indicator.js';
@@ -36,8 +38,21 @@ const downloads = createDownloadManager({
   }
 });
 const history = createHistoryStore({ env: globalThis });
+const verifiedCache = createVerifiedCacheStore({ env: globalThis });
 const legacyStore = createLegacyStoreAdapter({ env: globalThis, history });
-const data = createDataEngine({ legacyAdapter: legacyStore, history });
+const data = createDataEngine({
+  legacyAdapter: legacyStore,
+  history,
+  persistence: verifiedCache,
+  onChange(change) {
+    app.emit(EVENTS.STORE_CHANGED, {
+      reason: 'data-engine',
+      changedKeys: [VERIFIED_CACHE_KEY],
+      shortcode: change.shortcode
+    });
+  }
+});
+const stopCaptureHandoff = installLegacyCaptureHandoff({ env: globalThis, data });
 const reelContext = createReelContextAdapter({ store: legacyStore, doc: document, env: globalThis });
 const metrics = createMetricsEngine({ history });
 const workspace = createWorkspaceState();
@@ -91,6 +106,8 @@ const activityIndicator = mountActivityIndicator({
 app.services.layout = layout;
 app.adapters.stopRouteTracking = stopRouteTracking;
 app.adapters.stopStoreTracking = () => storeTracker.destroy();
+app.adapters.stopCaptureHandoff = stopCaptureHandoff;
+app.adapters.stopData = () => data.destroy();
 app.adapters.stopLayout = () => layout.destroy();
 app.adapters.grid = grid;
 app.adapters.riPanel = riPanel;
