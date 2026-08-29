@@ -61,7 +61,7 @@ scope 내부 shortcode
 - architecture/syntax: **success**
 - source files: **26**
 - architecture warnings: **0**
-- canonical docs: **27,145 bytes**
+- canonical docs: **27,012 bytes**
 - generated userscript: current
 
 문서 version drift는 제거했습니다. Runtime version은 이제 `src/version.js ↔ generated userscript ↔ STATUS.md`만 동기화하며, canonical 문서 변경도 CI를 실행합니다.
