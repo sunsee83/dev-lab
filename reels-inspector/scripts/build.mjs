@@ -2,7 +2,7 @@ import { build } from 'esbuild';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VERSION } from '../src/version.js';
+import { VERSION, UPDATE_URL } from '../src/version.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -13,7 +13,15 @@ const legacySource = await readFile(legacyPath, 'utf8');
 const metaMatch = legacySource.match(/^\/\/ ==UserScript==[\s\S]*?^\/\/ ==\/UserScript==/m);
 if (!metaMatch) throw new Error('Userscript metadata block not found in src/legacy-runtime.js');
 if (!VERSION) throw new Error('VERSION is empty');
-const metadata = metaMatch[0].replace(/^\/\/ @version\s+[^\s]+\s*$/m, `// @version      ${VERSION}`);
+if (!UPDATE_URL) throw new Error('UPDATE_URL is empty');
+
+const metadata = metaMatch[0]
+  .replace(/^\/\/ @version\s+[^\s]+\s*$/m, `// @version      ${VERSION}`)
+  .replace(/^\/\/ @updateURL\s+[^\s]+\s*$/m, `// @updateURL    ${UPDATE_URL}`)
+  .replace(/^\/\/ @downloadURL\s+[^\s]+\s*$/m, `// @downloadURL  ${UPDATE_URL}`);
+
+if (!metadata.includes(`// @updateURL    ${UPDATE_URL}`)) throw new Error('Userscript @updateURL metadata missing');
+if (!metadata.includes(`// @downloadURL  ${UPDATE_URL}`)) throw new Error('Userscript @downloadURL metadata missing');
 
 const result = await build({
   absWorkingDir: root,
