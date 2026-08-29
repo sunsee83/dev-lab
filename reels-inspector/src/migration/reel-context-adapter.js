@@ -61,11 +61,17 @@ export function resolveReelShortcode({ scopedCode = '', mediaCode = '', urlCode 
 
 export function parseMetricCount(text) {
   const source = String(text || '').replace(/\u00a0/g, ' ');
-  const match = source.match(/([0-9]+(?:[.,][0-9]+)?)\s*(억|만|천|[KMBkmb])?/);
+  const match = source.match(/((?:[0-9]{1,3}(?:,[0-9]{3})+)|(?:[0-9]+(?:[.,][0-9]+)?))\s*(억|만|천|[KMBkmb])?/);
   if (!match) return undefined;
-  let number = Number(match[1].replace(',', '.'));
-  if (!Number.isFinite(number) || number < 0) return undefined;
+  const raw = match[1];
   const unit = match[2] || '';
+  let normalized = raw;
+  if (/^[0-9]{1,3}(?:,[0-9]{3})+$/.test(raw)) normalized = raw.replaceAll(',', '');
+  else if (raw.includes(',') && !raw.includes('.')) normalized = raw.replace(',', '.');
+  else normalized = raw.replaceAll(',', '');
+
+  let number = Number(normalized);
+  if (!Number.isFinite(number) || number < 0) return undefined;
   if (unit === '천' || /k/i.test(unit)) number *= 1000;
   else if (unit === '만') number *= 10000;
   else if (unit === '억') number *= 100000000;
