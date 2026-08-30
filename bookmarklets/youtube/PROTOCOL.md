@@ -12,6 +12,7 @@
 - UI 초기화 시 실제 미디어 URL은 전달하지 않는다.
 - 영상/음성 선택지는 현재 실행에서만 유효한 임시 ID를 사용한다.
 - API 키, 비밀번호, OAuth 토큰, 세션 토큰, 인증 쿠키를 메시지에 넣지 않는다.
+- 데이터 결과에는 인증정보/세션값/미디어 스트림 URL을 포함하지 않는다.
 
 ---
 
@@ -52,7 +53,9 @@
 
 영상/음성의 `id`는 실제 URL이 아니라 코어 내부 후보표를 가리키는 임시 ID다.
 
-현재 검증된 저장 방식은 `showSaveFilePicker()` → 미디어 `fetch` → `response.body.pipeTo(await handle.createWritable())` 흐름이다.
+현재 검증된 로컬 미디어 저장 방식은 `showSaveFilePicker()` → 미디어 `fetch` → `response.body.pipeTo(await handle.createWritable())` 흐름이다.
+
+`data`가 포함되면 코어는 `fields`에 들어 있는 항목만 조사한다. 댓글은 `comments.count`와 `comments.sort`를 사용한다.
 
 ## Drive 저장 요청
 
@@ -65,7 +68,11 @@
   target: 'drive',
   video: { id: 'video-option-id' },
   audio: { id: 'audio-option-id' },
-  data: { fields: [], format: 'original' },
+  data: {
+    fields: [],
+    format: 'original' | 'txt' | 'json',
+    comments: { count: 100, sort: 'top' | 'newest' }
+  },
   drive: {
     file: '',
     sheet: '',
@@ -91,9 +98,13 @@
 
 영상과 음성을 함께 선택하면 항목별로 `YT_TOOL_DRIVE_MEDIA`를 한 번씩 보낼 수 있다.
 
-### Drive 버튼 오류 보고
+### 데이터 처리
 
-Google 공식 버튼 자체를 준비하지 못한 경우 UI가 코어에 다음 메시지를 보낼 수 있다.
+`types`에 `data`가 있으면 코어는 선택된 필드만 조사하고 완료 후 `YT_TOOL_DATA_RESULT`를 반환한다.
+
+영상/음성 저장과 데이터 추출은 독립적으로 처리한다.
+
+### Drive 버튼 오류 보고
 
 ```js
 {
@@ -156,12 +167,8 @@ Google 공식 버튼 자체를 준비하지 못한 경우 UI가 코어에 다음
     views: ''
   },
   media: {
-    video: [
-      { id:'v1', label:'360p' }
-    ],
-    audio: [
-      { id:'a1', label:'최고 음질' }
-    ]
+    video: [{ id:'v1', label:'360p' }],
+    audio: [{ id:'a1', label:'최고 음질' }]
   },
   drive: {
     files: [],
@@ -183,11 +190,50 @@ Google 공식 버튼 자체를 준비하지 못한 경우 UI가 코어에 다음
   state: 'ready' | 'working' | 'success' | 'error',
   message: '표시할 문구',
   item: 'video' | 'audio' | 'data' | null,
+  field: 'transcript' | 'comments' | null,
   setup: false
 }
 ```
 
 복수 선택 저장에서는 항목별 상태를 순서대로 보낼 수 있다.
+
+## 데이터 결과
+
+```js
+{
+  type: 'YT_TOOL_DATA_RESULT',
+  token,
+  videoId: '현재 영상 ID',
+  requested: ['thumbnail', 'title', 'transcript', 'comments'],
+  result: {
+    thumbnail: 'https://...',
+    title: '영상 제목',
+    transcript: {
+      language: 'ko',
+      languageName: '한국어',
+      text: '전체 대본',
+      segments: []
+    },
+    comments: []
+  },
+  errors: {
+    comments: '댓글을 가져오지 못했습니다.'
+  },
+  complete: true
+}
+```
+
+규칙:
+
+- `requested`에는 실제 요청된 필드만 들어간다.
+- `result`에는 확보된 필드만 들어간다.
+- 특정 필드 실패 시 다른 필드 결과는 유지한다.
+- `errors`는 실패한 필드별 사유만 담는다.
+- 요청하지 않은 필드는 결과에 추가하지 않는다.
+- `rawMetadata`를 반환할 때는 인증/세션/미디어 URL/추적 URL을 제거한다.
+- UI는 결과를 실행 메모리에만 보관하고 자동 영구 저장하지 않는다.
+
+상세 데이터 형식은 `DATA_EXTRACT_FLOW.md`를 따른다.
 
 ## Drive 미디어 일시 전달
 
@@ -254,7 +300,7 @@ Google 공식 버튼 자체를 준비하지 못한 경우 UI가 코어에 다음
 
 # 3. 실패 분리
 
-영상/음성/데이터를 독립적으로 처리한다.
+영상/음성/데이터와 데이터 내부 필드를 가능한 한 독립적으로 처리한다.
 
 예:
 
@@ -262,7 +308,8 @@ Google 공식 버튼 자체를 준비하지 못한 경우 UI가 코어에 다음
 - 음성 후보 없음 → 영상 저장은 계속 가능
 - Google Save to Drive 버튼 로드 실패 → 로컬 저장에는 영향 없음
 - GoogleVideo CORS 문제 → 해당 Drive 저장만 실패 처리
-- 데이터 기능 미구현/실패 → 영상·음성 저장에는 영향 없음
+- 대본 실패 + 기본정보 성공 → 기본정보 결과 유지
+- 댓글 실패 + 대본 성공 → 대본 결과 유지
 
 사용자가 파일 선택창을 취소한 경우에는 다른 오류와 구분하여 `취소됨` 상태로 처리한다.
 
@@ -274,4 +321,5 @@ Google 공식 버튼 자체를 준비하지 못한 경우 UI가 코어에 다음
 - 북마클릿 코어 역할: `CORE_SPEC.md`
 - 로컬 저장 연결: `LOCAL_SAVE_FLOW.md`
 - Drive 미디어 1차 연결: `DRIVE_SAVE_FLOW.md`
+- 데이터 추출 연결: `DATA_EXTRACT_FLOW.md`
 - 통신 형식: 이 문서
