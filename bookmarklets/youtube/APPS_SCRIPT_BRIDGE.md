@@ -1,62 +1,31 @@
-# Apps Script 연결 규격
+# Apps Script 연결
 
-## 창 연결
+웹앱:
+`https://script.google.com/macros/s/AKfycbxNvYE5AxCJ_9yNI_mS1GKOrRMBX6Qy3_u9CkUvNyiyOM0aof_CNaUDa0lEGHDFCdsa/exec`
 
-북마클릿/UI가 배포된 Apps Script 웹앱을 새 창으로 엽니다.
+## 연결
+
+YouTube 페이지의 북마클릿 코어가 새 창으로 엽니다.
 
 ```text
 웹앱URL?origin=<YouTube origin>&token=<실행 token>
 ```
 
-웹앱 → opener:
-
 ```js
-{ type:'YT_GAS_READY', token }
+// GAS → YouTube
+{type:'YT_GAS_READY',token}
+
+// YouTube → GAS
+{type:'YT_GAS_REQUEST',token,requestId,request:{action,payload}}
+
+// GAS → YouTube
+{type:'YT_GAS_RESPONSE',token,requestId,result:{ok,data?,error?}}
 ```
 
-요청:
+허용 action:
+`ping`, `get-state`, `connect-file`, `unlink-file`, `list-sheets`, `create-sheet`, `list-categories`, `add-category`, `check-duplicate`, `save-record`
 
-```js
-{
-  type:'YT_GAS_REQUEST',
-  token,
-  requestId,
-  request:{ action, payload }
-}
-```
-
-응답:
-
-```js
-{
-  type:'YT_GAS_RESPONSE',
-  token,
-  requestId,
-  result:{ ok, data?, error? }
-}
-```
-
-## 허용 action
-
-```text
-ping
-get-state
-connect-file
-unlink-file
-list-sheets
-create-sheet
-list-categories
-add-category
-check-duplicate
-save-record
-```
-
-## save-record 핵심
-
-- `record`: 실제 수집 성공한 원본 필드만 보냄
-- `management`: 사용자가 변경한 관리값만 보냄
-- 빈값은 기존값 보존
-- 실제 삭제는 `clearManagement:[필드명]`으로 명시
-- 중복 기준: 영상 ID
-
-API 키·OAuth token·쿠키는 메시지에 넣지 않습니다.
+- Google 창의 `opener`는 반드시 YouTube 페이지여야 합니다.
+- token/requestId가 맞는 응답만 처리합니다.
+- API 키·OAuth token·쿠키는 전달/저장하지 않습니다.
+- 먼저 Android Whale에서 `READY → ping` 1회만 검증합니다.
