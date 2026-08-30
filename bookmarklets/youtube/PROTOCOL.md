@@ -13,6 +13,7 @@
 - 영상/음성 선택지는 현재 실행에서만 유효한 임시 ID를 사용한다.
 - API 키, 비밀번호, OAuth 토큰, 세션 토큰, 인증 쿠키를 메시지에 넣지 않는다.
 - 데이터 결과에는 인증정보/세션값/미디어 스트림 URL을 포함하지 않는다.
+- 로컬 데이터 저장용 `FileSystemFileHandle`은 UI 메모리에만 두며 메시지로 전달하지 않는다.
 
 ---
 
@@ -55,7 +56,23 @@
 
 현재 검증된 로컬 미디어 저장 방식은 `showSaveFilePicker()` → 미디어 `fetch` → `response.body.pipeTo(await handle.createWritable())` 흐름이다.
 
-`data`가 포함되면 코어는 `fields`에 들어 있는 항목만 조사한다. 댓글은 `comments.count`와 `comments.sort`를 사용한다.
+### 로컬 데이터 저장
+
+`data`가 선택된 경우 UI는 `save-local` 메시지를 보내기 **전에** 사용자 클릭 시점에서 데이터용 `showSaveFilePicker()`를 실행한다.
+
+이 순서는 비동기 데이터 추출 후 사용자 동작 권한을 잃는 문제를 피하기 위한 것이다.
+
+1. `[저장]` 클릭
+2. UI에서 데이터용 파일 핸들 선택
+3. `save-local` 요청
+4. 코어가 `data.fields`에 있는 항목만 조사
+5. 코어가 `YT_TOOL_DATA_RESULT` 반환
+6. UI가 `data.format`에 따라 `원문 / TXT / JSON`으로 변환
+7. UI가 미리 선택한 파일 핸들에 결과 기록
+
+파일 핸들은 코어로 보내지 않는다.
+
+댓글은 `data.comments.count`와 `data.comments.sort`를 사용한다.
 
 ## Drive 저장 요청
 
@@ -101,6 +118,8 @@
 ### 데이터 처리
 
 `types`에 `data`가 있으면 코어는 선택된 필드만 조사하고 완료 후 `YT_TOOL_DATA_RESULT`를 반환한다.
+
+Drive/Sheets에 실제 기록하는 동작은 후속 단계에서 이 데이터 결과를 사용한다.
 
 영상/음성 저장과 데이터 추출은 독립적으로 처리한다.
 
@@ -231,9 +250,11 @@
 - `errors`는 실패한 필드별 사유만 담는다.
 - 요청하지 않은 필드는 결과에 추가하지 않는다.
 - `rawMetadata`를 반환할 때는 인증/세션/미디어 URL/추적 URL을 제거한다.
-- UI는 결과를 실행 메모리에만 보관하고 자동 영구 저장하지 않는다.
+- UI는 결과를 현재 실행 메모리에만 보관한다.
+- 로컬 데이터 저장이면 UI가 미리 확보한 파일 핸들에 결과를 기록한다.
+- 출력 형식 변환은 공개 UI의 일반 로직이 담당한다.
 
-상세 데이터 형식은 `DATA_EXTRACT_FLOW.md`를 따른다.
+출력 규칙은 `DATA_OUTPUT_FLOW.md`, 상세 데이터 형식은 `DATA_EXTRACT_FLOW.md`를 따른다.
 
 ## Drive 미디어 일시 전달
 
@@ -310,8 +331,9 @@
 - GoogleVideo CORS 문제 → 해당 Drive 저장만 실패 처리
 - 대본 실패 + 기본정보 성공 → 기본정보 결과 유지
 - 댓글 실패 + 대본 성공 → 대본 결과 유지
+- 데이터 파일 쓰기 실패 → 영상/음성 저장 결과 유지
 
-사용자가 파일 선택창을 취소한 경우에는 다른 오류와 구분하여 `취소됨` 상태로 처리한다.
+사용자가 데이터 파일 선택창을 취소하면 저장 요청 자체를 시작하지 않고 `데이터 저장 취소됨`으로 처리한다.
 
 ---
 
@@ -319,7 +341,8 @@
 
 - 화면 구조: `UI_SPEC.md`
 - 북마클릿 코어 역할: `CORE_SPEC.md`
-- 로컬 저장 연결: `LOCAL_SAVE_FLOW.md`
+- 로컬 미디어 저장 연결: `LOCAL_SAVE_FLOW.md`
 - Drive 미디어 1차 연결: `DRIVE_SAVE_FLOW.md`
 - 데이터 추출 연결: `DATA_EXTRACT_FLOW.md`
+- 데이터 출력/로컬 저장: `DATA_OUTPUT_FLOW.md`
 - 통신 형식: 이 문서
