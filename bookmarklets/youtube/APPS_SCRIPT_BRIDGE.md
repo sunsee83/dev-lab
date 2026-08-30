@@ -1,13 +1,24 @@
 # Apps Script 브리지
 
-이 문서는 **모바일 북마클릿 코어 ↔ Apps Script 웹앱 통신 규격과 북마클릿 쪽 기준 구현**을 정의합니다.
+이 문서는 **모바일 북마클릿 코어 ↔ 독립형 Apps Script 웹앱** 통신 규격을 정의합니다.
 
-## 1. 고정 엔드포인트
+## 1. Apps Script 위치
 
-Apps Script 웹앱 주소:
+최종 Apps Script는 특정 Google Sheets에 붙어 있는 바인딩 스크립트가 아니라 **독립형 프로젝트**입니다.
 
 ```text
-https://script.google.com/macros/s/AKfycbxNvYE5AxCJ_9yNI_mS1GKOrRMBX6Qy3_u9CkUvNyiyOM0aof_CNaUDa0lEGHDFCdsa/exec
+독립형 Apps Script 프로젝트
+유튜브다운로드 v1
+├─ Transport.gs
+└─ Code.gs
+```
+
+사용자 Google Sheets는 이 프로젝트의 부모 파일이 아니라 `SpreadsheetApp.openById(...)`로 여는 데이터 저장 대상입니다.
+
+## 2. 모바일 북마크에 들어가는 공용 엔드포인트
+
+```text
+https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec
 ```
 
 정확한 배치 위치:
@@ -15,43 +26,44 @@ https://script.google.com/macros/s/AKfycbxNvYE5AxCJ_9yNI_mS1GKOrRMBX6Qy3_u9CkUvN
 ```text
 Android 모바일 브라우저 북마크
 → URL 칸의 javascript: 북마클릿
-→ 북마클릿 JavaScript 내부 GAS_WEBAPP_URL 상수
+→ JavaScript 내부 GAS_WEBAPP_URL 상수
 ```
 
 ```js
-const GAS_WEBAPP_URL='https://script.google.com/macros/s/AKfycbxNvYE5AxCJ_9yNI_mS1GKOrRMBX6Qy3_u9CkUvNyiyOM0aof_CNaUDa0lEGHDFCdsa/exec';
+const GAS_WEBAPP_URL='https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec';
 ```
 
-이 값은 공용 Apps Script 엔드포인트입니다. 개인 Google Sheets URL은 이 상수에 넣지 않습니다.
+이 값은 공용 Apps Script 주소입니다. 개인 Google Sheets URL은 이 상수에 넣지 않습니다.
 
-## 2. 전송 구조
+## 3. 전송 구조
 
 ```text
 YouTube 페이지의 북마클릿 코어
 → 숨은 iframe 생성
 → form POST를 GAS_WEBAPP_URL로 전송
 → Transport.gs / doPost(e)
-→ Apps Script 처리
-→ iframe HTML 응답
+→ Code.gs / dispatch(...)
+→ Apps Script HTML 응답
 → window.top.postMessage(...)
-→ YouTube 페이지의 북마클릿 코어가 결과 수신
+→ 원래 YouTube 페이지의 북마클릿 코어가 결과 수신
 ```
 
-브리지 데이터 요청에는 `window.opener`를 사용하지 않습니다.
+실제 데이터 요청에는 `window.opener`를 사용하지 않습니다.
 
-## 3. Google 권한 승인
+## 4. Google 권한 승인
 
-처음 사용하는 계정은 Apps Script 권한 승인이 필요합니다.
+처음 사용하는 Google 계정은 새 독립형 Apps Script 프로젝트에 대해 권한 승인을 한 번 진행합니다.
 
-설정 UI의 `Google 계정으로 계속` 동작은 북마클릿 코어가 `GAS_WEBAPP_URL`을 일반 창으로 한 번 열어 Google 승인 화면을 진행하게 합니다.
+```text
+설정 UI의 Google 계정으로 계속
+→ 북마클릿이 GAS_WEBAPP_URL을 일반 창으로 열기
+→ Google 승인
+→ 이후 실제 요청은 숨은 iframe + POST 사용
+```
 
-승인 후 실제 데이터 요청은 다시 **숨은 iframe + POST** 경로를 사용합니다.
-
-## 4. 브리지 세션
+## 5. 브리지 세션
 
 각 북마클릿 실행마다 임의 `token`을 생성합니다.
-
-Apps Script 호출은 2단계입니다.
 
 ```text
 init
@@ -67,9 +79,7 @@ request
 - 사용자별 분리
 - OAuth access/refresh token을 북마클릿에 전달하지 않음
 
-## 5. 북마클릿 코어 기준 구현
-
-아래 `createGasBridge()`가 최종 북마클릿에 들어갈 **Apps Script 통신 기준 구현**입니다.
+## 6. 북마클릿 코어 기준 구현
 
 ```js
 function createGasBridge(GAS_WEBAPP_URL,token){
@@ -177,7 +187,7 @@ function createGasBridge(GAS_WEBAPP_URL,token){
 }
 ```
 
-사용:
+사용 예:
 
 ```js
 const gas=createGasBridge(GAS_WEBAPP_URL,token);
@@ -185,11 +195,7 @@ const state=await gas.call('get-state',{});
 const sheets=await gas.call('list-sheets',{fileId});
 ```
 
-이 구현은 Android Whale에서 성공한 **숨은 iframe + form POST** 구조를 그대로 사용합니다.
-
-응답은 임의 `token`과 `requestId`로 연결합니다. Apps Script HTML Service의 내부 sandbox frame 구조는 브라우저에 따라 달라질 수 있으므로 `event.source`를 특정 iframe으로 고정하는 것을 필수 조건으로 두지 않습니다.
-
-## 6. POST 형식
+## 7. POST 형식
 
 ### init
 
@@ -198,20 +204,6 @@ mode=init
 origin=<현재 YouTube origin>
 token=<실행 token>
 requestId=<요청 ID>
-```
-
-응답:
-
-```js
-{
-  type:'YT_GAS_RESPONSE',
-  token,
-  requestId,
-  result:{
-    ok:true,
-    data:{bridgeNonce,version}
-  }
-}
 ```
 
 ### request
@@ -231,7 +223,17 @@ request=<JSON 문자열>
 {action:'list-sheets',payload:{fileId}}
 ```
 
-## 7. 허용 action
+응답 연결 기준:
+
+```text
+YT_GAS_RESPONSE
+token 일치
+requestId 일치
+```
+
+Apps Script HTML Service의 내부 sandbox frame 구조는 브라우저에 따라 달라질 수 있으므로 `event.source`를 특정 iframe으로 고정하지 않습니다.
+
+## 8. 허용 GAS action
 
 ```text
 ping
@@ -246,7 +248,7 @@ check-duplicate
 save-record
 ```
 
-## 8. UI action과 GAS action 연결
+## 9. UI action → GAS action
 
 ```text
 Google 계정으로 계속
@@ -272,7 +274,7 @@ Google 계정으로 계속
 → save-record
 ```
 
-## 9. 초기 실행 시 상태 복원
+## 10. 초기 상태 복원
 
 ```text
 get-state
@@ -286,18 +288,18 @@ get-state
 
 연결 파일이 없으면 설정 화면을 표시합니다.
 
-## 10. 개인 Sheets 연결
+## 11. 개인 Sheets 연결
 
 ```text
 설정 UI에서 사용자가 자기 Sheets URL 입력
 → connect-file payload
 → Apps Script가 Spreadsheet ID 추출/검증
-→ 사용자별 UserProperties에 파일 ID/이름 저장
+→ 사용자별 UserProperties에 연결 파일 정보 저장
 ```
 
-공용 `GAS_WEBAPP_URL`과 사용자 개인 `sheetUrl`은 완전히 다른 값입니다.
+공용 `GAS_WEBAPP_URL`과 개인 `sheetUrl`은 서로 다른 값입니다.
 
-## 11. 서버 파일 책임
+## 12. 파일 책임
 
 ```text
 apps-script/Transport.gs
