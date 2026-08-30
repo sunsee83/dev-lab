@@ -2,18 +2,26 @@
 
 이 문서는 **모바일 북마클릿 코어 ↔ 독립형 Apps Script 웹앱** 통신 규격을 정의합니다.
 
-## 1. Apps Script 위치
+## 1. 이름 체계
+
+```text
+모바일 북마클릿 이름  유튜브다운로드
+Apps Script 프로젝트  유튜브다운로드앱_v1
+Google Sheets 파일     유튜브다운로드sheet_v1
+```
+
+## 2. Apps Script 위치
 
 최종 Apps Script는 특정 Google Sheets에 붙어 있는 바인딩 스크립트가 아니라 **독립형 프로젝트**입니다.
 
 ```text
 독립형 Apps Script 프로젝트
-유튜브다운로드 v1
+유튜브다운로드앱_v1
 ├─ Transport.gs
 └─ Code.gs
 ```
 
-## 2. 모바일 북마크의 공용 엔드포인트
+## 3. 모바일 북마크의 공용 엔드포인트
 
 ```text
 https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec
@@ -21,10 +29,10 @@ https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctP
 
 이 값은 `bookmarklet.js` 내부 `GAS_WEBAPP_URL`에 들어갑니다.
 
-## 3. 전송 구조
+## 4. 전송 구조
 
 ```text
-YouTube 페이지의 북마클릿
+YouTube 페이지의 유튜브다운로드 북마클릿
 → 숨은 iframe
 → form POST
 → Transport.gs / doPost(e)
@@ -38,13 +46,13 @@ YouTube 페이지의 북마클릿
 
 실제 데이터 요청에는 `window.opener`를 사용하지 않습니다.
 
-## 4. Google 권한 승인
+## 5. Google 권한 승인
 
-처음 사용하는 Google 계정은 독립형 Apps Script 프로젝트에 대해 권한 승인을 한 번 진행합니다.
+처음 사용하는 Google 계정은 `유튜브다운로드앱_v1`에 대해 권한 승인을 한 번 진행합니다.
 
 승인 후 실제 호출은 숨은 iframe + POST를 사용합니다.
 
-## 5. 브리지 세션
+## 6. 브리지 세션
 
 ```text
 init
@@ -60,7 +68,7 @@ request
 - 사용자별 분리
 - OAuth access/refresh token을 북마클릿에 전달하지 않음
 
-## 6. POST 형식
+## 7. POST 형식
 
 ### init
 
@@ -97,13 +105,13 @@ token 일치
 requestId 일치
 ```
 
-## 7. 최초 저장공간 자동 생성
+## 8. 최초 저장공간 자동 생성
 
 연결 파일이 없는 사용자는 `create-storage`를 호출합니다.
 
 ```text
 create-storage
-→ SpreadsheetApp.create('YouTube 수집')
+→ SpreadsheetApp.create('유튜브다운로드sheet_v1')
 → 첫 시트 이름을 '수집'으로 변경
 → 데이터 시트 형식 적용
 → '안내' 시트 생성
@@ -113,7 +121,7 @@ create-storage
 
 사용자는 최초 설정에서 Google Sheets URL을 입력하지 않습니다.
 
-## 8. action
+## 9. action
 
 ```text
 create-storage     최초 기본 Sheets 자동 생성
@@ -131,7 +139,7 @@ save-record        데이터 저장/업데이트
 
 `create-storage`는 최초 생성 진입을 위해 `Transport.gs`에서 처리하며 기존 Sheets 처리는 `Code.gs`의 action을 사용합니다.
 
-## 9. 이후 실행
+## 10. 이후 실행
 
 ```text
 get-state
@@ -144,7 +152,7 @@ get-state
 
 기존 Sheets 추가 연결이 필요한 경우에만 `connect-file {sheetUrl}`을 사용합니다.
 
-## 10. 파일 책임
+## 11. 파일 책임
 
 ```text
 apps-script/Transport.gs
