@@ -15,6 +15,7 @@
 {type:'YT_TOOL_READY',token}
 
 {type:'YT_TOOL_ACTION',token,action:'google-connect'}
+{type:'YT_TOOL_ACTION',token,action:'create-storage'}
 {type:'YT_TOOL_ACTION',token,action:'connect-file',sheetUrl}
 {type:'YT_TOOL_ACTION',token,action:'select-file',fileId}
 {type:'YT_TOOL_ACTION',token,action:'create-sheet',fileId,sheetName}
@@ -27,7 +28,9 @@
 {type:'YT_TOOL_ACTION',token,action:'close'}
 ```
 
-`sheetUrl`은 사용자가 설정 UI에서 입력한 개인 Google Sheets URL입니다. 공용 북마클릿 상수가 아닙니다.
+`create-storage`는 최초 사용자용 자동 생성입니다.
+
+`connect-file`은 자동 생성된 기본 파일 외에 **기존 Sheets를 추가 연결할 때만** 사용합니다.
 
 ## 3. 저장 payload
 
@@ -48,8 +51,6 @@
 }
 ```
 
-필요하지 않은 항목은 생략합니다.
-
 ## 4. 북마클릿 코어 → UI
 
 ```js
@@ -67,7 +68,8 @@
 | UI action | 북마클릿 코어 처리 | Apps Script action |
 |---|---|---|
 | `google-connect` | 권한 승인용으로 `GAS_WEBAPP_URL` 일반 창 열기 | 없음 |
-| `connect-file` | `gas.call` 실행 | `connect-file` |
+| `create-storage` | 최초 저장공간 자동 생성 | `create-storage` |
+| `connect-file` | 기존 Sheets 추가 연결 | `connect-file` |
 | `select-file` | 해당 파일 시트 조회 | `list-sheets` |
 | `select-sheet` | 해당 시트 카테고리 조회 | `list-categories` |
 | `create-sheet` | 시트 생성 후 목록 갱신 | `create-sheet` → `list-sheets` |
@@ -75,40 +77,47 @@
 | `save-drive`의 데이터 | 수집 결과를 Sheets 레코드로 저장 | `save-record` |
 | `open-file/open-sheet/open-existing` | 보유 URL을 브라우저에서 열기 | 없음 |
 
-## 6. 초기화
+## 6. 최초 초기화
 
 UI가 `YT_TOOL_READY`를 보내면 코어는 다음을 수행합니다.
 
 ```text
 1. 현재 YouTube 영상 정보/미디어 후보 준비
 2. Apps Script get-state
-3. 연결 파일이 있으면 defaultFileId 또는 첫 파일 선택
-4. list-sheets
-5. 첫 selectable 데이터 시트 선택
-6. list-categories
-7. YT_TOOL_INIT 전송
+3. 연결 파일이 없으면 create-storage
+4. 자동 생성 기본값
+   파일: YouTube 수집
+   시트: 수집
+   카테고리: 기본
+5. get-state 재조회
+6. defaultFileId 선택
+7. list-sheets
+8. list-categories
+9. YT_TOOL_INIT 전송
 ```
 
-`configured` 기준:
+사용자는 최초 설정에서 Sheets 링크를 입력하지 않습니다.
+
+## 7. 이후 실행
 
 ```text
-연결 파일 있음
-+ 선택 가능한 데이터 시트 있음
+get-state
+→ 연결 파일 있음
+→ defaultFileId
+→ list-sheets
+→ 기본/선택 시트
+→ list-categories
+→ 바로 본 화면
 ```
 
-조건을 만족하지 않으면 설정 화면을 표시합니다.
+## 8. 기존 파일 추가/시트/카테고리 갱신
 
-## 7. 파일/시트/카테고리 갱신
-
-### 파일 연결
+### 기존 파일 추가 연결
 
 ```text
 connect-file 성공
-→ 응답 file + sheets 반영
-→ 파일 목록은 get-state로 다시 동기화
-→ 첫 selectable 시트 선택
-→ list-categories
-→ YT_TOOL_OPTIONS 전송
+→ get-state 재동기화
+→ 연결된 파일 목록 반영
 ```
 
 ### 새 시트
@@ -118,7 +127,6 @@ create-sheet 성공
 → list-sheets
 → 생성된 시트 선택
 → list-categories
-→ YT_TOOL_OPTIONS 전송
 ```
 
 ### 새 카테고리
@@ -127,12 +135,9 @@ create-sheet 성공
 add-category 성공
 → 반환 categories 반영
 → 새 카테고리 선택
-→ YT_TOOL_OPTIONS 전송
 ```
 
-## 8. 데이터 Drive/Sheets 저장
-
-코어는 UI에서 선택된 데이터 필드만 수집한 뒤 Apps Script에 전달합니다.
+## 9. 데이터 Drive/Sheets 저장
 
 ```js
 await gas.call('save-record',{
@@ -140,32 +145,16 @@ await gas.call('save-record',{
   sheetName,
   videoId,
   record,
-  management:{
-    category,
-    purpose,
-    priority,
-    status,
-    tags,
-    memo,
-    aiSend
-  },
+  management:{category,purpose,priority,status,tags,memo,aiSend},
   duplicateMode
 })
 ```
 
-`record`에는 이번 실행에서 실제로 얻은 필드만 넣습니다. 누락/실패 필드는 보내지 않아 기존 Sheets 값이 보존되도록 합니다.
+`record`에는 이번 실행에서 실제로 얻은 필드만 넣습니다.
 
-`save-record`가 `status:'duplicate'`를 반환하면 코어는 저장하지 않고:
+`save-record`가 `status:'duplicate'`를 반환하면 UI에 중복 선택 화면을 표시합니다.
 
-```js
-{type:'YT_TOOL_DUPLICATE',token,duplicate:{rows:[...]}}
-```
-
-를 UI에 보냅니다. 사용자가 `업데이트` 또는 `새 기록 추가`를 선택한 뒤 다시 저장하면 `duplicateMode`를 포함해 재호출합니다.
-
-## 9. 로컬 데이터 저장
-
-로컬 데이터 저장 시 Apps Script는 사용하지 않습니다.
+## 10. 로컬 데이터 저장
 
 ```text
 UI save-local
@@ -174,7 +163,7 @@ UI save-local
 → ui.html이 사용자가 선택한 파일 핸들에 기록
 ```
 
-## 10. 영상/음성 저장
+## 11. 영상/음성 저장
 
 ```text
 로컬
@@ -184,5 +173,3 @@ Drive
 → 코어가 선택된 미디어 URL/파일명을 YT_TOOL_DRIVE_MEDIA로 UI에 일시 전달
 → UI가 Google 공식 Save to Drive 버튼 렌더링
 ```
-
-영상/음성 URL은 저장 실행 시점에만 사용하며 저장소나 문서에 기록하지 않습니다.
