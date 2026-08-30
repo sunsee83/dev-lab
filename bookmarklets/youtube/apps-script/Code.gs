@@ -1,13 +1,14 @@
-/* YouTube 수집도구 - Apps Script / SpreadsheetApp */
+/* 유튜브다운로드 - Apps Script / SpreadsheetApp */
 
 const APP_ = Object.freeze({
-  VERSION: '0.3.1',
+  VERSION: '0.4.0',
   STATE_KEY: 'ytCollector.state.v2',
   MAX_REQUEST_CHARS: 1000000,
   MAX_STATE_CHARS: 9000,
   MAX_FILES: 10,
   GUIDE_NAME: '안내',
-  GUIDE_TITLE: 'YouTube 수집도구 안내',
+  GUIDE_TITLE: '유튜브다운로드 안내',
+  CATEGORY_MARKER: 'YTDL_CATEGORY_V1',
   MAX_DATA_SHEETS: 10,
   MAX_ROWS: 2000,
   WARN_ROWS: 1800,
@@ -47,7 +48,7 @@ function doGet(e) {
   const p = e && e.parameter ? e.parameter : {};
   const origin = allowedOrigin_(p.origin);
   const token = sessionToken_(p.token);
-  return HtmlService.createHtmlOutput(bridgeHtml_(origin, token)).setTitle('YouTube 수집 - Google 연결');
+  return HtmlService.createHtmlOutput(bridgeHtml_(origin, token)).setTitle('유튜브다운로드 - Google 연결');
 }
 
 function dispatch(request) {
@@ -73,7 +74,7 @@ function dispatch(request) {
 }
 
 function limits_() {
-  return { maxFiles: 10, guideSheets: 1, maxDataSheets: 10, maxTotalSheets: 11, maxRows: 2000, warnRows: 1800 };
+  return { maxFiles: APP_.MAX_FILES, guideSheets: 1, maxDataSheets: APP_.MAX_DATA_SHEETS, maxTotalSheets: APP_.MAX_DATA_SHEETS + 1, maxRows: APP_.MAX_ROWS, warnRows: APP_.WARN_ROWS };
 }
 
 function connectFile_(p) {
@@ -121,10 +122,9 @@ function createSheet_(p) {
       if (fileCapacity_(ss).dataSheets >= APP_.MAX_DATA_SHEETS) fail_('SHEET_LIMIT', '데이터 시트는 최대 10개입니다.');
       sheet = ss.insertSheet(name);
       created = true;
-      initDataSheet_(sheet);
     }
     if (isGuide_(sheet)) fail_('GUIDE_RESERVED', '안내 시트에는 데이터를 저장할 수 없습니다.');
-    ensureCategoryGroup_(fileId, name);
+    ensureSchema_(sheet);
     return { created: created, sheet: publicSheet_(ss, sheet), capacity: fileCapacity_(ss) };
   });
 }
@@ -132,37 +132,33 @@ function createSheet_(p) {
 function listCategories_(p) {
   const fileId = linkedFileId_(p.fileId);
   const sheetName = dataSheetName_(p.sheetName);
-  getDataSheet_(openLinked_(fileId), sheetName);
-  const g = categoryGroup_(loadState_(), fileId, sheetName);
-  return { fileId: fileId, sheetName: sheetName, categories: g ? g.items.slice() : [] };
+  const ss = openLinked_(fileId);
+  getDataSheet_(ss, sheetName);
+  return { fileId: fileId, sheetName: sheetName, categories: categoriesFor_(ss, fileId, sheetName) };
 }
 
 function addCategory_(p) {
   const fileId = linkedFileId_(p.fileId);
   const sheetName = dataSheetName_(p.sheetName);
   const category = requiredText_(p.category, '카테고리', 60);
-  getDataSheet_(openLinked_(fileId), sheetName);
-  const lock = LockService.getUserLock();
-  if (!lock.tryLock(5000)) fail_('BUSY', '다른 작업이 진행 중입니다.');
-  try {
-    const state = loadState_();
-    let g = categoryGroup_(state, fileId, sheetName);
-    if (!g) { g = { fileId: fileId, sheetName: sheetName, items: [] }; state.categoryGroups.push(g); }
-    if (g.items.indexOf(category) < 0) {
-      if (g.items.length >= APP_.MAX_CATEGORIES) fail_('CATEGORY_LIMIT', '카테고리는 시트당 최대 30개입니다.');
-      g.items.push(category);
-      saveState_(state);
+  return locked_(function () {
+    const ss = openLinked_(fileId);
+    getDataSheet_(ss, sheetName);
+    const items = categoriesFor_(ss, fileId, sheetName);
+    if (items.indexOf(category) < 0) {
+      if (items.length >= APP_.MAX_CATEGORIES) fail_('CATEGORY_LIMIT', '카테고리는 시트당 최대 30개입니다.');
+      appendCategory_(ss, sheetName, category);
+      items.push(category);
     }
-    return { fileId: fileId, sheetName: sheetName, categories: g.items.slice() };
-  } finally { lock.releaseLock(); }
+    return { fileId: fileId, sheetName: sheetName, categories: items };
+  });
 }
 
 function checkDuplicate_(p) {
   const ss = openLinked_(p.fileId);
   const sheet = getDataSheet_(ss, dataSheetName_(p.sheetName));
   const videoId = videoId_(p.videoId);
-  if (sheet.getLastRow() === 0) return { found: false, rows: [], capacity: sheetCapacity_(sheet) };
-  assertSchema_(sheet);
+  ensureSchema_(sheet);
   const rows = videoRows_(sheet, videoId);
   return {
     found: rows.length > 0,
@@ -188,7 +184,7 @@ function saveRecord_(p) {
     ensureSchema_(sheet);
     const duplicates = videoRows_(sheet, videoId);
     if (duplicates.length && !mode) {
-      return { status: 'duplicate', duplicates: duplicates.map(function (r) { return { row: r, url: rangeUrl_(ss, sheet, 'B' + r) }; }), capacity: sheetCapacity_(sheet) };
+      return { status: 'duplicate', duplicates: duplicateLinks_(ss, sheet, duplicates), capacity: sheetCapacity_(sheet) };
     }
     if (mode === 'update') {
       let rowNumber = targetRow;
@@ -206,12 +202,17 @@ function saveRecord_(p) {
     }
     const cap = sheetCapacity_(sheet);
     if (cap.used >= APP_.MAX_ROWS) fail_('ROW_LIMIT', '이 시트는 2,000개 한도에 도달했습니다.');
-    const rowNumber = Math.max(sheet.getLastRow() + 1, 2);
+    const rowNumber = nextRecordRow_(sheet);
+    ensureRows_(sheet, rowNumber);
     const next = buildRow_(new Array(APP_.HEADERS.length).fill(''), videoId, record, management, clearManagement, true);
     sheet.getRange(rowNumber, 1, 1, APP_.HEADERS.length).setValues([next]);
     applyPresentation_(sheet, rowNumber, record, videoId, true);
     return { status: 'created', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet) };
   });
+}
+
+function duplicateLinks_(ss, sheet, rows) {
+  return rows.map(function (r) { return { row: r, url: rangeUrl_(ss, sheet, 'B' + r) }; });
 }
 
 function buildRow_(base, videoId, record, management, clearManagement, isNew) {
@@ -262,33 +263,80 @@ function ensureGuide_(ss) {
   let sheet = ss.getSheetByName(APP_.GUIDE_NAME);
   if (sheet) {
     const a1 = String(sheet.getRange('A1').getDisplayValue() || '').trim();
-    if (a1 && a1 !== APP_.GUIDE_TITLE) fail_('GUIDE_CONFLICT', '기존 안내 탭을 보호하기 위해 연결을 중단했습니다.');
+    if (a1 && a1 !== APP_.GUIDE_TITLE && a1 !== 'YouTube 수집도구 안내') fail_('GUIDE_CONFLICT', '기존 안내 탭을 보호하기 위해 연결을 중단했습니다.');
   } else {
     try { sheet = ss.insertSheet(APP_.GUIDE_NAME, 0); }
     catch (e) { fail_('FILE_NOT_WRITABLE', '안내 시트를 만들 수 없습니다.'); }
   }
   const rows = [
     [APP_.GUIDE_TITLE], [''],
-    ['저장 경로'], ['YouTube → 북마클릿 → Apps Script → 이 파일 → 선택한 데이터 시트'], [''],
+    ['저장 경로'], ['YouTube → 유튜브다운로드 → Apps Script → 이 파일 → 선택한 데이터 시트'], [''],
     ['데이터 구조'], ['• 가로 = 항목, 세로 = 영상 / 한 영상 = 한 행'], [''],
     ['제한'], ['• 안내 1개 + 데이터 시트 최대 10개'], ['• 시트당 최대 2,000개 / 1,800개부터 새 시트 권장'], ['• 2,000개부터 신규 추가 중지, 기존 기록 수정 가능'], [''],
     ['기본 규칙'], ['• 영상 ID로 중복 확인'], ['• 수집 실패 항목과 사용자 관리값은 기존값 보존'], ['• 수집일 유지 / 수정일 자동 갱신'], ['• 도구는 파일·시트·행을 자동 삭제하지 않음'],
     ['도구 버전: ' + APP_.VERSION]
   ];
-  sheet.clearContents();
+  const clearRows = Math.max(rows.length, Math.min(sheet.getMaxRows(), 40));
+  sheet.getRange(1, 1, clearRows, 1).clearContent();
   sheet.getRange(1, 1, rows.length, 1).setValues(rows).setWrap(true).setVerticalAlignment('top');
   ['A1', 'A3', 'A6', 'A9', 'A14'].forEach(function (a1) { sheet.getRange(a1).setFontWeight('bold'); });
   sheet.getRange('A1').setFontSize(16);
   sheet.setColumnWidth(1, 700);
   sheet.setFrozenRows(1);
   sheet.setHiddenGridlines(true);
+  ensureGuideCategoryMeta_(sheet);
+  try { sheet.hideColumns(3, 2); } catch (e) {}
   try { ss.setActiveSheet(sheet); ss.moveActiveSheet(1); }
   catch (e) { fail_('FILE_NOT_WRITABLE', '안내 시트를 첫 번째로 이동할 수 없습니다.'); }
   return sheet;
 }
 
+function ensureGuideCategoryMeta_(guide) {
+  if (String(guide.getRange(1, 3).getValue() || '') !== APP_.CATEGORY_MARKER) {
+    guide.getRange(1, 3, 1, 2).setValues([[APP_.CATEGORY_MARKER, '카테고리']]);
+  }
+}
+
+function categoriesFor_(ss, fileId, sheetName) {
+  const guide = ensureGuide_(ss);
+  const last = Math.max(guide.getLastRow(), 2);
+  const values = guide.getRange(2, 3, last - 1, 2).getDisplayValues();
+  const items = [];
+  values.forEach(function (r) {
+    if (String(r[0]).trim() !== sheetName) return;
+    const c = trim_(r[1], 60);
+    if (c && items.indexOf(c) < 0) items.push(c);
+  });
+  const legacy = categoryGroup_(loadState_(), fileId, sheetName);
+  if (legacy) {
+    legacy.items.forEach(function (c) {
+      if (items.indexOf(c) < 0 && items.length < APP_.MAX_CATEGORIES) {
+        appendCategory_(ss, sheetName, c);
+        items.push(c);
+      }
+    });
+  }
+  return items;
+}
+
+function appendCategory_(ss, sheetName, category) {
+  const guide = ensureGuide_(ss);
+  const max = Math.max(guide.getMaxRows(), 2);
+  const values = guide.getRange(2, 3, max - 1, 2).getDisplayValues();
+  for (let i = 0; i < values.length; i++) {
+    const s = String(values[i][0] || '').trim(), c = String(values[i][1] || '').trim();
+    if (s === sheetName && c === category) return;
+    if (!s && !c) {
+      guide.getRange(i + 2, 3, 1, 2).setValues([[sheetName, category]]);
+      return;
+    }
+  }
+  guide.insertRowsAfter(guide.getMaxRows(), 1);
+  guide.getRange(guide.getMaxRows(), 3, 1, 2).setValues([[sheetName, category]]);
+}
+
 function initDataSheet_(sheet) {
-  if (sheet.getLastRow() !== 0) return;
+  ensureRows_(sheet, APP_.MAX_ROWS + 1);
   sheet.getRange(1, 1, 1, APP_.HEADERS.length).setValues([APP_.HEADERS.slice()]).setFontWeight('bold').setWrap(true);
   sheet.setFrozenRows(1);
   sheet.setFrozenColumns(3);
@@ -309,10 +357,20 @@ function initDataSheet_(sheet) {
   sheet.getRange(2, indexes_()['AI 전송'] + 1, n, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().setAllowInvalid(false).build());
 }
 
-function ensureSchema_(sheet) { if (sheet.getLastRow() === 0) { initDataSheet_(sheet); return; } assertSchema_(sheet); }
-function assertSchema_(sheet) {
-  const actual = sheet.getRange(1, 1, 1, APP_.HEADERS.length).getDisplayValues()[0];
-  for (let i = 0; i < APP_.HEADERS.length; i++) if (actual[i] !== APP_.HEADERS[i]) fail_('SCHEMA_MISMATCH', '열 이름/순서가 달라 저장을 중단했습니다.');
+function ensureRows_(sheet, rowNumber) {
+  const max = sheet.getMaxRows();
+  if (max < rowNumber) sheet.insertRowsAfter(max, rowNumber - max);
+}
+
+function ensureSchema_(sheet) {
+  const header = sheet.getRange(1, 1, 1, APP_.HEADERS.length).getDisplayValues()[0];
+  if (header.every(function (x) { return String(x || '').trim() === ''; })) { initDataSheet_(sheet); return; }
+  assertSchema_(sheet, header);
+}
+
+function assertSchema_(sheet, actual) {
+  const row = actual || sheet.getRange(1, 1, 1, APP_.HEADERS.length).getDisplayValues()[0];
+  for (let i = 0; i < APP_.HEADERS.length; i++) if (row[i] !== APP_.HEADERS[i]) fail_('SCHEMA_MISMATCH', '열 이름/순서가 달라 저장을 중단했습니다.');
 }
 
 function applyPresentation_(sheet, rowNumber, record, videoId, isNew) {
@@ -336,22 +394,35 @@ function setLink_(range, text, url) {
   catch (e) { range.setValue(label); }
 }
 
+function videoIdRange_(sheet) {
+  ensureRows_(sheet, 2);
+  return sheet.getRange(2, indexes_()['영상 ID'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1);
+}
+
+function recordRows_(sheet) {
+  return videoIdRange_(sheet).createTextFinder('.+').useRegularExpression(true).findAll().map(function (c) { return c.getRow(); });
+}
+
 function videoRows_(sheet, videoId) {
-  const last = sheet.getLastRow();
-  if (last < 2) return [];
-  const col = indexes_()['영상 ID'] + 1;
-  return sheet.getRange(2, col, last - 1, 1).createTextFinder(videoId).matchEntireCell(true).useRegularExpression(false).findAll().map(function (c) { return c.getRow(); });
+  return videoIdRange_(sheet).createTextFinder(videoId).matchEntireCell(true).useRegularExpression(false).findAll().map(function (c) { return c.getRow(); });
+}
+
+function nextRecordRow_(sheet) {
+  const used = {};
+  recordRows_(sheet).forEach(function (r) { used[r] = true; });
+  for (let r = 2; r <= APP_.MAX_ROWS + 1; r++) if (!used[r]) return r;
+  fail_('ROW_LIMIT', '이 시트는 2,000개 한도에 도달했습니다.');
 }
 
 function sheetCapacity_(sheet) {
-  const used = Math.max(0, sheet.getLastRow() - 1);
+  const used = recordRows_(sheet).length;
   return { used: used, max: APP_.MAX_ROWS, warningAt: APP_.WARN_ROWS, nearLimit: used >= APP_.WARN_ROWS, full: used >= APP_.MAX_ROWS };
 }
 
 function fileCapacity_(ss) {
   const all = ss.getSheets();
   const data = all.filter(function (s) { return !isGuide_(s); }).length;
-  return { totalSheets: all.length, dataSheets: data, maxDataSheets: 10, maxTotalSheets: 11, full: data >= 10, overLimit: data > 10 || all.length > 11 };
+  return { totalSheets: all.length, dataSheets: data, maxDataSheets: APP_.MAX_DATA_SHEETS, maxTotalSheets: APP_.MAX_DATA_SHEETS + 1, full: data >= APP_.MAX_DATA_SHEETS, overLimit: data > APP_.MAX_DATA_SHEETS || all.length > APP_.MAX_DATA_SHEETS + 1 };
 }
 
 function sheetList_(ss) { return ss.getSheets().map(function (s) { return publicSheet_(ss, s); }); }
@@ -388,12 +459,12 @@ function channelIdSoft_(value) { const id = String(value || '').trim(); return /
 function dataSheetName_(value) { const s = requiredText_(value, '시트 이름', 100); if (s === APP_.GUIDE_NAME || /[\\\/\?\*\[\]:]/.test(s)) fail_('INVALID_SHEET_NAME', '사용할 수 없는 시트 이름입니다.'); return s; }
 
 function categoryGroup_(state, fileId, sheetName) { return state.categoryGroups.find(function (g) { return g.fileId === fileId && g.sheetName === sheetName; }) || null; }
-function ensureCategoryGroup_(fileId, sheetName) { const state = loadState_(); if (!categoryGroup_(state, fileId, sheetName)) { state.categoryGroups.push({ fileId: fileId, sheetName: sheetName, items: [] }); saveState_(state); } }
+function ensureCategoryGroup_(fileId, sheetName) { const ss = openLinked_(fileId); getDataSheet_(ss, dataSheetName_(sheetName)); ensureGuide_(ss); }
 function refreshFileName_(fileId, name) { const state = loadState_(); const f = state.files.find(function (x) { return x.id === fileId; }); if (f && f.name !== name) { f.name = trim_(name, 120); saveState_(state); } }
 
 function publicState_() {
   const s = loadState_();
-  return { version: APP_.VERSION, limits: limits_(), files: s.files.map(publicFile_), defaultFileId: s.defaultFileId || '', categoryGroups: s.categoryGroups };
+  return { version: APP_.VERSION, limits: limits_(), files: s.files.map(publicFile_), defaultFileId: s.defaultFileId || '' };
 }
 function emptyState_() { return { version: 2, files: [], defaultFileId: '', categoryGroups: [] }; }
 function loadState_() {
@@ -484,7 +555,7 @@ function bridgeHtml_(origin, token) {
     'const P=getOpener();' +
     'function send(m){if(O&&T&&P){try{P.postMessage(m,O)}catch(e){}}}' +
     'if(!O||!T){status("잘못된 연결 요청입니다.");return}' +
-    'if(!P){status("연결 창을 찾지 못했습니다.");return}' +
+    'if(!P){status("Google 승인이 완료되었습니다. 이 창을 닫고 YouTube로 돌아가세요.");return}' +
     'status("Google 연결 준비됨");send({type:"YT_GAS_READY",token:T});' +
     'window.addEventListener("message",function(e){if(e.origin!==O||e.source!==P)return;const m=e.data;if(!m||m.type!=="YT_GAS_REQUEST"||m.token!==T)return;const id=String(m.requestId||"");if(!/^[A-Za-z0-9_-]{8,128}$/.test(id)||!m.request||typeof m.request!=="object")return;status("처리 중...");google.script.run.withSuccessHandler(function(r){status(r&&r.ok?"연결됨":"요청 실패");send({type:"YT_GAS_RESPONSE",token:T,requestId:id,result:r})}).withFailureHandler(function(){status("요청 실패");send({type:"YT_GAS_RESPONSE",token:T,requestId:id,result:{ok:false,error:{code:"BRIDGE_FAILURE",message:"Google 연결 요청을 처리하지 못했습니다."}}})}).dispatch(m.request)});})();<\/script>' +
     '</body></html>';
