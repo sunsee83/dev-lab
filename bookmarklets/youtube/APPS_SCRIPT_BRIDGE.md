@@ -1,6 +1,6 @@
 # Apps Script 브리지
 
-이 문서는 **모바일 북마클릿 코어 ↔ Apps Script 웹앱 통신 규격**만 정의합니다.
+이 문서는 **모바일 북마클릿 코어 ↔ Apps Script 웹앱 통신 규격과 북마클릿 쪽 기준 구현**을 정의합니다.
 
 ## 1. 고정 엔드포인트
 
@@ -67,26 +67,127 @@ request
 - 사용자별 분리
 - OAuth access/refresh token을 북마클릿에 전달하지 않음
 
-## 5. 북마클릿 코어의 브리지 인터페이스
+## 5. 북마클릿 코어 기준 구현
 
-코어에서는 Apps Script 호출을 다음 인터페이스 하나로 감쌉니다.
+아래 `createGasBridge()`가 최종 북마클릿에 들어갈 **Apps Script 통신 기준 구현**입니다.
 
 ```js
-await gas.call(action,payload)
+function createGasBridge(GAS_WEBAPP_URL,token){
+  const frameName='ytGas_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
+  const frame=document.createElement('iframe');
+  frame.name=frameName;
+  frame.style.display='none';
+  document.documentElement.append(frame);
+
+  let nonce='';
+  let seq=0;
+  const pending=new Map();
+  const requestId=p=>(p||'r')+Date.now().toString(36)+(++seq).toString(36)+Math.random().toString(36).slice(2,9);
+  const errorOf=r=>new Error(r&&r.error&&r.error.message||'Google 연결 요청 실패');
+
+  const onMessage=e=>{
+    const d=e.data||{};
+    if(d.type!=='YT_GAS_RESPONSE'||d.token!==token)return;
+    const x=pending.get(d.requestId);
+    if(!x)return;
+    clearTimeout(x.timer);
+    pending.delete(d.requestId);
+    x.resolve(d.result||{ok:false,error:{code:'BRIDGE_FAILURE',message:'응답 형식이 올바르지 않습니다.'}});
+  };
+  addEventListener('message',onMessage);
+
+  function post(fields){
+    const form=document.createElement('form');
+    form.method='POST';
+    form.action=GAS_WEBAPP_URL;
+    form.target=frameName;
+    form.style.display='none';
+    for(const [k,v] of Object.entries(fields)){
+      const input=document.createElement('input');
+      input.type='hidden';
+      input.name=k;
+      input.value=String(v==null?'':v);
+      form.append(input);
+    }
+    document.body.append(form);
+    form.submit();
+    form.remove();
+  }
+
+  function send(fields,id,timeout=20000){
+    return new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{
+        pending.delete(id);
+        reject(new Error('Google 연결 응답 없음'));
+      },timeout);
+      pending.set(id,{resolve,reject,timer});
+      post(fields);
+    });
+  }
+
+  async function init(){
+    const id=requestId('i');
+    const result=await send({mode:'init',origin:location.origin,token,requestId:id},id);
+    if(!result.ok)throw errorOf(result);
+    nonce=String(result.data&&result.data.bridgeNonce||'');
+    if(!nonce)throw new Error('Google 연결 nonce를 받지 못했습니다.');
+    return result.data||{};
+  }
+
+  async function call(action,payload={}){
+    if(!nonce)await init();
+    for(let retry=0;retry<2;retry++){
+      const id=requestId('r');
+      const result=await send({
+        mode:'request',
+        origin:location.origin,
+        token,
+        requestId:id,
+        bridgeNonce:nonce,
+        request:JSON.stringify({action,payload})
+      },id);
+      if(result&&result.ok)return result.data;
+      if(retry===0&&result&&result.error&&result.error.code==='BRIDGE_EXPIRED'){
+        nonce='';
+        await init();
+        continue;
+      }
+      throw errorOf(result);
+    }
+  }
+
+  function authorize(){
+    return open(
+      GAS_WEBAPP_URL+'?origin='+encodeURIComponent(location.origin)+'&token='+encodeURIComponent(token),
+      'ytGasAuth'
+    );
+  }
+
+  function close(){
+    removeEventListener('message',onMessage);
+    for(const x of pending.values()){
+      clearTimeout(x.timer);
+      x.reject(new Error('Google 연결 종료'));
+    }
+    pending.clear();
+    frame.remove();
+  }
+
+  return {init,call,authorize,close};
+}
 ```
 
-동작 원칙:
+사용:
 
-```text
-gas.call(...)
-├─ 아직 nonce 없음 → init 먼저 실행
-├─ request POST
-├─ token + requestId + iframe source가 맞는 응답만 수신
-├─ BRIDGE_EXPIRED → init 1회 재실행 후 요청 재시도
-└─ 20초 응답 없음 → 오류
+```js
+const gas=createGasBridge(GAS_WEBAPP_URL,token);
+const state=await gas.call('get-state',{});
+const sheets=await gas.call('list-sheets',{fileId});
 ```
 
-브리지 iframe은 화면에 표시하지 않고 한 번 생성하여 현재 북마클릿 실행 동안 재사용합니다.
+이 구현은 Android Whale에서 성공한 **숨은 iframe + form POST** 구조를 그대로 사용합니다.
+
+응답은 임의 `token`과 `requestId`로 연결합니다. Apps Script HTML Service의 내부 sandbox frame 구조는 브라우저에 따라 달라질 수 있으므로 `event.source`를 특정 iframe으로 고정하는 것을 필수 조건으로 두지 않습니다.
 
 ## 6. POST 형식
 
@@ -173,8 +274,6 @@ Google 계정으로 계속
 
 ## 9. 초기 실행 시 상태 복원
 
-북마클릿 코어는 UI를 열 때 다음 순서로 상태를 구성합니다.
-
 ```text
 get-state
 → 연결 파일 목록 확인
@@ -188,8 +287,6 @@ get-state
 연결 파일이 없으면 설정 화면을 표시합니다.
 
 ## 10. 개인 Sheets 연결
-
-개인 Sheets URL은 공용 코드 상수가 아닙니다.
 
 ```text
 설정 UI에서 사용자가 자기 Sheets URL 입력
