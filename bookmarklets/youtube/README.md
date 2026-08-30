@@ -89,11 +89,12 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - `README.md` : 프로젝트 구조와 현재 상태
 - `UI_SPEC.md` : 최종 UI 기준본
 - `PROTOCOL.md` : 통합 북마클릿 ↔ UI 통신 기준
+- `CORE_SPEC.md` : 실제 코드를 공개하지 않고 북마클릿 코어 역할/입출력만 고정한 기준
 - `ui.html` : `UI_SPEC.md` 기준 통합 팝업 UI 구현본
 
 이전 미디어 전용 UI, bridge 실험본, GitHub Pages용 파일은 제거했습니다.
 
-## 통합 팝업 UI 구현 상태
+## 단계 2 완료: 통합 팝업 UI
 
 `ui.html`에 다음 화면과 조건부 표시를 구현했습니다.
 
@@ -109,8 +110,31 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - 중복 데이터 처리
 - 저장 / 닫기 / 상태 표시
 
-실제 YouTube 추출, 저장, Google 계정/Drive 작업은 아직 연결하지 않았습니다. UI는 다음 단계의 북마클릿 코어와 연결할 준비 상태입니다.
+## 단계 3 완료: 북마클릿 코어 인터페이스 정리
+
+실제 YouTube 전용 추출 코드는 공개 저장소에 올리지 않고, `CORE_SPEC.md`에 역할과 입출력만 고정했습니다.
+
+보존 기준:
+
+- 일반 영상/Shorts 공통 진입
+- 영상+음성 통합 영상 후보
+- 음성 전용 후보
+- 실제 가능한 화질/음질만 표시
+- UI에는 실제 스트림 URL 대신 실행 중 임시 선택 ID만 전달
+- 로컬 저장은 YouTube 페이지 안 코어가 담당
+- 한 기능 실패가 다른 기능을 깨뜨리지 않도록 분리
+
+`PROTOCOL.md`에는 다음 통합 메시지를 확정했습니다.
+
+- `YT_TOOL_READY`
+- `YT_TOOL_INIT`
+- `YT_TOOL_ACTION`
+- `YT_TOOL_STATUS`
+- `YT_TOOL_OPTIONS`
+- `YT_TOOL_SETUP`
+- `YT_TOOL_DUPLICATE`
+- `YT_TOOL_DRIVE_MEDIA`
 
 ## 다음 작업
 
-기존에 성공한 YouTube 핵심 코어를 정리해 통합 UI와 연결할 인터페이스를 맞춥니다.
+단계 4: 현재 성공한 영상/음성 **로컬 저장 코어를 통합 UI 프로토콜에 실제 연결**합니다.
