@@ -1,156 +1,41 @@
-# YouTube Bookmarklet UI Protocol
+# YouTube 수집도구 통합 프로토콜
 
-공개 UI와 YouTube 페이지 안의 짧은 북마클릿 코어 사이에서 사용하는 메시지 규격입니다.
+이 문서는 하나의 YouTube 북마클릿과 공개 UI/일반 로직 사이의 통신 기준입니다.
 
-모든 메시지는 실행 때 생성한 임의 `token`을 포함합니다. UI와 코어는 token이 일치하지 않는 메시지를 무시합니다.
+현재 단계에서는 **통합 구조만 고정**하고, 세부 메시지는 UI 구현과 코어 연결 단계에서 확정합니다.
 
-## 1. YT 미디어
+## 기본 원칙
 
-공개 UI 파일: `media.html`
+- 북마클릿은 1개만 사용한다.
+- `영상 / 음성 / 데이터`를 한 화면에서 복수 선택할 수 있다.
+- YouTube 전용 식별/추출/스트림 판별 로직은 북마클릿 안에 둔다.
+- 공개 GitHub에는 UI, 폼, 상태관리, 일반 저장/출력 로직만 둔다.
+- API 키, 비밀번호, OAuth 토큰, 세션 토큰, 인증 쿠키는 저장하거나 메시지로 전달하지 않는다.
+- 실행마다 임의 token을 생성하고 모든 통신에서 token을 검증한다.
+- 실제 미디어 URL은 필요한 저장 동작에서만 일시적으로 사용하고 영구 저장하지 않는다.
 
-### UI → 코어: 준비 완료
+## 통합 흐름
 
-```js
-{
-  type: 'YT_MEDIA_READY',
-  token
-}
-```
+1. 북마클릿 실행
+2. 현재 일반 영상/Shorts 식별
+3. 영상/음성/데이터의 사용 가능 항목 조사
+4. 통합 UI 초기화
+5. 사용자가 `영상 / 음성 / 데이터` 선택
+6. 저장 위치 `로컬 / Drive` 선택
+7. 선택값에 따라 북마클릿 코어 또는 일반 저장 로직 실행
+8. 상태를 UI에 반환
 
-### 코어 → UI: 초기화
+## 메시지 그룹
 
-```js
-{
-  type: 'YT_MEDIA_INIT',
-  token,
-  video: {
-    title: '',
-    channel: '',
-    thumbnail: '',
-    duration: ''
-  },
-  media: {
-    video: [
-      { label: '360p', value: '360' }
-    ],
-    audio: [
-      { label: '최고 음질', value: 'best' }
-    ]
-  }
-}
-```
+세부 필드는 다음 구현 단계에서 확정한다.
 
-`value`는 공개 UI가 해석하지 않는 선택 식별자입니다. 실제 스트림 URL이나 YouTube 전용 판별 정보는 넣지 않습니다.
+- `YT_TOOL_READY` : UI 준비 완료
+- `YT_TOOL_INIT` : 영상 정보, 사용 가능한 화질/음질, 설정 상태 전달
+- `YT_TOOL_ACTION` : 저장, 설정, 새 파일/시트/카테고리 생성, 열기, 닫기
+- `YT_TOOL_STATUS` : 처리중/성공/실패 상태
+- `YT_TOOL_OPTIONS` : Drive 파일/시트/카테고리 목록 갱신
+- `YT_TOOL_DUPLICATE` : 기존 데이터 발견 결과
 
-### UI → 코어: 로컬 저장
+## UI 기준
 
-```js
-{
-  type: 'YT_MEDIA_ACTION',
-  token,
-  action: 'save-local',
-  kind: 'video' | 'audio',
-  quality: '선택 식별자'
-}
-```
-
-실제 파일 fetch와 File System Access API 호출은 YouTube 페이지 안의 코어가 담당합니다.
-
-### UI → 코어: Drive용 주소 요청
-
-```js
-{
-  type: 'YT_MEDIA_ACTION',
-  token,
-  action: 'request-drive-source',
-  kind: 'video' | 'audio',
-  quality: '선택 식별자'
-}
-```
-
-### 코어 → UI: Drive용 일회성 주소
-
-```js
-{
-  type: 'YT_MEDIA_DRIVE_SOURCE',
-  token,
-  src: '현재 실행에서 얻은 임시 미디어 URL',
-  filename: '저장 파일명.mp4'
-}
-```
-
-`media.html`은 이 값을 저장하지 않고 즉시 Google 공식 `Save to Drive` 위젯을 렌더링하는 데만 사용합니다.
-
-Drive 위젯은 OAuth Client ID나 API Key를 북마클릿에 저장하지 않는 1차 방식입니다. 파일은 사용자의 Google 브라우저 세션으로 `My Drive`에 저장됩니다. 폴더 지정은 이 방식의 범위에 포함하지 않습니다.
-
-### 상태
-
-```js
-{
-  type: 'YT_MEDIA_STATUS',
-  token,
-  state: 'working' | 'success' | 'error',
-  message: '표시할 문구'
-}
-```
-
-### 닫기
-
-```js
-{
-  type: 'YT_MEDIA_ACTION',
-  token,
-  action: 'close'
-}
-```
-
----
-
-## 2. YT 수집
-
-공개 수집 UI는 미디어 검증 후 별도 파일로 분리합니다.
-
-### UI → 코어: 데이터 저장
-
-```js
-{
-  type: 'YT_COLLECT_ACTION',
-  token,
-  action: 'save-data',
-  fields: ['thumbnail', 'title', 'url', 'channel', 'publishedAt', 'duration', 'views', 'description', 'tags', 'transcript', 'comments'],
-  format: 'text' | 'json',
-  target: 'clipboard' | 'local' | 'drive',
-  drive: {
-    file: '',
-    sheet: '',
-    category: ''
-  },
-  management: {
-    tags: '',
-    priority: 0,
-    status: '미분석',
-    memo: ''
-  }
-}
-```
-
-### 새 항목 생성 요청
-
-```js
-{
-  type: 'YT_COLLECT_ACTION',
-  token,
-  action: 'create-drive-item',
-  kind: 'file' | 'sheet' | 'category',
-  name: '사용자 입력값'
-}
-```
-
-## 공통 보안 규칙
-
-- `token`은 실행 때마다 새로 생성합니다.
-- 코어는 `event.source`와 token을 함께 확인합니다.
-- API 키, OAuth 토큰, 세션 쿠키, 비밀번호를 메시지에 넣지 않습니다.
-- YouTube 전용 스트림 판별 로직은 공개 UI로 보내지 않습니다.
-- 미디어 URL은 Drive 버튼을 실제로 준비할 때만 일회성으로 전달하고 저장하지 않습니다.
-- 공개 UI는 localStorage/IndexedDB에 인증정보나 미디어 URL을 저장하지 않습니다.
+화면 구성과 표시 조건의 최종 기준은 `UI_SPEC.md`를 따른다.
