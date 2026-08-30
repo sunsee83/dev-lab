@@ -1,348 +1,56 @@
-# YouTube 수집도구 통합 프로토콜
+# YouTube 수집도구 통신 규격
 
-하나의 YouTube 북마클릿 코어와 통합 UI 사이의 통신 기준입니다.
+## 공통
 
-실제 YouTube 전용 식별/추출/스트림 판별 코드는 공개 저장소에 두지 않습니다.
+- 실행마다 `token` 생성
+- 실제 미디어 URL은 저장 동작 때만 일시 전달
+- 인증 토큰/쿠키/비밀번호는 메시지에 넣지 않음
 
-## 공통 규칙
+## UI → 북마클릿 코어
 
-- 실행마다 임의 `token`을 생성한다.
-- 모든 메시지는 같은 `token`을 포함한다.
-- token이 다르면 메시지를 무시한다.
-- UI 초기화 시 실제 미디어 URL은 전달하지 않는다.
-- 영상/음성 선택지는 현재 실행에서만 유효한 임시 ID를 사용한다.
-- API 키, 비밀번호, OAuth 토큰, 세션 토큰, 인증 쿠키를 메시지에 넣지 않는다.
-- 데이터 결과에는 인증정보/세션값/미디어 스트림 URL을 포함하지 않는다.
-- 로컬 데이터 저장용 `FileSystemFileHandle`은 UI 메모리에만 두며 메시지로 전달하지 않는다.
+```js
+{type:'YT_TOOL_READY',token}
 
----
+{type:'YT_TOOL_ACTION',token,action:'save-local'|'save-drive', ...}
 
-# 1. UI → 코어
+{type:'YT_TOOL_ACTION',token,action:'google-connect'}
+{type:'YT_TOOL_ACTION',token,action:'connect-file',sheetUrl}
+{type:'YT_TOOL_ACTION',token,action:'select-file',fileId}
+{type:'YT_TOOL_ACTION',token,action:'create-sheet',fileId,sheetName}
+{type:'YT_TOOL_ACTION',token,action:'select-sheet',fileId,sheetName}
+{type:'YT_TOOL_ACTION',token,action:'add-category',fileId,sheetName,category}
+{type:'YT_TOOL_ACTION',token,action:'open-file'|'open-sheet'|'open-existing'}
+{type:'YT_TOOL_ACTION',token,action:'setup-complete'|'close'}
+```
 
-## 준비 완료
+데이터 저장 요청의 핵심:
 
 ```js
 {
-  type: 'YT_TOOL_READY',
-  token
+  data:{fields:[],format:'original'|'txt'|'json',comments:{count,sort}},
+  drive:{fileId,sheetName,category},
+  management:{tags,purpose,priority,status,memo,aiSend},
+  duplicateMode:'update'|'new'
 }
 ```
 
-## 로컬 저장
+## 코어 → UI
 
 ```js
-{
-  type: 'YT_TOOL_ACTION',
-  token,
-  action: 'save-local',
-  types: ['video', 'audio', 'data'],
-  target: 'local',
-  video: { id: 'video-option-id' },
-  audio: { id: 'audio-option-id' },
-  data: {
-    fields: [],
-    format: 'original' | 'txt' | 'json',
-    comments: {
-      count: 100,
-      sort: 'top' | 'newest'
-    }
-  }
-}
+{type:'YT_TOOL_INIT',token,configured,video,media,drive,duplicate}
+{type:'YT_TOOL_STATUS',token,state:'ready'|'working'|'success'|'error',message}
+{type:'YT_TOOL_OPTIONS',token,files?,sheets?,categories?}
+{type:'YT_TOOL_SETUP',token,configured,message}
+{type:'YT_TOOL_DUPLICATE',token,duplicate}
+{type:'YT_TOOL_DATA_RESULT',token,videoId,requested,result,errors,complete:true}
+{type:'YT_TOOL_DRIVE_MEDIA',token,kind:'video'|'audio',src,filename}
 ```
 
-`types`는 복수 선택 가능하다. 선택하지 않은 항목의 세부 필드는 무시한다.
+## Apps Script 브리지
 
-영상/음성의 `id`는 실제 URL이 아니라 코어 내부 후보표를 가리키는 임시 ID다.
+북마클릿 코어가 YouTube 페이지에서 Apps Script 웹앱을 열고 `APPS_SCRIPT_BRIDGE.md` 규격으로 통신합니다.
 
-현재 검증된 로컬 미디어 저장 방식은 `showSaveFilePicker()` → 미디어 `fetch` → `response.body.pipeTo(await handle.createWritable())` 흐름이다.
+GAS action:
+`ping`, `get-state`, `connect-file`, `unlink-file`, `list-sheets`, `create-sheet`, `list-categories`, `add-category`, `check-duplicate`, `save-record`
 
-### 로컬 데이터 저장
-
-`data`가 선택된 경우 UI는 `save-local` 메시지를 보내기 **전에** 사용자 클릭 시점에서 데이터용 `showSaveFilePicker()`를 실행한다.
-
-이 순서는 비동기 데이터 추출 후 사용자 동작 권한을 잃는 문제를 피하기 위한 것이다.
-
-1. `[저장]` 클릭
-2. UI에서 데이터용 파일 핸들 선택
-3. `save-local` 요청
-4. 코어가 `data.fields`에 있는 항목만 조사
-5. 코어가 `YT_TOOL_DATA_RESULT` 반환
-6. UI가 `data.format`에 따라 `원문 / TXT / JSON`으로 변환
-7. UI가 미리 선택한 파일 핸들에 결과 기록
-
-파일 핸들은 코어로 보내지 않는다.
-
-댓글은 `data.comments.count`와 `data.comments.sort`를 사용한다.
-
-## Drive 저장 요청
-
-```js
-{
-  type: 'YT_TOOL_ACTION',
-  token,
-  action: 'save-drive',
-  types: ['video', 'audio', 'data'],
-  target: 'drive',
-  video: { id: 'video-option-id' },
-  audio: { id: 'audio-option-id' },
-  data: {
-    fields: [],
-    format: 'original' | 'txt' | 'json',
-    comments: { count: 100, sort: 'top' | 'newest' }
-  },
-  drive: {
-    file: '',
-    sheet: '',
-    category: ''
-  },
-  management: {
-    tags: '',
-    priority: 0,
-    status: '미분석',
-    memo: ''
-  },
-  duplicateMode: 'update' | 'new'
-}
-```
-
-### 영상·음성 1차 처리
-
-1. 코어는 `video.id` / `audio.id`를 실제 현재 스트림으로 해석한다.
-2. 실제 URL을 초기화 메시지나 저장소에 넣지 않는다.
-3. 저장 요청 시점에만 항목별 `YT_TOOL_DRIVE_MEDIA`를 UI로 보낸다.
-4. UI는 Google 공식 `Save to Drive` 버튼을 렌더링한다.
-5. 사용자가 공식 버튼을 눌러 실제 저장을 실행한다.
-
-영상과 음성을 함께 선택하면 항목별로 `YT_TOOL_DRIVE_MEDIA`를 한 번씩 보낼 수 있다.
-
-### 데이터 처리
-
-`types`에 `data`가 있으면 코어는 선택된 필드만 조사하고 완료 후 `YT_TOOL_DATA_RESULT`를 반환한다.
-
-Drive/Sheets에 실제 기록하는 동작은 후속 단계에서 이 데이터 결과를 사용한다.
-
-영상/음성 저장과 데이터 추출은 독립적으로 처리한다.
-
-### Drive 버튼 오류 보고
-
-```js
-{
-  type: 'YT_TOOL_ACTION',
-  token,
-  action: 'drive-widget-error',
-  kind: 'video' | 'audio',
-  message: '오류 문구'
-}
-```
-
-## 최초 설정
-
-```js
-{ type:'YT_TOOL_ACTION', token, action:'google-continue' }
-{ type:'YT_TOOL_ACTION', token, action:'setup-start' }
-{ type:'YT_TOOL_ACTION', token, action:'setup-complete' }
-```
-
-## Drive 항목 동작
-
-```js
-{
-  type: 'YT_TOOL_ACTION',
-  token,
-  action: 'new-file' | 'new-sheet' | 'new-category' | 'open-file' | 'open-sheet',
-  drive: {
-    file: '',
-    sheet: '',
-    category: ''
-  }
-}
-```
-
-## 기존 기록 열기 / 닫기
-
-```js
-{ type:'YT_TOOL_ACTION', token, action:'open-existing' }
-{ type:'YT_TOOL_ACTION', token, action:'close' }
-```
-
----
-
-# 2. 코어 → UI
-
-## 초기화
-
-```js
-{
-  type: 'YT_TOOL_INIT',
-  token,
-  configured: true,
-  storagePath: 'Drive / YouTube 수집/',
-  video: {
-    thumbnail: '',
-    title: '',
-    channel: '',
-    publishedAt: '',
-    duration: '',
-    views: ''
-  },
-  media: {
-    video: [{ id:'v1', label:'360p' }],
-    audio: [{ id:'a1', label:'최고 음질' }]
-  },
-  drive: {
-    files: [],
-    sheets: [],
-    categories: []
-  },
-  duplicate: null
-}
-```
-
-`media.video[].id`, `media.audio[].id`는 현재 실행 중에만 유효하다.
-
-## 상태
-
-```js
-{
-  type: 'YT_TOOL_STATUS',
-  token,
-  state: 'ready' | 'working' | 'success' | 'error',
-  message: '표시할 문구',
-  item: 'video' | 'audio' | 'data' | null,
-  field: 'transcript' | 'comments' | null,
-  setup: false
-}
-```
-
-복수 선택 저장에서는 항목별 상태를 순서대로 보낼 수 있다.
-
-## 데이터 결과
-
-```js
-{
-  type: 'YT_TOOL_DATA_RESULT',
-  token,
-  videoId: '현재 영상 ID',
-  requested: ['thumbnail', 'title', 'transcript', 'comments'],
-  result: {
-    thumbnail: 'https://...',
-    title: '영상 제목',
-    transcript: {
-      language: 'ko',
-      languageName: '한국어',
-      text: '전체 대본',
-      segments: []
-    },
-    comments: []
-  },
-  errors: {
-    comments: '댓글을 가져오지 못했습니다.'
-  },
-  complete: true
-}
-```
-
-규칙:
-
-- `requested`에는 실제 요청된 필드만 들어간다.
-- `result`에는 확보된 필드만 들어간다.
-- 특정 필드 실패 시 다른 필드 결과는 유지한다.
-- `errors`는 실패한 필드별 사유만 담는다.
-- 요청하지 않은 필드는 결과에 추가하지 않는다.
-- `rawMetadata`를 반환할 때는 인증/세션/미디어 URL/추적 URL을 제거한다.
-- UI는 결과를 현재 실행 메모리에만 보관한다.
-- 로컬 데이터 저장이면 UI가 미리 확보한 파일 핸들에 결과를 기록한다.
-- 출력 형식 변환은 공개 UI의 일반 로직이 담당한다.
-
-출력 규칙은 `DATA_OUTPUT_FLOW.md`, 상세 데이터 형식은 `DATA_EXTRACT_FLOW.md`를 따른다.
-
-## Drive 미디어 일시 전달
-
-영상·음성 Drive 저장 1차 경로에서만 사용한다.
-
-```js
-{
-  type: 'YT_TOOL_DRIVE_MEDIA',
-  token,
-  kind: 'video' | 'audio',
-  src: '현재 저장 동작용 HTTPS 미디어 URL',
-  filename: '저장 파일명.mp4'
-}
-```
-
-규칙:
-
-- `src`는 현재 저장 동작에서만 사용한다.
-- UI는 `src`를 localStorage/IndexedDB 등에 저장하지 않는다.
-- 화질/음질/항목/저장 위치가 바뀌면 기존 Drive 버튼을 제거한다.
-- UI는 `https://apis.google.com/js/platform.js`를 필요할 때만 로드한다.
-- Google 공식 `gapi.savetodrive.render()`로 버튼을 만든다.
-- 이 1차 방식은 특정 Drive 폴더를 지정하지 않는다.
-
-## Drive 선택지 갱신
-
-```js
-{
-  type: 'YT_TOOL_OPTIONS',
-  token,
-  files: [],
-  sheets: [],
-  categories: []
-}
-```
-
-## 설정 상태
-
-```js
-{
-  type: 'YT_TOOL_SETUP',
-  token,
-  configured: true,
-  storagePath: 'Drive / YouTube 수집/',
-  message: '설정 완료'
-}
-```
-
-## 중복 발견
-
-```js
-{
-  type: 'YT_TOOL_DUPLICATE',
-  token,
-  duplicate: {
-    found: true,
-    recordId: '',
-    label: '이미 수집된 영상입니다.'
-  }
-}
-```
-
----
-
-# 3. 실패 분리
-
-영상/음성/데이터와 데이터 내부 필드를 가능한 한 독립적으로 처리한다.
-
-예:
-
-- 영상 저장 성공 + 음성 저장 실패 → 영상 성공 결과 유지
-- 음성 후보 없음 → 영상 저장은 계속 가능
-- Google Save to Drive 버튼 로드 실패 → 로컬 저장에는 영향 없음
-- GoogleVideo CORS 문제 → 해당 Drive 저장만 실패 처리
-- 대본 실패 + 기본정보 성공 → 기본정보 결과 유지
-- 댓글 실패 + 대본 성공 → 대본 결과 유지
-- 데이터 파일 쓰기 실패 → 영상/음성 저장 결과 유지
-
-사용자가 데이터 파일 선택창을 취소하면 저장 요청 자체를 시작하지 않고 `데이터 저장 취소됨`으로 처리한다.
-
----
-
-# 4. 기준 문서
-
-- 화면 구조: `UI_SPEC.md`
-- 북마클릿 코어 역할: `CORE_SPEC.md`
-- 로컬 미디어 저장 연결: `LOCAL_SAVE_FLOW.md`
-- Drive 미디어 1차 연결: `DRIVE_SAVE_FLOW.md`
-- 데이터 추출 연결: `DATA_EXTRACT_FLOW.md`
-- 데이터 출력/로컬 저장: `DATA_OUTPUT_FLOW.md`
-- 통신 형식: 이 문서
+영상/음성 Drive 저장은 Google 공식 Save to Drive 경로, 데이터 Drive 저장은 Apps Script + SpreadsheetApp 경로를 사용합니다.
