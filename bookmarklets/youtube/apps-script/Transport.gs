@@ -1,27 +1,47 @@
 /* YouTube 수집도구 - Apps Script iframe POST transport */
 
+const BRIDGE_ = Object.freeze({
+  STATE_KEY: 'ytCollector.bridge.v1',
+  TTL_MS: 10 * 60 * 1000,
+  MAX_SESSIONS: 5
+});
+
 function doPost(e) {
   const p = e && e.parameter ? e.parameter : {};
   const origin = allowedOrigin_(p.origin);
   const token = sessionToken_(p.token);
   const requestId = bridgeRequestId_(p.requestId);
+  const mode = String(p.mode || '');
   let result;
 
   if (!origin || !token || !requestId) {
     result = bridgeError_('INVALID_BRIDGE', '연결 정보가 올바르지 않습니다.');
-  } else {
-    const raw = String(p.request || '');
-    if (!raw) {
-      result = bridgeError_('INVALID_REQUEST', '요청 내용이 없습니다.');
-    } else if (raw.length > APP_.MAX_REQUEST_CHARS) {
-      result = bridgeError_('REQUEST_TOO_LARGE', '데이터가 너무 큽니다.');
+  } else if (mode === 'init') {
+    try {
+      result = { ok: true, data: { bridgeNonce: bridgeStart_(origin, token), version: APP_.VERSION } };
+    } catch (err) {
+      result = bridgeError_('BRIDGE_FAILURE', 'Google 연결을 시작하지 못했습니다.');
+    }
+  } else if (mode === 'request') {
+    const nonce = bridgeNonce_(p.bridgeNonce);
+    if (!nonce || !bridgeSessionValid_(origin, token, nonce)) {
+      result = bridgeError_('BRIDGE_EXPIRED', 'Google 연결이 만료되었습니다. 다시 연결해 주세요.');
     } else {
-      try {
-        result = dispatch(JSON.parse(raw));
-      } catch (err) {
-        result = bridgeError_('INVALID_REQUEST', '요청 형식이 올바르지 않습니다.');
+      const raw = String(p.request || '');
+      if (!raw) {
+        result = bridgeError_('INVALID_REQUEST', '요청 내용이 없습니다.');
+      } else if (raw.length > APP_.MAX_REQUEST_CHARS) {
+        result = bridgeError_('REQUEST_TOO_LARGE', '데이터가 너무 큽니다.');
+      } else {
+        try {
+          result = dispatch(JSON.parse(raw));
+        } catch (err) {
+          result = bridgeError_('INVALID_REQUEST', '요청 형식이 올바르지 않습니다.');
+        }
       }
     }
+  } else {
+    result = bridgeError_('INVALID_BRIDGE', '연결 요청 종류가 올바르지 않습니다.');
   }
 
   return HtmlService.createHtmlOutput(bridgePostHtml_(origin, token, requestId, result))
@@ -29,9 +49,57 @@ function doPost(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+function bridgeStart_(origin, token) {
+  const lock = LockService.getUserLock();
+  if (!lock.tryLock(5000)) throw new Error('BUSY');
+  try {
+    const now = Date.now();
+    let sessions = bridgeSessions_().filter(function (s) {
+      return now - s.createdAt < BRIDGE_.TTL_MS && s.token !== token;
+    });
+    const nonce = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    sessions.push({ origin: origin, token: token, nonce: nonce, createdAt: now });
+    if (sessions.length > BRIDGE_.MAX_SESSIONS) sessions = sessions.slice(-BRIDGE_.MAX_SESSIONS);
+    PropertiesService.getUserProperties().setProperty(BRIDGE_.STATE_KEY, JSON.stringify(sessions));
+    return nonce;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function bridgeSessionValid_(origin, token, nonce) {
+  const now = Date.now();
+  const sessions = bridgeSessions_().filter(function (s) { return now - s.createdAt < BRIDGE_.TTL_MS; });
+  const found = sessions.some(function (s) {
+    return s.origin === origin && s.token === token && s.nonce === nonce;
+  });
+  PropertiesService.getUserProperties().setProperty(BRIDGE_.STATE_KEY, JSON.stringify(sessions));
+  return found;
+}
+
+function bridgeSessions_() {
+  const raw = PropertiesService.getUserProperties().getProperty(BRIDGE_.STATE_KEY);
+  if (!raw) return [];
+  try {
+    const a = JSON.parse(raw);
+    return Array.isArray(a) ? a.filter(function (s) {
+      return s && typeof s.origin === 'string' && typeof s.token === 'string' && typeof s.nonce === 'string' && Number.isFinite(Number(s.createdAt));
+    }).map(function (s) {
+      return { origin: s.origin, token: s.token, nonce: s.nonce, createdAt: Number(s.createdAt) };
+    }) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
 function bridgeRequestId_(value) {
   const s = String(value || '').trim();
   return /^[A-Za-z0-9_-]{8,128}$/.test(s) ? s : '';
+}
+
+function bridgeNonce_(value) {
+  const s = String(value || '').trim();
+  return /^[A-Za-z0-9_-]{32,160}$/.test(s) ? s : '';
 }
 
 function bridgeError_(code, message) {
