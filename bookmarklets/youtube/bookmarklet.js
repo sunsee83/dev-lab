@@ -13,8 +13,8 @@ async function init(){const id=rid('i');const r=await send({mode:'init',origin:l
 async function call(action,payload={}){if(!nonce)await init();for(let k=0;k<2;k++){const id=rid('r');const r=await send({mode:'request',origin:location.origin,token:T,requestId:id,bridgeNonce:nonce,request:JSON.stringify({action,payload})},id);if(r?.ok)return r.data;if(k===0&&r?.error?.code==='BRIDGE_EXPIRED'){nonce='';await init();continue}throw err(r)}}
 const close=()=>{removeEventListener('message',onMsg);for(const x of pending.values()){clearTimeout(x.timer);x.reject(new Error('종료'))}pending.clear();F.remove()};
 try{
-let state=await call('get-state',{});
-if(!state.files?.length){await call('create-storage',{fileName:'YouTube 수집',sheetName:'수집',category:'기본'});state=await call('get-state',{})}
+await call('create-storage',{fileName:'유튜브다운로드sheet_v1',sheetName:'수집',category:'기본'});
+const state=await call('get-state',{});
 const fileId=state.defaultFileId||state.files?.[0]?.id;if(!fileId)throw new Error('저장공간을 만들지 못했습니다.');
 const file=state.files.find(x=>x.id===fileId)||state.files?.[0];
 const sheetName='수집';await call('create-sheet',{fileId,sheetName});
