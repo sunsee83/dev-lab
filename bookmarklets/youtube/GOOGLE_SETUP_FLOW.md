@@ -2,13 +2,21 @@
 
 이 문서는 **독립형 Apps Script 웹앱이 사용자별 Google Sheets 저장공간을 어떻게 만들고 연결하는지** 정의합니다.
 
-## 1. 공용 Apps Script
+## 1. 이름 체계
+
+```text
+모바일 북마클릿 이름  유튜브다운로드
+Apps Script 프로젝트  유튜브다운로드앱_v1
+Google Sheets 파일     유튜브다운로드sheet_v1
+```
+
+## 2. 공용 Apps Script
 
 Apps Script 프로젝트는 특정 Sheets 파일에 붙이지 않는 독립형 프로젝트입니다.
 
 ```text
 독립형 Apps Script 프로젝트
-유튜브다운로드 v1
+유튜브다운로드앱_v1
 ├─ Transport.gs
 └─ Code.gs
 ```
@@ -19,9 +27,9 @@ Apps Script 프로젝트는 특정 Sheets 파일에 붙이지 않는 독립형 �
 https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec
 ```
 
-이 URL은 모바일 북마클릿 내부 `GAS_WEBAPP_URL`에 들어갑니다.
+이 URL은 모바일 북마클릿 `유튜브다운로드` 내부 `GAS_WEBAPP_URL`에 들어갑니다.
 
-## 2. 최초 설정: 자동 생성
+## 3. 최초 설정: 자동 생성
 
 사용자는 Google Sheets를 미리 만들 필요가 없습니다.
 
@@ -46,7 +54,7 @@ https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctP
 카테고리    기본
 ```
 
-## 3. 이후 실행
+## 4. 이후 실행
 
 ```text
 get-state
@@ -57,7 +65,7 @@ get-state
 
 같은 사용자는 매번 Sheets 링크를 다시 입력하지 않습니다.
 
-## 4. 기존 Sheets 추가 연결
+## 5. 기존 Sheets 추가 연결
 
 자동 생성된 기본 파일 외에 기존 Google Sheets를 추가하고 싶은 경우에만 사용합니다.
 
@@ -71,7 +79,7 @@ get-state
 
 연결 파일은 최대 10개입니다.
 
-## 5. 사용자별 분리
+## 6. 사용자별 분리
 
 ```text
 사용자 A
@@ -83,13 +91,13 @@ get-state
 → B의 UserProperties
 ```
 
-같은 북마클릿과 같은 Apps Script 웹앱을 사용해도 데이터 파일과 연결 목록은 사용자별로 분리됩니다.
+같은 `유튜브다운로드` 북마클릿과 같은 `유튜브다운로드앱_v1` 웹앱을 사용해도 데이터 파일과 연결 목록은 사용자별로 분리됩니다.
 
-## 6. 전체 경로
+## 7. 전체 경로
 
 ```text
-모바일 북마클릿
-→ 독립형 Apps Script 웹앱
+유튜브다운로드 북마클릿
+→ 유튜브다운로드앱_v1 웹앱
 → create-storage 또는 기존 연결 복원
 → SpreadsheetApp
 → 현재 사용자의 Google Sheets
@@ -100,7 +108,7 @@ get-state
 - `DriveApp`, Google Picker, 브라우저 직접 Sheets/Drive REST API 사용 안 함
 - API key/access token을 북마클릿에 저장하지 않음
 
-## 7. 연결된 파일 구조
+## 8. 연결된 파일 구조
 
 ```text
 1번 탭   안내
