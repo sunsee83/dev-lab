@@ -36,7 +36,8 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - 폼/상태 관리
 - 일반 파일 저장 흐름
 - Google 공식 Save to Drive 버튼 연결
-- 원문/TXT/JSON 출력
+- 원문/TXT/JSON 변환
+- 데이터 로컬 파일 기록
 - Drive/Sheets 일반 UI
 - 메시지 프로토콜
 - 기타 일반 유틸리티
@@ -96,6 +97,7 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - `LOCAL_SAVE_FLOW.md` : 영상/음성 로컬 저장 연결 기준
 - `DRIVE_SAVE_FLOW.md` : 영상/음성 Drive 저장 1차 연결 기준
 - `DATA_EXTRACT_FLOW.md` : 데이터 선택 필드/결과/부분 실패 기준
+- `DATA_OUTPUT_FLOW.md` : 원문/TXT/JSON 변환과 데이터 로컬 저장 기준
 - `ui.html` : 통합 팝업 UI + `YT_TOOL_*` 프로토콜 연결본
 
 이전 미디어 전용 UI, bridge 실험본, GitHub Pages용 파일은 제거했습니다.
@@ -177,6 +179,22 @@ Drive 선택 후 `[저장]`을 누르면 UI가 `save-drive`를 요청하고, 코
 
 실제 YouTube 전용 추출 구현은 공개 저장소가 아니라 북마클릿 코어 내부에 유지합니다.
 
+## 단계 7 완료: 데이터 출력 / 로컬 저장 연결
+
+`ui.html`과 `DATA_OUTPUT_FLOW.md`에 다음 일반 로직을 연결했습니다.
+
+- `YT_TOOL_DATA_RESULT`를 현재 실행 메모리에 수신
+- `원문` → 사람이 읽기 좋고 AI에 바로 전달하기 좋은 정리형 텍스트
+- `TXT` → 평문 항목형 출력
+- `JSON` → 구조화 결과 보존
+- 영상 제목 기반 파일명 생성
+- 데이터 + 로컬이면 `[저장]` 클릭 직후 `showSaveFilePicker()`를 먼저 실행
+- 데이터 추출 완료 후 미리 선택한 파일 핸들에 UTF-8 결과 기록
+- 파일 핸들/데이터 결과를 localStorage/IndexedDB에 영구 저장하지 않음
+- 데이터 파일 쓰기 실패가 영상/음성 저장 결과를 취소하지 않음
+
+`원문`과 `TXT`는 `.txt`, `JSON`은 `.json`으로 저장합니다.
+
 ## 다음 작업
 
-단계 7: 데이터 결과를 `원문 / TXT / JSON`으로 변환하고 로컬 저장 흐름에 연결.
+단계 8: Google 계정 최초 설정 흐름 구현.
