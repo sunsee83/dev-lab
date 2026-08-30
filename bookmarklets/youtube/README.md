@@ -8,7 +8,7 @@ Android 모바일 YouTube용 **단일 북마클릿** 프로젝트입니다.
 
 ```text
 Android 모바일 북마크
-└─ javascript: 북마클릿
+└─ URL 칸에 bookmarklet.js 전체 내용
    ├─ YouTube 영상/음성/데이터 추출 코어
    ├─ 통합 UI
    └─ GAS_WEBAPP_URL 호출
@@ -27,7 +27,7 @@ Google Sheets는 프로그램의 부모 파일이 아니라 사용자가 연결�
 
 ## 2. 모바일 북마크에 들어가는 공용 주소
 
-Apps Script 웹앱 `/exec` URL은 모바일 북마크의 `javascript:` 코드 내부 `GAS_WEBAPP_URL` 상수에 들어갑니다.
+Apps Script 웹앱 `/exec` URL은 `bookmarklet.js` 내부 `GAS_WEBAPP_URL` 값으로 들어갑니다.
 
 ```text
 GAS_WEBAPP_URL =
@@ -92,6 +92,7 @@ YouTube 북마클릿
 ## 6. 기준 파일과 책임
 
 - `README.md` : 전체 구조와 값의 배치 위치
+- `bookmarklet.js` : **모바일 북마크 URL 칸에 복사하는 실제 단일 북마클릿 코드**
 - `CORE_SPEC.md` : 모바일 북마클릿 코어 책임
 - `PROTOCOL.md` : 북마클릿 ↔ UI 메시지 규격
 - `APPS_SCRIPT_BRIDGE.md` : 북마클릿 ↔ Apps Script 통신 규격
