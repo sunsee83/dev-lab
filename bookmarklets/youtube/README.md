@@ -21,7 +21,8 @@ YouTube 페이지
 └─ bookmarklet.js
    ├─ Apps Script POST 브리지 생성
    ├─ get-ui 호출
-   └─ 받은 ui.html을 iframe.srcdoc으로 표시
+   ├─ 받은 ui.html로 Blob URL 생성
+   └─ Blob URL을 iframe.src로 표시
           ↓
       ui.html
       ├─ 통합 화면
@@ -32,9 +33,9 @@ YouTube 페이지
       └─ Drive 저장 UI
 ```
 
-핵심은 **북마클릿을 짧은 로더로 유지**하고 실제 기능은 Apps Script에서 받은 `ui.html`이 YouTube 페이지의 `srcdoc` 안에서 실행하는 것입니다.
+YouTube가 `iframe.srcdoc`에 TrustedHTML을 요구하므로 `srcdoc`은 사용하지 않습니다. Apps Script에서 받은 HTML을 Blob URL로 만든 뒤 iframe의 `src`로 표시합니다.
 
-현재 `bookmarklet.js`는 **약 1.9KB** 규모이며 UI 전체를 북마크 URL에 넣지 않습니다.
+현재 `bookmarklet.js`는 약 2KB 규모이며 UI 전체를 북마크 URL에 넣지 않습니다.
 
 ## 3. Apps Script 구조
 
@@ -103,7 +104,7 @@ ui.html → Google Save to Drive 영역
 
 ## 7. 기준 파일 책임
 
-- `bookmarklet.js` : 모바일 북마크 URL용 **짧은 Apps Script/UI 로더**
+- `bookmarklet.js` : 모바일 북마크 URL용 짧은 Apps Script/UI 로더
 - `ui.html` : 통합 UI + YouTube 추출 + 로컬/Drive 저장 코어
 - `apps-script/Transport.gs` : POST 브리지, nonce, `get-ui`, `create-storage`
 - `apps-script/Code.gs` : Sheets 구조와 데이터 저장
