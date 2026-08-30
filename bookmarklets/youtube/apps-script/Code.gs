@@ -1,7 +1,7 @@
 /* YouTube 수집도구 - Apps Script / SpreadsheetApp */
 
 const APP_ = Object.freeze({
-  VERSION: '0.3.0',
+  VERSION: '0.3.1',
   STATE_KEY: 'ytCollector.state.v2',
   MAX_REQUEST_CHARS: 1000000,
   MAX_STATE_CHARS: 9000,
@@ -467,11 +467,25 @@ function errorResult_(err) {
 }
 
 function bridgeHtml_(origin, token) {
-  const o = JSON.stringify(origin), t = JSON.stringify(token);
-  return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>YouTube 수집 - Google 연결</title>' +
-    '<style>body{margin:0;background:#111;color:#eee;font:15px/1.5 system-ui;padding:24px}.box{max-width:520px;margin:auto;padding:18px;border:1px solid #333;border-radius:14px;background:#181818}h1{font-size:18px}</style></head><body>' +
-    '<div class="box"><h1>YouTube 수집 · Google 연결</h1><div id="s">연결 확인 중...</div></div><script>(function(){"use strict";const O=' + o + ',T=' + t + ',S=document.getElementById("s");' +
-    'function send(m){if(O&&T&&window.opener)window.opener.postMessage(m,O)}function status(x){S.textContent=String(x||"")}' +
-    'if(!O||!T){status("잘못된 연결 요청입니다.");return}if(!window.opener){status("YouTube 수집도구에서 이 페이지를 열어 주세요.");return}status("Google 연결 준비됨");send({type:"YT_GAS_READY",token:T});' +
-    'window.addEventListener("message",function(e){if(e.origin!==O||e.source!==window.opener)return;const m=e.data;if(!m||m.type!=="YT_GAS_REQUEST"||m.token!==T)return;const id=String(m.requestId||"");if(!/^[A-Za-z0-9_-]{8,128}$/.test(id)||!m.request||typeof m.request!=="object")return;status("처리 중...");google.script.run.withSuccessHandler(function(r){status(r&&r.ok?"연결됨":"요청 실패");send({type:"YT_GAS_RESPONSE",token:T,requestId:id,result:r})}).withFailureHandler(function(){status("요청 실패");send({type:"YT_GAS_RESPONSE",token:T,requestId:id,result:{ok:false,error:{code:"BRIDGE_FAILURE",message:"Google 연결 요청을 처리하지 못했습니다."}}})}).dispatch(m.request)});})();<\/script></body></html>';
+  const o = JSON.stringify(origin);
+  const t = JSON.stringify(token);
+  return '<!doctype html><html lang="ko"><head>' +
+    '<meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<meta name="referrer" content="no-referrer">' +
+    '<title>Google 연결</title>' +
+    '<style>body{margin:0;background:#111;color:#eee;font:15px/1.5 system-ui;padding:24px}.box{max-width:520px;margin:auto;padding:18px;border:1px solid #333;border-radius:14px;background:#181818}h1{font-size:18px}</style>' +
+    '</head><body>' +
+    '<div class="box"><h1>Google 연결</h1><div id="s">연결 확인 중...</div></div>' +
+    '<script>(function(){"use strict";' +
+    'const O=' + o + ',T=' + t + ',S=document.getElementById("s");' +
+    'function status(x){S.textContent=String(x||"")}' +
+    'function getOpener(){try{if(window.opener)return window.opener}catch(e){}try{if(window.top&&window.top.opener)return window.top.opener}catch(e){}try{if(window.parent&&window.parent.opener)return window.parent.opener}catch(e){}return null}' +
+    'const P=getOpener();' +
+    'function send(m){if(O&&T&&P){try{P.postMessage(m,O)}catch(e){}}}' +
+    'if(!O||!T){status("잘못된 연결 요청입니다.");return}' +
+    'if(!P){status("연결 창을 찾지 못했습니다.");return}' +
+    'status("Google 연결 준비됨");send({type:"YT_GAS_READY",token:T});' +
+    'window.addEventListener("message",function(e){if(e.origin!==O||e.source!==P)return;const m=e.data;if(!m||m.type!=="YT_GAS_REQUEST"||m.token!==T)return;const id=String(m.requestId||"");if(!/^[A-Za-z0-9_-]{8,128}$/.test(id)||!m.request||typeof m.request!=="object")return;status("처리 중...");google.script.run.withSuccessHandler(function(r){status(r&&r.ok?"연결됨":"요청 실패");send({type:"YT_GAS_RESPONSE",token:T,requestId:id,result:r})}).withFailureHandler(function(){status("요청 실패");send({type:"YT_GAS_RESPONSE",token:T,requestId:id,result:{ok:false,error:{code:"BRIDGE_FAILURE",message:"Google 연결 요청을 처리하지 못했습니다."}}})}).dispatch(m.request)});})();<\/script>' +
+    '</body></html>';
 }
