@@ -307,7 +307,8 @@ function categoriesFor_(ss, fileId, sheetName) {
     const c = trim_(r[1], 60);
     if (c && items.indexOf(c) < 0) items.push(c);
   });
-  const legacy = categoryGroup_(loadState_(), fileId, sheetName);
+  const state = loadState_();
+  const legacy = categoryGroup_(state, fileId, sheetName);
   if (legacy) {
     legacy.items.forEach(function (c) {
       if (items.indexOf(c) < 0 && items.length < APP_.MAX_CATEGORIES) {
@@ -315,6 +316,8 @@ function categoriesFor_(ss, fileId, sheetName) {
         items.push(c);
       }
     });
+    state.categoryGroups = state.categoryGroups.filter(function (g) { return !(g.fileId === fileId && g.sheetName === sheetName); });
+    saveState_(state);
   }
   return items;
 }
@@ -336,7 +339,7 @@ function appendCategory_(ss, sheetName, category) {
 }
 
 function initDataSheet_(sheet) {
-  ensureRows_(sheet, APP_.MAX_ROWS + 1);
+  ensureGrid_(sheet, APP_.MAX_ROWS + 1, APP_.HEADERS.length);
   sheet.getRange(1, 1, 1, APP_.HEADERS.length).setValues([APP_.HEADERS.slice()]).setFontWeight('bold').setWrap(true);
   sheet.setFrozenRows(1);
   sheet.setFrozenColumns(3);
@@ -361,10 +364,26 @@ function ensureRows_(sheet, rowNumber) {
   const max = sheet.getMaxRows();
   if (max < rowNumber) sheet.insertRowsAfter(max, rowNumber - max);
 }
+function ensureColumns_(sheet, columnNumber) {
+  const max = sheet.getMaxColumns();
+  if (max < columnNumber) sheet.insertColumnsAfter(max, columnNumber - max);
+}
+function ensureGrid_(sheet, rowNumber, columnNumber) {
+  ensureRows_(sheet, rowNumber);
+  ensureColumns_(sheet, columnNumber);
+}
 
 function ensureSchema_(sheet) {
-  const header = sheet.getRange(1, 1, 1, APP_.HEADERS.length).getDisplayValues()[0];
-  if (header.every(function (x) { return String(x || '').trim() === ''; })) { initDataSheet_(sheet); return; }
+  const width = Math.min(APP_.HEADERS.length, sheet.getMaxColumns());
+  const actual = width > 0 ? sheet.getRange(1, 1, 1, width).getDisplayValues()[0] : [];
+  const header = new Array(APP_.HEADERS.length).fill('');
+  for (let i = 0; i < actual.length; i++) header[i] = actual[i];
+  if (header.every(function (x) { return String(x || '').trim() === ''; })) {
+    if (sheet.getLastRow() > 0) fail_('SCHEMA_MISMATCH', '기존 데이터가 있는 시트에는 도구 헤더를 자동으로 만들지 않습니다.');
+    initDataSheet_(sheet);
+    return;
+  }
+  if (sheet.getMaxColumns() < APP_.HEADERS.length) fail_('SCHEMA_MISMATCH', '열 이름/순서가 달라 저장을 중단했습니다.');
   assertSchema_(sheet, header);
 }
 
@@ -395,16 +414,21 @@ function setLink_(range, text, url) {
 }
 
 function videoIdRange_(sheet) {
-  ensureRows_(sheet, 2);
-  return sheet.getRange(2, indexes_()['영상 ID'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1);
+  const col = indexes_()['영상 ID'] + 1;
+  if (sheet.getMaxRows() < 2 || sheet.getMaxColumns() < col) return null;
+  return sheet.getRange(2, col, sheet.getMaxRows() - 1, 1);
 }
 
 function recordRows_(sheet) {
-  return videoIdRange_(sheet).createTextFinder('.+').useRegularExpression(true).findAll().map(function (c) { return c.getRow(); });
+  const range = videoIdRange_(sheet);
+  if (!range) return [];
+  return range.createTextFinder('.+').useRegularExpression(true).findAll().map(function (c) { return c.getRow(); });
 }
 
 function videoRows_(sheet, videoId) {
-  return videoIdRange_(sheet).createTextFinder(videoId).matchEntireCell(true).useRegularExpression(false).findAll().map(function (c) { return c.getRow(); });
+  const range = videoIdRange_(sheet);
+  if (!range) return [];
+  return range.createTextFinder(videoId).matchEntireCell(true).useRegularExpression(false).findAll().map(function (c) { return c.getRow(); });
 }
 
 function nextRecordRow_(sheet) {
