@@ -35,6 +35,7 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - 조건부 화면 표시
 - 폼/상태 관리
 - 일반 파일 저장 흐름
+- Google 공식 Save to Drive 버튼 연결
 - 원문/TXT/JSON 출력
 - Drive/Sheets 일반 UI
 - 메시지 프로토콜
@@ -91,6 +92,7 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - `PROTOCOL.md` : 통합 북마클릿 ↔ UI 통신 기준
 - `CORE_SPEC.md` : 실제 코드를 공개하지 않고 북마클릿 코어 역할/입출력만 고정한 기준
 - `LOCAL_SAVE_FLOW.md` : 영상/음성 로컬 저장 연결 기준
+- `DRIVE_SAVE_FLOW.md` : 영상/음성 Drive 저장 1차 연결 기준
 - `ui.html` : 통합 팝업 UI + `YT_TOOL_*` 프로토콜 연결본
 
 이전 미디어 전용 UI, bridge 실험본, GitHub Pages용 파일은 제거했습니다.
@@ -115,27 +117,41 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 
 `ui.html`을 `YT_TOOL_*` 통합 프로토콜에 맞췄습니다.
 
-로컬 선택 후 저장 시 UI는 다음을 코어에 전달합니다.
+로컬 선택 후 저장 시 UI는 `save-local` 요청과 선택된 영상/음성 임시 후보 ID를 코어에 전달합니다.
 
-- `action: save-local`
-- 선택된 `types`
-- 영상 임시 후보 ID
-- 음성 임시 후보 ID
-- 데이터가 선택된 경우 데이터 옵션
-
-코어는 임시 ID를 현재 실행의 실제 스트림 후보로 해석합니다.
-
-현재 검증된 저장 흐름은 그대로 보존합니다.
+현재 검증된 저장 흐름을 그대로 보존합니다.
 
 - 영상: `showSaveFilePicker()` → 미디어 fetch → writable stream 기록 → MP4
 - 음성: `showSaveFilePicker()` → 음성 fetch → writable stream 기록
 - 일반 영상/Shorts 동일 흐름
 - 항목별 성공/실패 분리
 
-상세 연결은 `LOCAL_SAVE_FLOW.md`, 메시지 형식은 `PROTOCOL.md`를 기준으로 합니다.
+## 단계 5: 영상/음성 Drive 저장 1차 연결
 
-실제 YouTube 전용 player/스트림 판별 구현 전문은 계속 북마클릿 내부에만 둡니다.
+코드 연결은 완료했습니다.
+
+Drive 선택 후 `[저장]`을 누르면 UI가 `save-drive`를 코어에 요청합니다. 코어는 선택된 임시 ID를 실제 스트림으로 해석한 뒤 저장 시점에만 `YT_TOOL_DRIVE_MEDIA`를 보냅니다.
+
+`ui.html`은 이 메시지를 받으면:
+
+- Google 공식 `https://apis.google.com/js/platform.js`를 필요할 때만 로드
+- `gapi.savetodrive.render()`로 영상/음성별 공식 Drive 저장 버튼 생성
+- 화질/음질/선택 항목/저장 위치 변경 시 기존 버튼 제거
+- 실제 미디어 URL을 localStorage/IndexedDB 등에 저장하지 않음
+
+이 1차 방식은 Drive API 직접 업로드가 아니므로 특정 폴더를 지정하지 않습니다. 저장 대상은 Google 공식 버튼의 `My Drive` 경로입니다.
+
+### 아직 실제 검증이 필요한 항목
+
+- Android 모바일 Whale에서 Google 공식 스크립트 로드
+- GoogleVideo 미디어 URL의 Save to Drive CORS/Range 처리
+- 영상 실제 Drive 저장 완료
+- 음성 실제 Drive 저장 완료
+
+따라서 단계 5는 **구현 완료 / 모바일 실사용 검증 대기** 상태입니다.
+
+상세 흐름은 `DRIVE_SAVE_FLOW.md`, 메시지 형식은 `PROTOCOL.md`를 기준으로 합니다.
 
 ## 다음 작업
 
-단계 5: 영상/음성 **Drive 저장 1차 경로**를 통합 UI에 연결하고 실제 저장 가능 여부를 검증합니다.
+단계 6: 데이터 추출 코어 구현.
