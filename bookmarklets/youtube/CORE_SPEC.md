@@ -1,83 +1,66 @@
 # 유튜브다운로드 북마클릿 코어 규격
 
-이 문서는 **Android 모바일 북마크 `유튜브다운로드`의 `javascript:` 코드 안에 들어가는 코어 구조**를 정의합니다.
-
-## 1. 이름 체계
+## 1. 고정 이름
 
 ```text
-모바일 북마클릿 이름  유튜브다운로드
-Apps Script 프로젝트  유튜브다운로드앱_v1
-Google Sheets 파일     유튜브다운로드sheet_v1
+북마클릿      유튜브다운로드
+Apps Script  유튜브다운로드앱_v1
+기본 Sheets  유튜브다운로드sheet_v1
+기본 시트     수집
+기본 카테고리 기본
 ```
 
-## 2. 북마클릿 내부 고정 값
-
-```js
-const GAS_WEBAPP_URL='https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec';
-```
-
-이 값은 독립형 Apps Script 프로젝트 `유튜브다운로드앱_v1`의 공용 웹앱 주소입니다.
-
-## 3. 코어 책임
+## 2. 북마클릿 책임
 
 ```text
-현재 일반 영상/Shorts 식별
-영상 ID와 기본 메타데이터 확인
-영상/음성 스트림 후보 생성
-데이터 선택 필드 추출
-통합 UI 제어
+현재 일반 영상/Shorts ID 확인
+youtubei/player 호출
+영상·음성 직접 스트림 후보 보관
+Apps Script POST 브리지 관리
+Apps Script에서 ui.html 원본 받기
+ui.html을 iframe.srcdoc으로 화면에 표시
+UI action 처리
 로컬 파일 저장
-독립형 Apps Script 브리지 호출
-최초 Google Sheets 저장공간 자동 생성
-영상/음성 Drive 저장 정보 전달
+선택 데이터 수집
+Sheets 저장 요청
+중복 처리
 ```
 
-## 4. Google 저장 구조
+실제 미디어 URL은 북마클릿 실행 메모리에만 두고 UI에는 후보 ID만 전달합니다.
+
+## 3. UI 로딩
 
 ```text
-유튜브다운로드 북마클릿
-→ GAS_WEBAPP_URL
-→ 유튜브다운로드앱_v1
-→ 사용자별 Google Sheets
+bookmarklet.js
+→ Apps Script get-ui
+→ ui.html 문자열
+→ 이름/실행 token을 현재 실행값으로 주입
+→ iframe.srcdoc
+→ YT_TOOL_READY
+→ 코어 초기화
 ```
 
-Google Sheets는 Apps Script에 붙어 있는 부모 파일이 아닙니다.
+따라서 `ui.html` 전체를 모바일 북마크 URL에 넣지 않습니다.
 
-## 5. 최초 사용자 저장공간
+## 4. Google 초기화
 
 ```text
 get-state
 → 연결 파일 없음
-→ create-storage
-→ 사용자 계정에 '유튜브다운로드sheet_v1' 자동 생성
-→ '안내' 시트 생성
-→ '수집' 데이터 시트 생성
-→ '기본' 카테고리 등록
-→ 생성 파일을 UserProperties에 연결
-→ get-state 재조회
+   → create-storage
+   → 유튜브다운로드sheet_v1 자동 생성
+→ defaultFileId
+→ list-sheets
+→ 수집 시트 우선 선택
+→ list-categories
+→ 기본 카테고리 보장
+→ check-duplicate
+→ YT_TOOL_INIT
 ```
 
-사용자는 최초 설정에서 Google Sheets를 직접 만들거나 URL을 입력하지 않습니다.
+기존 Sheets는 사용자가 추가 연결할 때만 `connect-file`을 사용합니다.
 
-기존 Sheets 추가 연결이 필요할 때만 `connect-file`을 사용합니다.
-
-## 6. 이후 실행 상태
-
-현재 북마클릿 실행 동안만 유지합니다.
-
-```text
-실행 token
-영상 ID/메타데이터
-영상 후보/음성 후보
-UI 임시 후보 ID ↔ 실제 스트림 대응표
-Apps Script bridge nonce
-파일/시트/카테고리 캐시
-중복 정보
-```
-
-미디어 URL, OAuth token, 쿠키를 영구 저장하지 않습니다.
-
-## 7. 검증된 YouTube player 경로
+## 5. YouTube player
 
 ```js
 fetch('https://www.youtube.com/youtubei/v1/player',{
@@ -101,127 +84,83 @@ fetch('https://www.youtube.com/youtubei/v1/player',{
 })
 ```
 
-영상은 `streamingData.formats`의 direct `video/mp4` 통합 스트림을 사용하고, 음성은 `adaptiveFormats`의 direct `audio/mp4` 후보를 사용합니다.
+- 영상: `streamingData.formats`의 direct `video/mp4`
+- 음성: `streamingData.adaptiveFormats`의 direct `audio/mp4`
+- Android Whale 일반 영상/Shorts에서 직접 저장 경로 검증
+- 통합 영상 검증 화질은 360p
 
-현재 Android Whale에서 일반 영상과 Shorts 직접 저장이 검증되어 있으며 통합 영상의 검증 화질은 360p입니다.
+## 6. 로컬 저장
 
-## 8. 로컬 미디어 저장
-
-```js
-const handle=await showSaveFilePicker(...);
-const response=await fetch(mediaUrl,{headers:{Range:'bytes=0-'}});
-await response.body.pipeTo(await handle.createWritable());
-```
-
-영상/음성은 독립 작업으로 처리합니다.
-
-## 9. UI 초기화
+한 종류만 저장할 때:
 
 ```text
-현재 영상/미디어 후보 준비
-→ get-state
-→ 필요하면 create-storage
-→ defaultFileId
-→ list-sheets
-→ list-categories
-→ YT_TOOL_INIT
+사용자 저장 클릭
+→ showSaveFilePicker
+→ media fetch 또는 데이터 생성
+→ writable 저장
 ```
 
-기본 자동 생성값:
+여러 종류를 동시에 저장할 때:
 
 ```text
-파일      유튜브다운로드sheet_v1
-시트      수집
-카테고리  기본
+사용자 저장 클릭
+→ showDirectoryPicker
+→ 선택한 영상/음성/데이터 파일을 같은 폴더에 생성
 ```
 
-## 10. Google UI action 라우팅
+파일 선택 API는 사용자 클릭 직후 실행하고 그 전에 네트워크 `await`를 두지 않습니다.
+
+## 7. 현재 데이터 수집
+
+현재 코어가 바로 채울 수 있는 항목:
 
 ```text
-google-connect
-→ gas.authorize()
-
-create-storage
-→ gas.call('create-storage',{})
-
-connect-file
-→ 기존 Sheets를 추가할 때만 gas.call('connect-file',{sheetUrl})
-
-select-file
-→ gas.call('list-sheets',{fileId})
-
-select-sheet
-→ gas.call('list-categories',{fileId,sheetName})
-
-create-sheet
-→ gas.call('create-sheet',{fileId,sheetName})
-
-add-category
-→ gas.call('add-category',{fileId,sheetName,category})
+썸네일
+제목
+영상 URL
+채널명
+업로드일
+영상 길이
+조회수
+설명
+태그
+영상 ID
+채널 ID
+원본 메타데이터(스트리밍 URL 제외)
 ```
 
-## 11. 데이터 추출 결과
+현재 페이지/API에서 확보하지 못한 `좋아요 / 대본 / 댓글 / 자막 원본`은 성공한 것처럼 채우지 않고 `errors`에 기록합니다. 해당 추출기는 별도 데이터 추출 규격에서 추가합니다.
 
-사용자가 선택한 필드만 조사합니다.
-
-```js
-{
-  videoId,
-  requested:[],
-  result:{},
-  errors:{},
-  complete:true
-}
-```
-
-세부 필드 규격은 `DATA_EXTRACT_FLOW.md`를 따릅니다.
-
-## 12. Sheets 데이터 저장
+## 8. Sheets 저장
 
 ```text
-UI save-drive
-→ 코어가 선택 데이터 수집
-→ gas.call('save-record',payload)
-→ SpreadsheetApp
+UI save-drive + data
+→ 선택 필드만 수집
+→ save-record
+→ 영상 ID로 중복 확인/수정
 ```
 
-```js
-{
-  fileId,
-  sheetName,
-  videoId,
-  record,
-  management:{category,purpose,priority,status,tags,memo,aiSend},
-  duplicateMode
-}
-```
+중요도 `0`은 미선택 상태이므로 Apps Script에 보내지 않습니다. 나머지 관리정보는 사용자가 명시적으로 넣은 값과 현재 UI 상태만 전달합니다.
 
-이번 실행에서 실제로 얻은 `record` 필드만 전달합니다.
-
-## 13. 영상/음성 Drive 저장
+## 9. Drive 미디어
 
 ```text
-선택 미디어 URL/파일명
+영상/음성 Drive 선택
+→ 선택 후보 ID를 실제 임시 URL로 해석
 → YT_TOOL_DRIVE_MEDIA
-→ UI
-→ Google 공식 Save to Drive 버튼
+→ ui.html의 Google Save to Drive 영역
 ```
 
-## 14. 오류 분리
+미디어 URL은 저장소나 문서에 기록하지 않습니다.
+
+## 10. 종료
+
+닫기 또는 재실행 시:
 
 ```text
-데이터 실패 + 영상 성공 → 영상 저장 유지
-음성 후보 없음 + 영상 후보 있음 → 영상 사용 가능
-Apps Script 실패 → 로컬 저장 유지
-Drive 버튼 실패 → 로컬 저장 유지
-```
-
-## 15. 영구 저장 금지
-
-```text
-실행 중 media URL
-로그인/세션 정보
-인증 쿠키
-OAuth access/refresh token
-개인 계정 비밀값
+UI iframe 제거
+브리지 iframe 제거
+message listener 제거
+대기 요청 정리
+실행 메모리 폐기
 ```
