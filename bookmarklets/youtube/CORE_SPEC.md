@@ -1,16 +1,24 @@
-# YouTube 북마클릿 코어 규격
+# 유튜브다운로드 북마클릿 코어 규격
 
-이 문서는 **Android 모바일 북마크의 `javascript:` 코드 안에 들어가는 코어의 현재 구조**를 정의합니다.
+이 문서는 **Android 모바일 북마크 `유튜브다운로드`의 `javascript:` 코드 안에 들어가는 코어 구조**를 정의합니다.
 
-## 1. 북마클릿 내부 고정 값
+## 1. 이름 체계
+
+```text
+모바일 북마클릿 이름  유튜브다운로드
+Apps Script 프로젝트  유튜브다운로드앱_v1
+Google Sheets 파일     유튜브다운로드sheet_v1
+```
+
+## 2. 북마클릿 내부 고정 값
 
 ```js
 const GAS_WEBAPP_URL='https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec';
 ```
 
-이 값은 독립형 Apps Script 프로젝트 `유튜브다운로드 v1`의 공용 웹앱 주소입니다.
+이 값은 독립형 Apps Script 프로젝트 `유튜브다운로드앱_v1`의 공용 웹앱 주소입니다.
 
-## 2. 코어 책임
+## 3. 코어 책임
 
 ```text
 현재 일반 영상/Shorts 식별
@@ -24,24 +32,24 @@ const GAS_WEBAPP_URL='https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5
 영상/음성 Drive 저장 정보 전달
 ```
 
-## 3. Google 저장 구조
+## 4. Google 저장 구조
 
 ```text
-북마클릿
+유튜브다운로드 북마클릿
 → GAS_WEBAPP_URL
-→ 독립형 Apps Script
+→ 유튜브다운로드앱_v1
 → 사용자별 Google Sheets
 ```
 
 Google Sheets는 Apps Script에 붙어 있는 부모 파일이 아닙니다.
 
-## 4. 최초 사용자 저장공간
+## 5. 최초 사용자 저장공간
 
 ```text
 get-state
 → 연결 파일 없음
 → create-storage
-→ 사용자 계정에 'YouTube 수집' Sheets 자동 생성
+→ 사용자 계정에 '유튜브다운로드sheet_v1' 자동 생성
 → '안내' 시트 생성
 → '수집' 데이터 시트 생성
 → '기본' 카테고리 등록
@@ -53,7 +61,7 @@ get-state
 
 기존 Sheets 추가 연결이 필요할 때만 `connect-file`을 사용합니다.
 
-## 5. 이후 실행 상태
+## 6. 이후 실행 상태
 
 현재 북마클릿 실행 동안만 유지합니다.
 
@@ -69,7 +77,7 @@ Apps Script bridge nonce
 
 미디어 URL, OAuth token, 쿠키를 영구 저장하지 않습니다.
 
-## 6. 검증된 YouTube player 경로
+## 7. 검증된 YouTube player 경로
 
 ```js
 fetch('https://www.youtube.com/youtubei/v1/player',{
@@ -97,7 +105,7 @@ fetch('https://www.youtube.com/youtubei/v1/player',{
 
 현재 Android Whale에서 일반 영상과 Shorts 직접 저장이 검증되어 있으며 통합 영상의 검증 화질은 360p입니다.
 
-## 7. 로컬 미디어 저장
+## 8. 로컬 미디어 저장
 
 ```js
 const handle=await showSaveFilePicker(...);
@@ -107,7 +115,7 @@ await response.body.pipeTo(await handle.createWritable());
 
 영상/음성은 독립 작업으로 처리합니다.
 
-## 8. UI 초기화
+## 9. UI 초기화
 
 ```text
 현재 영상/미디어 후보 준비
@@ -122,12 +130,12 @@ await response.body.pipeTo(await handle.createWritable());
 기본 자동 생성값:
 
 ```text
-파일      YouTube 수집
+파일      유튜브다운로드sheet_v1
 시트      수집
 카테고리  기본
 ```
 
-## 9. Google UI action 라우팅
+## 10. Google UI action 라우팅
 
 ```text
 google-connect
@@ -152,7 +160,7 @@ add-category
 → gas.call('add-category',{fileId,sheetName,category})
 ```
 
-## 10. 데이터 추출 결과
+## 11. 데이터 추출 결과
 
 사용자가 선택한 필드만 조사합니다.
 
@@ -168,7 +176,7 @@ add-category
 
 세부 필드 규격은 `DATA_EXTRACT_FLOW.md`를 따릅니다.
 
-## 11. Sheets 데이터 저장
+## 12. Sheets 데이터 저장
 
 ```text
 UI save-drive
@@ -190,7 +198,7 @@ UI save-drive
 
 이번 실행에서 실제로 얻은 `record` 필드만 전달합니다.
 
-## 12. 영상/음성 Drive 저장
+## 13. 영상/음성 Drive 저장
 
 ```text
 선택 미디어 URL/파일명
@@ -199,7 +207,7 @@ UI save-drive
 → Google 공식 Save to Drive 버튼
 ```
 
-## 13. 오류 분리
+## 14. 오류 분리
 
 ```text
 데이터 실패 + 영상 성공 → 영상 저장 유지
@@ -208,7 +216,7 @@ Apps Script 실패 → 로컬 저장 유지
 Drive 버튼 실패 → 로컬 저장 유지
 ```
 
-## 14. 영구 저장 금지
+## 15. 영구 저장 금지
 
 ```text
 실행 중 media URL
