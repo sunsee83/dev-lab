@@ -3,279 +3,50 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>YouTube 수집</title>
 <style>
-:root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;background:#0f0f0f;color:#f4f4f4}.app{width:min(100%,460px);margin:0 auto;background:#111;min-height:100vh}.hidden{display:none!important}.screen{padding:14px}.title{font-size:20px;font-weight:800}.muted{color:#aaa;font-size:12px;line-height:1.45}.divider{height:1px;background:#2b2b2b;margin:16px 0}.section{padding:2px 0}.section-title{font-size:15px;font-weight:800;margin:0 0 10px}.row{display:flex;gap:8px;align-items:center}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.btn,.select,.input,.textarea{font:inherit;border:1px solid #3a3a3a;background:#1b1b1b;color:#fff;border-radius:11px;min-height:44px}.btn{padding:10px 12px;font-weight:700}.btn.primary{background:#fff;color:#111;border-color:#fff}.btn.on{background:#fff;color:#111;border-color:#fff}.btn.small{min-height:40px;padding:8px 10px;font-size:13px}.select,.input,.textarea{width:100%;padding:10px 11px}.textarea{min-height:78px;resize:vertical}.header{display:grid;grid-template-columns:92px 1fr;gap:11px;align-items:start}.thumb{width:92px;height:52px;object-fit:cover;border-radius:8px;background:#222}.video-title{font-weight:800;font-size:15px;line-height:1.35;max-height:42px;overflow:hidden}.meta{margin-top:4px;color:#aaa;font-size:12px;line-height:1.35}.choice-note{margin-top:7px;color:#999;font-size:12px}.option-box{margin-top:12px;padding:12px;border:1px solid #2c2c2c;border-radius:12px;background:#151515}.subhead{font-weight:800;margin-bottom:8px}.checks{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}.check{display:flex;gap:7px;align-items:flex-start;font-size:14px}.check input{margin-top:2px;transform:scale(1.12)}details{margin-top:12px;border-top:1px solid #292929;padding-top:10px}summary{cursor:pointer;font-weight:700}.drive-step{padding:11px 0}.arrow{color:#777;text-align:center;padding:2px 0}.two-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px}.stars{display:flex;gap:8px}.star{font:inherit;font-size:26px;line-height:1;border:0;background:transparent;color:#777;padding:5px 3px}.star.on{color:#fff}.duplicate{padding:12px;border:1px solid #6c5825;background:#261f10;border-radius:12px}.radio-row{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}.status{min-height:21px;color:#aaa;font-size:12px;margin-top:10px}.footer{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px}.setup-card{margin-top:14px;border:1px solid #2e2e2e;border-radius:14px;padding:14px;background:#151515}.setup-list{display:grid;gap:8px;margin:14px 0}.setup-item{display:flex;gap:8px;align-items:center}.ok{color:#bbb}.path{margin-top:12px;padding:10px 11px;background:#1c1c1c;border-radius:10px;font-weight:700}.block{display:block;width:100%}.label{display:block;font-weight:700;margin-bottom:7px}.sp8{height:8px}.sp12{height:12px}@media(max-width:350px){.checks{grid-template-columns:1fr}.header{grid-template-columns:76px 1fr}.thumb{width:76px;height:43px}.grid3{gap:6px}.btn{padding-left:8px;padding-right:8px}}
+:root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;background:#0f0f0f;color:#f4f4f4}.app{width:min(100%,460px);margin:auto;background:#111}.hidden{display:none!important}.screen{padding:14px}.title{font-size:20px;font-weight:800}.muted,.note,.status{color:#aaa;font-size:12px;line-height:1.45}.divider{height:1px;background:#2b2b2b;margin:16px 0}.section-title,.subhead,.label{font-weight:800}.section-title{margin-bottom:10px}.label{display:block;margin-bottom:7px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.btn,.select,.input,.textarea{font:inherit;border:1px solid #3a3a3a;background:#1b1b1b;color:#fff;border-radius:11px;min-height:44px}.btn{padding:10px 12px;font-weight:700}.btn.primary,.btn.on{background:#fff;color:#111;border-color:#fff}.btn.small{min-height:40px;padding:8px 10px;font-size:13px}.btn:disabled{opacity:.45}.select,.input,.textarea{width:100%;padding:10px 11px}.textarea{min-height:78px}.header{display:grid;grid-template-columns:92px 1fr;gap:11px}.thumb{width:92px;height:52px;object-fit:cover;border-radius:8px;background:#222}.video-title{font-weight:800;font-size:15px;line-height:1.35;max-height:42px;overflow:hidden}.meta{margin-top:4px;color:#aaa;font-size:12px}.note{margin-top:7px}.option{margin-top:12px;padding:12px;border:1px solid #2c2c2c;border-radius:12px;background:#151515}.checks{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}.check{display:flex;gap:7px;align-items:flex-start;font-size:14px}.check input{margin-top:2px;transform:scale(1.12)}details{margin-top:12px;border-top:1px solid #292929;padding-top:10px}.two{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px}.arrow{text-align:center;color:#777}.stars{display:flex;gap:8px}.star{font-size:26px;border:0;background:none;color:#777}.star.on{color:#fff}.duplicate{padding:12px;border:1px solid #6c5825;background:#261f10;border-radius:12px}.radio{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}.footer{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px}.setup{margin-top:14px;border:1px solid #2e2e2e;border-radius:14px;padding:14px;background:#151515}.setup-list{display:grid;gap:8px;margin:14px 0}.path{padding:10px 11px;background:#1c1c1c;border-radius:10px;font-weight:700}.block{width:100%}.sp{height:12px}@media(max-width:350px){.checks{grid-template-columns:1fr}.header{grid-template-columns:76px 1fr}.thumb{width:76px;height:43px}}
 </style>
-<div class="app" id="ytCollectorApp">
-  <section id="setupScreen" class="screen">
-    <div class="title">YouTube 수집도구 설정</div>
-    <div class="sp12"></div>
-    <button id="googleContinue" class="btn primary block" type="button">Google 계정으로 계속</button>
-    <div class="setup-card">
-      <div class="section-title">① 내 저장공간 만들기</div>
-      <button id="setupStart" class="btn block" type="button">설정 시작</button>
-      <div class="setup-list">
-        <div class="setup-item"><span class="ok">✓</span><span>내 Drive에 전용 폴더</span></div>
-        <div class="setup-item"><span class="ok">✓</span><span>내 Google Sheets 파일</span></div>
-        <div class="setup-item"><span class="ok">✓</span><span>기본 시트</span></div>
-        <div class="setup-item"><span class="ok">✓</span><span>기본 카테고리</span></div>
-      </div>
-      <div class="muted">저장 위치</div>
-      <div id="setupPath" class="path">Drive / YouTube 수집/</div>
-      <div class="sp12"></div>
-      <button id="setupComplete" class="btn primary block" type="button">설정 완료</button>
-      <div id="setupStatus" class="status">설정 대기 중</div>
-    </div>
-  </section>
-
-  <section id="mainScreen" class="screen hidden">
-    <div class="title">YouTube 수집</div>
-    <div class="divider"></div>
-
-    <div class="header">
-      <img id="thumb" class="thumb" alt="썸네일">
-      <div>
-        <div id="videoTitle" class="video-title">영상 제목</div>
-        <div id="videoMeta" class="meta">채널명 · 업로드일 · 길이 · 조회수</div>
-      </div>
-    </div>
-
-    <div class="divider"></div>
-    <div class="section">
-      <div class="section-title">1. 가져올 항목</div>
-      <div class="grid3">
-        <button class="btn type-btn" data-type="video" type="button">영상</button>
-        <button class="btn type-btn" data-type="audio" type="button">음성</button>
-        <button class="btn type-btn" data-type="data" type="button">데이터</button>
-      </div>
-      <div class="choice-note">※ 복수 선택 가능</div>
-    </div>
-
-    <div id="videoOptions" class="option-box hidden">
-      <div class="subhead">영상</div>
-      <label class="label" for="videoQuality">화질</label>
-      <select id="videoQuality" class="select"></select>
-      <div class="choice-note">※ 실제 가능한 화질만 표시</div>
-    </div>
-
-    <div id="audioOptions" class="option-box hidden">
-      <div class="subhead">음성</div>
-      <label class="label" for="audioQuality">음질</label>
-      <select id="audioQuality" class="select"></select>
-      <div class="choice-note">※ 실제 가능한 음질만 표시</div>
-    </div>
-
-    <div id="dataOptions" class="option-box hidden">
-      <div class="subhead">기본정보</div>
-      <div class="checks" id="basicFields">
-        <label class="check"><input type="checkbox" value="thumbnail" checked>썸네일</label>
-        <label class="check"><input type="checkbox" value="title" checked>제목</label>
-        <label class="check"><input type="checkbox" value="url" checked>영상 URL</label>
-        <label class="check"><input type="checkbox" value="channel" checked>채널명</label>
-        <label class="check"><input type="checkbox" value="publishedAt" checked>업로드일</label>
-        <label class="check"><input type="checkbox" value="duration" checked>영상 길이</label>
-        <label class="check"><input type="checkbox" value="views" checked>조회수</label>
-      </div>
-      <div class="sp12"></div>
-      <div class="subhead">내용</div>
-      <div class="checks" id="contentFields">
-        <label class="check"><input type="checkbox" value="description" checked>설명</label>
-        <label class="check"><input type="checkbox" value="tags" checked>태그</label>
-        <label class="check"><input type="checkbox" value="transcript" checked>대본</label>
-        <label class="check"><input id="commentsCheck" type="checkbox" value="comments">댓글</label>
-      </div>
-      <div id="commentOptions" class="grid2 hidden" style="margin-top:10px">
-        <select id="commentCount" class="select" aria-label="댓글 수량">
-          <option value="50">댓글 50개</option>
-          <option value="100" selected>댓글 100개</option>
-          <option value="300">댓글 300개</option>
-        </select>
-        <select id="commentSort" class="select" aria-label="댓글 정렬">
-          <option value="top" selected>인기순</option>
-          <option value="newest">최신순</option>
-        </select>
-      </div>
-      <details>
-        <summary>고급</summary>
-        <div class="checks" id="advancedFields" style="margin-top:10px">
-          <label class="check"><input type="checkbox" value="likes">좋아요</label>
-          <label class="check"><input type="checkbox" value="rawCaptions">자막 원본</label>
-          <label class="check"><input type="checkbox" value="videoId">영상 ID</label>
-          <label class="check"><input type="checkbox" value="channelId">채널 ID</label>
-          <label class="check"><input type="checkbox" value="rawMetadata">원본 메타데이터</label>
-        </div>
-      </details>
-    </div>
-
-    <div id="formatSection" class="hidden">
-      <div class="divider"></div>
-      <div class="section">
-        <div class="section-title">2. 데이터 형식</div>
-        <div class="choice-note" style="margin:0 0 8px">※ 데이터 선택 시에만 표시</div>
-        <select id="dataFormat" class="select">
-          <option value="original" selected>원문</option>
-          <option value="txt">TXT</option>
-          <option value="json">JSON</option>
-        </select>
-        <div class="choice-note">※ 원문: 사람과 AI가 바로 읽기 좋은 정리된 형태</div>
-      </div>
-    </div>
-
-    <div class="divider"></div>
-    <div class="section">
-      <div class="section-title">3. 저장 위치</div>
-      <div class="grid2">
-        <button class="btn target-btn" data-target="local" type="button">로컬</button>
-        <button class="btn target-btn" data-target="drive" type="button">Drive</button>
-      </div>
-      <div class="choice-note">둘 중 하나 선택</div>
-    </div>
-
-    <div id="localOptions" class="option-box hidden">
-      <div>저장할 때 Android에서<br>폴더/파일명 직접 선택</div>
-    </div>
-
-    <div id="driveOptions" class="option-box hidden">
-      <div class="drive-step">
-        <label class="label" for="driveFile">파일</label>
-        <select id="driveFile" class="select"></select>
-        <div class="two-actions">
-          <button class="btn small" data-drive-action="new-file" type="button">+ 새 파일</button>
-          <button class="btn small" data-drive-action="open-file" type="button">열기</button>
-        </div>
-      </div>
-      <div class="arrow">↓</div>
-      <div class="drive-step">
-        <label class="label" for="driveSheet">시트</label>
-        <select id="driveSheet" class="select"></select>
-        <div class="two-actions">
-          <button class="btn small" data-drive-action="new-sheet" type="button">+ 새 시트</button>
-          <button class="btn small" data-drive-action="open-sheet" type="button">열기</button>
-        </div>
-      </div>
-      <div class="arrow">↓</div>
-      <div class="drive-step">
-        <label class="label" for="driveCategory">카테고리</label>
-        <select id="driveCategory" class="select"></select>
-        <div class="two-actions">
-          <button class="btn small" data-drive-action="new-category" type="button">+ 새 카테고리</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="managementSection" class="hidden">
-      <div class="divider"></div>
-      <div class="section">
-        <div class="section-title">4. 관리정보</div>
-        <div class="choice-note" style="margin:0 0 10px">※ 데이터 + Drive일 때만 표시</div>
-        <label class="label" for="myTags">내 태그</label>
-        <input id="myTags" class="input" autocomplete="off">
-        <div class="sp12"></div>
-        <div class="label">중요도</div>
-        <div class="stars" id="stars">
-          <button class="star" data-star="1" type="button">☆</button>
-          <button class="star" data-star="2" type="button">☆</button>
-          <button class="star" data-star="3" type="button">☆</button>
-        </div>
-        <div class="sp12"></div>
-        <label class="label" for="state">상태</label>
-        <select id="state" class="select">
-          <option value="미분석" selected>미분석</option>
-          <option value="검토중">검토중</option>
-          <option value="완료">완료</option>
-          <option value="보류">보류</option>
-        </select>
-        <div class="sp12"></div>
-        <label class="label" for="memo">메모</label>
-        <textarea id="memo" class="textarea"></textarea>
-      </div>
-    </div>
-
-    <div id="duplicateSection" class="hidden">
-      <div class="divider"></div>
-      <div class="duplicate">
-        <div style="font-weight:800">이미 수집된 영상입니다.</div>
-        <div class="sp8"></div>
-        <button id="openExisting" class="btn block" type="button">기존 기록 열기</button>
-        <div class="radio-row">
-          <label><input type="radio" name="duplicateMode" value="update" checked> 업데이트</label>
-          <label><input type="radio" name="duplicateMode" value="new"> 새 기록 추가</label>
-        </div>
-      </div>
-    </div>
-
-    <div class="divider"></div>
-    <div class="footer">
-      <button id="saveBtn" class="btn primary" type="button">저장</button>
-      <button id="closeBtn" class="btn" type="button">닫기</button>
-    </div>
-    <div id="mainStatus" class="status">준비됨</div>
-  </section>
+<div class="app" id="ytToolUI">
+<section id="setupScreen" class="screen">
+  <div class="title">YouTube 수집도구 설정</div><div class="sp"></div>
+  <button id="googleContinue" class="btn primary block">Google 계정으로 계속</button>
+  <div class="setup">
+    <div class="section-title">① 내 저장공간 만들기</div>
+    <button id="setupStart" class="btn block">설정 시작</button>
+    <div class="setup-list"><div>✓ 내 Drive에 전용 폴더</div><div>✓ 내 Google Sheets 파일</div><div>✓ 기본 시트</div><div>✓ 기본 카테고리</div></div>
+    <div class="muted">저장 위치</div><div id="setupPath" class="path">Drive / YouTube 수집/</div><div class="sp"></div>
+    <button id="setupComplete" class="btn primary block">설정 완료</button><div id="setupStatus" class="status">설정 대기 중</div>
+  </div>
+</section>
+<section id="mainScreen" class="screen hidden">
+  <div class="title">YouTube 수집</div><div class="divider"></div>
+  <div class="header"><img id="thumb" class="thumb" alt="썸네일"><div><div id="videoTitle" class="video-title">영상 제목</div><div id="videoMeta" class="meta">채널명 · 업로드일 · 길이 · 조회수</div></div></div>
+  <div class="divider"></div>
+  <div class="section-title">1. 가져올 항목</div>
+  <div class="grid3"><button class="btn type" data-type="video">영상</button><button class="btn type" data-type="audio">음성</button><button class="btn type" data-type="data">데이터</button></div><div class="note">※ 복수 선택 가능</div>
+  <div id="videoOptions" class="option hidden"><div class="subhead">영상</div><div class="sp"></div><label class="label" for="videoQuality">화질</label><select id="videoQuality" class="select"></select><div class="note">※ 실제 가능한 화질만 표시</div></div>
+  <div id="audioOptions" class="option hidden"><div class="subhead">음성</div><div class="sp"></div><label class="label" for="audioQuality">음질</label><select id="audioQuality" class="select"></select><div class="note">※ 실제 가능한 음질만 표시</div></div>
+  <div id="dataOptions" class="option hidden">
+    <div class="subhead">기본정보</div><div class="sp"></div>
+    <div class="checks"><label class="check"><input type="checkbox" value="thumbnail" checked>썸네일</label><label class="check"><input type="checkbox" value="title" checked>제목</label><label class="check"><input type="checkbox" value="url" checked>영상 URL</label><label class="check"><input type="checkbox" value="channel" checked>채널명</label><label class="check"><input type="checkbox" value="publishedAt" checked>업로드일</label><label class="check"><input type="checkbox" value="duration" checked>영상 길이</label><label class="check"><input type="checkbox" value="views" checked>조회수</label></div>
+    <div class="sp"></div><div class="subhead">내용</div><div class="sp"></div>
+    <div class="checks"><label class="check"><input type="checkbox" value="description" checked>설명</label><label class="check"><input type="checkbox" value="tags" checked>태그</label><label class="check"><input type="checkbox" value="transcript" checked>대본</label><label class="check"><input id="commentsCheck" type="checkbox" value="comments">댓글</label></div>
+    <div id="commentOptions" class="grid2 hidden" style="margin-top:10px"><select id="commentCount" class="select"><option value="50">댓글 50개</option><option value="100" selected>댓글 100개</option><option value="300">댓글 300개</option></select><select id="commentSort" class="select"><option value="top" selected>인기순</option><option value="newest">최신순</option></select></div>
+    <details><summary>고급</summary><div class="checks" style="margin-top:10px"><label class="check"><input type="checkbox" value="likes">좋아요</label><label class="check"><input type="checkbox" value="rawCaptions">자막 원본</label><label class="check"><input type="checkbox" value="videoId">영상 ID</label><label class="check"><input type="checkbox" value="channelId">채널 ID</label><label class="check"><input type="checkbox" value="rawMetadata">원본 메타데이터</label></div></details>
+  </div>
+  <div id="formatSection" class="hidden"><div class="divider"></div><div class="section-title">2. 데이터 형식</div><select id="dataFormat" class="select"><option value="original">원문</option><option value="txt">TXT</option><option value="json">JSON</option></select><div class="note">※ 원문: 사람과 AI가 바로 읽기 좋은 정리된 형태</div></div>
+  <div class="divider"></div><div class="section-title">3. 저장 위치</div>
+  <div class="grid2"><button class="btn target" data-target="local">로컬</button><button class="btn target" data-target="drive">Drive</button></div><div class="note">둘 중 하나 선택</div>
+  <div id="localOptions" class="option hidden">저장할 때 Android에서<br>폴더/파일명 직접 선택</div>
+  <div id="driveOptions" class="option hidden">
+    <label class="label">파일</label><select id="driveFile" class="select"></select><div class="two"><button class="btn small drive-action" data-action="new-file">+ 새 파일</button><button class="btn small drive-action" data-action="open-file">열기</button></div><div class="arrow">↓</div>
+    <label class="label">시트</label><select id="driveSheet" class="select"></select><div class="two"><button class="btn small drive-action" data-action="new-sheet">+ 새 시트</button><button class="btn small drive-action" data-action="open-sheet">열기</button></div><div class="arrow">↓</div>
+    <label class="label">카테고리</label><select id="driveCategory" class="select"></select><div class="two"><button class="btn small drive-action" data-action="new-category">+ 새 카테고리</button></div>
+  </div>
+  <div id="managementSection" class="hidden"><div class="divider"></div><div class="section-title">4. 관리정보</div><div class="note">※ 데이터 + Drive일 때만 표시</div><div class="sp"></div><label class="label">내 태그</label><input id="myTags" class="input"><div class="sp"></div><div class="label">중요도</div><div class="stars"><button class="star" data-star="1">☆</button><button class="star" data-star="2">☆</button><button class="star" data-star="3">☆</button></div><div class="sp"></div><label class="label">상태</label><select id="stateSelect" class="select"><option>미분석</option><option>검토중</option><option>완료</option><option>보류</option></select><div class="sp"></div><label class="label">메모</label><textarea id="memo" class="textarea"></textarea></div>
+  <div id="duplicateSection" class="hidden"><div class="divider"></div><div class="duplicate"><b>이미 수집된 영상입니다.</b><div class="sp"></div><button id="openExisting" class="btn block">기존 기록 열기</button><div class="radio"><label><input type="radio" name="dup" value="update" checked> 업데이트</label><label><input type="radio" name="dup" value="new"> 새 기록 추가</label></div></div></div>
+  <div class="divider"></div><div class="footer"><button id="saveBtn" class="btn primary">저장</button><button id="closeBtn" class="btn">닫기</button></div><div id="mainStatus" class="status">연결 대기 중…</div>
+</section>
 </div>
 <script>
-(()=>{
-  const root=document.getElementById('ytCollectorApp');
-  if(root.dataset.ready)return;root.dataset.ready='1';
-  const q=s=>root.querySelector(s),qa=s=>[...root.querySelectorAll(s)];
-  const token=new URLSearchParams((location.hash||'').replace(/^#/,'' )).get('token')||'';
-  const state={configured:false,types:new Set(),target:'',priority:0,duplicate:null,init:null};
-  const send=(action,payload={})=>{const msg={type:'YT_COLLECTOR_ACTION',token,action,...payload};try{parent&&parent!==self&&parent.postMessage(msg,'*')}catch{}try{opener&&opener!==self&&opener.postMessage(msg,'*')}catch{}window.dispatchEvent(new CustomEvent('ytcollector-action',{detail:msg}))};
-  const show=(el,on)=>el.classList.toggle('hidden',!on);
-  const fill=(el,items,emptyLabel)=>{el.replaceChildren();const list=Array.isArray(items)&&items.length?items:[{label:emptyLabel||'없음',value:''}];for(const item of list){const o=document.createElement('option');o.value=String(item.value??item.id??item.name??'');o.textContent=String(item.label??item.name??item.value??'');el.append(o)}};
-  const setStatus=(text,setup=false)=>(setup?q('#setupStatus'):q('#mainStatus')).textContent=text||'';
-  function render(){
-    show(q('#setupScreen'),!state.configured);show(q('#mainScreen'),state.configured);
-    if(!state.configured)return;
-    const v=state.types.has('video'),a=state.types.has('audio'),d=state.types.has('data');
-    qa('.type-btn').forEach(b=>b.classList.toggle('on',state.types.has(b.dataset.type)));
-    qa('.target-btn').forEach(b=>b.classList.toggle('on',state.target===b.dataset.target));
-    show(q('#videoOptions'),v);show(q('#audioOptions'),a);show(q('#dataOptions'),d);show(q('#formatSection'),d);
-    show(q('#localOptions'),state.target==='local');show(q('#driveOptions'),state.target==='drive');
-    show(q('#managementSection'),d&&state.target==='drive');show(q('#duplicateSection'),!!state.duplicate);
-  }
-  function init(data={}){
-    state.init=data;state.configured=data.configured!==false;
-    const v=data.video||{};q('#videoTitle').textContent=v.title||'영상 제목';
-    q('#videoMeta').textContent=[v.channel,v.publishedAt,v.duration,v.views].filter(Boolean).join(' · ')||'채널명 · 업로드일 · 길이 · 조회수';
-    if(v.thumbnail)q('#thumb').src=v.thumbnail;else q('#thumb').removeAttribute('src');
-    fill(q('#videoQuality'),data.media?.video,'가능한 화질 없음');fill(q('#audioQuality'),data.media?.audio,'가능한 음질 없음');
-    fill(q('#driveFile'),data.drive?.files,'파일 선택');fill(q('#driveSheet'),data.drive?.sheets,'시트 선택');fill(q('#driveCategory'),data.drive?.categories,'카테고리 선택');
-    state.duplicate=data.duplicate||null;if(data.storagePath)q('#setupPath').textContent=data.storagePath;
-    render();setStatus('준비됨');
-  }
-  q('#googleContinue').addEventListener('click',()=>{setStatus('Google 계정 연결 요청 중',true);send('google-continue')});
-  q('#setupStart').addEventListener('click',()=>{setStatus('저장공간 생성 요청 중',true);send('setup-start')});
-  q('#setupComplete').addEventListener('click',()=>send('setup-complete'));
-  qa('.type-btn').forEach(b=>b.addEventListener('click',()=>{const t=b.dataset.type;state.types.has(t)?state.types.delete(t):state.types.add(t);render()}));
-  qa('.target-btn').forEach(b=>b.addEventListener('click',()=>{state.target=b.dataset.target;render()}));
-  q('#commentsCheck').addEventListener('change',e=>show(q('#commentOptions'),e.target.checked));
-  qa('.star').forEach(b=>b.addEventListener('click',()=>{const n=Number(b.dataset.star);state.priority=state.priority===n?0:n;qa('.star').forEach(x=>{const on=Number(x.dataset.star)<=state.priority;x.classList.toggle('on',on);x.textContent=on?'★':'☆'})}));
-  qa('[data-drive-action]').forEach(b=>b.addEventListener('click',()=>send(b.dataset.driveAction,{file:q('#driveFile').value,sheet:q('#driveSheet').value,category:q('#driveCategory').value})));
-  q('#openExisting').addEventListener('click',()=>send('open-existing',{duplicate:state.duplicate}));
-  q('#closeBtn').addEventListener('click',()=>send('close'));
-  q('#saveBtn').addEventListener('click',()=>{
-    if(!state.types.size)return setStatus('가져올 항목을 선택하세요.');
-    if(!state.target)return setStatus('저장 위치를 선택하세요.');
-    const payload={types:[...state.types],target:state.target};
-    if(state.types.has('video'))payload.videoQuality=q('#videoQuality').value;
-    if(state.types.has('audio'))payload.audioQuality=q('#audioQuality').value;
-    if(state.types.has('data')){
-      payload.fields=qa('#dataOptions input[type=checkbox]:checked').map(x=>x.value);
-      payload.format=q('#dataFormat').value;
-      if(q('#commentsCheck').checked)payload.comments={count:Number(q('#commentCount').value),sort:q('#commentSort').value};
-    }
-    if(state.target==='drive')payload.drive={file:q('#driveFile').value,sheet:q('#driveSheet').value,category:q('#driveCategory').value};
-    if(state.types.has('data')&&state.target==='drive')payload.management={tags:q('#myTags').value.trim(),priority:state.priority,status:q('#state').value,memo:q('#memo').value};
-    if(state.duplicate)payload.duplicateMode=q('input[name=duplicateMode]:checked')?.value||'update';
-    setStatus('처리 요청 중…');send('save',payload);
-  });
-  addEventListener('message',e=>{const d=e.data||{};if(d.token!==undefined&&token&&d.token!==token)return;
-    if(d.type==='YT_COLLECTOR_INIT')init(d);
-    if(d.type==='YT_COLLECTOR_STATUS')setStatus(d.message||'',!!d.setup);
-    if(d.type==='YT_COLLECTOR_CONFIGURED'){state.configured=!!d.configured;render()}
-    if(d.type==='YT_COLLECTOR_DRIVE_OPTIONS'){if(d.files)fill(q('#driveFile'),d.files,'파일 선택');if(d.sheets)fill(q('#driveSheet'),d.sheets,'시트 선택');if(d.categories)fill(q('#driveCategory'),d.categories,'카테고리 선택')}
-    if(d.type==='YT_COLLECTOR_DUPLICATE'){state.duplicate=d.duplicate||null;render()}
-  });
-  window.YTCollectorUI={init,setStatus,render,setConfigured(v){state.configured=!!v;render()},setDuplicate(v){state.duplicate=v;render()},getState(){return{configured:state.configured,types:[...state.types],target:state.target,priority:state.priority}}};
-  send('ui-ready');render();
-})();
+(()=>{const root=document.getElementById('ytToolUI');if(root.dataset.ready)return;root.dataset.ready='1';const q=s=>root.querySelector(s),qa=s=>[...root.querySelectorAll(s)],token=new URLSearchParams(location.hash.slice(1)).get('token')||'';const S={configured:false,types:new Set(),target:'',priority:0,duplicate:null,busy:false,init:null};const post=o=>{o={...o,token};try{parent&&parent!==self&&parent.postMessage(o,'*')}catch{}try{opener&&opener!==self&&opener.postMessage(o,'*')}catch{}dispatchEvent(new CustomEvent('yt-tool-action',{detail:o}))};const action=(name,payload={})=>post({type:'YT_TOOL_ACTION',action:name,...payload});const show=(s,on)=>q(s).classList.toggle('hidden',!on);const fill=(s,a,z)=>{const e=q(s);e.replaceChildren();const list=Array.isArray(a)&&a.length?a:[{label:z,value:''}];for(const x of list){const o=document.createElement('option');o.value=String(x.id??x.value??'');o.textContent=String(x.label??x.value??z);e.append(o)}};const status=(m,setup=false)=>(setup?q('#setupStatus'):q('#mainStatus')).textContent=m||'';function render(){show('#setupScreen',!S.configured);show('#mainScreen',S.configured);if(!S.configured)return;const v=S.types.has('video'),a=S.types.has('audio'),d=S.types.has('data');qa('.type').forEach(b=>b.classList.toggle('on',S.types.has(b.dataset.type)));qa('.target').forEach(b=>b.classList.toggle('on',S.target===b.dataset.target));show('#videoOptions',v);show('#audioOptions',a);show('#dataOptions',d);show('#formatSection',d);show('#localOptions',S.target==='local');show('#driveOptions',S.target==='drive');show('#managementSection',d&&S.target==='drive');show('#duplicateSection',!!S.duplicate);q('#saveBtn').disabled=S.busy}function init(d){S.init=d;S.configured=d.configured!==false;const v=d.video||{};q('#videoTitle').textContent=v.title||'영상 제목';q('#videoMeta').textContent=[v.channel,v.publishedAt,v.duration,v.views].filter(Boolean).join(' · ')||'채널명 · 업로드일 · 길이 · 조회수';if(v.thumbnail)q('#thumb').src=v.thumbnail;else q('#thumb').removeAttribute('src');fill('#videoQuality',d.media?.video,'가능한 화질 없음');fill('#audioQuality',d.media?.audio,'가능한 음질 없음');fill('#driveFile',d.drive?.files,'파일 선택');fill('#driveSheet',d.drive?.sheets,'시트 선택');fill('#driveCategory',d.drive?.categories,'카테고리 선택');S.duplicate=d.duplicate||null;if(d.storagePath)q('#setupPath').textContent=d.storagePath;render();status('준비됨')}function payload(){const p={types:[...S.types],target:S.target};if(S.types.has('video'))p.video={id:q('#videoQuality').value};if(S.types.has('audio'))p.audio={id:q('#audioQuality').value};if(S.types.has('data')){p.data={fields:qa('#dataOptions input[type=checkbox]:checked').map(x=>x.value),format:q('#dataFormat').value};if(q('#commentsCheck').checked)p.data.comments={count:+q('#commentCount').value,sort:q('#commentSort').value}}if(S.target==='drive')p.drive={file:q('#driveFile').value,sheet:q('#driveSheet').value,category:q('#driveCategory').value};if(S.types.has('data')&&S.target==='drive')p.management={tags:q('#myTags').value.trim(),priority:S.priority,status:q('#stateSelect').value,memo:q('#memo').value};if(S.duplicate)p.duplicateMode=q('input[name=dup]:checked')?.value||'update';return p}q('#googleContinue').onclick=()=>action('google-continue');q('#setupStart').onclick=()=>action('setup-start');q('#setupComplete').onclick=()=>action('setup-complete');qa('.type').forEach(b=>b.onclick=()=>{const t=b.dataset.type;S.types.has(t)?S.types.delete(t):S.types.add(t);render()});qa('.target').forEach(b=>b.onclick=()=>{S.target=b.dataset.target;render()});q('#commentsCheck').onchange=e=>show('#commentOptions',e.target.checked);qa('.star').forEach(b=>b.onclick=()=>{const n=+b.dataset.star;S.priority=S.priority===n?0:n;qa('.star').forEach(x=>{const on=+x.dataset.star<=S.priority;x.classList.toggle('on',on);x.textContent=on?'★':'☆'})});qa('.drive-action').forEach(b=>b.onclick=()=>action(b.dataset.action,{drive:{file:q('#driveFile').value,sheet:q('#driveSheet').value,category:q('#driveCategory').value}}));q('#openExisting').onclick=()=>action('open-existing',{duplicate:S.duplicate});q('#closeBtn').onclick=()=>action('close');q('#saveBtn').onclick=()=>{if(!S.types.size)return status('가져올 항목을 선택하세요.');if(!S.target)return status('저장 위치를 선택하세요.');const p=payload();if(S.target==='local'){if(S.types.has('video')&&!p.video.id)return status('저장 가능한 영상이 없습니다.');if(S.types.has('audio')&&!p.audio.id)return status('저장 가능한 음성이 없습니다.');S.busy=true;render();status('로컬 저장 준비 중…');action('save-local',p)}else{S.busy=true;render();status('Drive 저장 준비 중…');action('save-drive',p)}};addEventListener('message',e=>{const d=e.data||{};if(token&&d.token!==token)return;if(d.type==='YT_TOOL_INIT')init(d);if(d.type==='YT_TOOL_STATUS'){S.busy=d.state==='working';render();status(d.message||'',!!d.setup)}if(d.type==='YT_TOOL_OPTIONS'){if(d.files)fill('#driveFile',d.files,'파일 선택');if(d.sheets)fill('#driveSheet',d.sheets,'시트 선택');if(d.categories)fill('#driveCategory',d.categories,'카테고리 선택')}if(d.type==='YT_TOOL_DUPLICATE'){S.duplicate=d.duplicate||null;render()}if(d.type==='YT_TOOL_SETUP'){if('configured'in d)S.configured=!!d.configured;if(d.storagePath)q('#setupPath').textContent=d.storagePath;render();status(d.message||'',true)}});window.YTToolUI={init,status,render,getState:payload};post({type:'YT_TOOL_READY'});render()})();
 </script>
