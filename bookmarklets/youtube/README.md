@@ -80,6 +80,21 @@ YouTube 구조에 직접 의존하는 짧고 중요한 로직만 둡니다.
 6. 태그 / 중요도(1~3) / 상태 / 메모
 7. 저장
 
+## 공개 UI 연결 방식
+
+현재 `dev-lab` 저장소는 GitHub Pages를 사용하지 않습니다.
+
+따라서 우선 `bridge.svg`를 raw SVG 문서/iframe 브리지로 사용하도록 설계합니다. 북마클릿의 YouTube 전용 핵심 로직은 페이지 안에 남고, 공개 UI는 별도 origin에서 실행되며 `postMessage`로만 통신합니다.
+
+이 방식의 목적은 다음과 같습니다.
+
+- 북마크 URL 길이 축소
+- YouTube CSP/Trusted Types와 공개 UI 코드의 충돌 최소화
+- UI 수정 시 북마크 URL을 다시 배포하지 않아도 되는 구조 확보
+- YouTube 전용 핵심 추출 로직은 공개 저장소에 두지 않기
+
+`bridge.html`은 동일 UI의 HTML 버전이며, 향후 정적 호스팅이 필요한 경우 사용할 수 있습니다.
+
 ## 현재 검증 상태
 
 Android 모바일 Whale + YouTube 모바일 웹에서 다음을 확인했습니다.
@@ -90,10 +105,12 @@ Android 모바일 Whale + YouTube 모바일 웹에서 다음을 확인했습니�
 - 통합 MP4의 검증된 화질은 현재 360p
 - 고화질 영상은 영상/음성 분리 스트림 병합이 필요하므로 별도 과제
 - Google Drive 직접 저장은 별도 검증 단계
+- raw SVG bridge는 구현 완료, 실제 모바일 브라우저 연결 검증 필요
 
 ## 파일
 
-- `bridge.html` : 공개 UI 본체. YouTube 페이지의 짧은 북마클릿 코어와 `postMessage`로 통신하도록 설계
+- `bridge.svg` : GitHub Pages 없이 사용할 수 있도록 만든 모바일 UI 브리지
+- `bridge.html` : 동일 역할의 HTML UI 버전
 - `PROTOCOL.md` : 북마클릿 코어와 공개 UI 사이 메시지 규격
 
 핵심 YouTube 추출 코드는 이 폴더에 저장하지 않습니다.
