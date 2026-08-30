@@ -1,5 +1,11 @@
 # Instagram RI 미디어 저장 규칙
 
+## 사용자에게 보이는 저장 기능
+- 영상 저장: 소리 포함 정상 영상
+- 음원 저장: 음원만
+- 이미지 저장: 영상의 0초 첫 표시 프레임
+- 무음 영상 트랙은 영상+소리 파일 생성용 내부 재료로만 사용하고 일반 UI에는 노출하지 않는다.
+
 ## 저장 위치
 - 기본 다운로드
 - 지정 폴더
@@ -7,10 +13,10 @@
 - 사용자가 `기본 다운로드`를 선택하면 지정 폴더를 기억하더라도 현재 저장 방식은 기본 다운로드로 전환
 
 ## Reel 파일명
-- 영상+소리: `IG_{shortcode}_reel.mp4` (브라우저가 MP4 결합 미지원이면 `.webm`)
-- 원본 영상: `IG_{shortcode}_video.mp4`
-- 원본 음원: `IG_{shortcode}_audio.m4a`
-- 첫 프레임: `IG_{shortcode}_frame001.jpg`
+- 영상: `IG_{shortcode}_reel.mp4` (브라우저가 MP4 결합 미지원이면 `.webm`)
+- 음원: `IG_{shortcode}_audio.m4a`
+- 이미지: `IG_{shortcode}_frame001.jpg`
+- 내부 원본 영상 트랙이 필요한 경우에만 `IG_{shortcode}_video.mp4`를 사용한다.
 
 ## 이미지 원칙
 - Reel 이미지 저장은 임의의 대표 장면을 고르지 않는다.
