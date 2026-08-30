@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>YT 미디어</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;background:#101010;color:#f5f5f5;font:15px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{padding:12px}.app{max-width:520px;margin:auto}.top{display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid #303030}.thumb{width:92px;height:52px;object-fit:cover;border-radius:8px;background:#222}.meta{min-width:0;flex:1}.title{font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sub{margin-top:3px;color:#aaa;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sec{padding:14px 0;border-bottom:1px solid #303030}.label{font-weight:700;margin-bottom:8px}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btn,.choice,select{width:100%;border:1px solid #454545;border-radius:11px;background:#202020;color:#fff;padding:11px;font:inherit}.choice.on{background:#f2f2f2;color:#111;border-color:#f2f2f2}.hidden{display:none!important}.status{min-height:38px;padding:10px 0;color:#bbb;font-size:13px}.foot{display:grid;grid-template-columns:1fr auto;gap:8px;position:sticky;bottom:0;background:#101010;padding:8px 0 calc(8px + env(safe-area-inset-bottom))}.primary{font-weight:750}.drivebox{margin-top:10px;padding:12px;border:1px solid #383838;border-radius:12px;background:#181818}.hint{color:#999;font-size:12px;margin-top:7px}.close{width:auto}.bad{color:#ffadad}.ok{color:#b9f1c4}
+</style>
+<script>
+window.___gcfg={parsetags:'explicit',lang:'ko'};
+</script>
+<script src="https://apis.google.com/js/platform.js" async defer></script>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <img id="thumb" class="thumb" alt="">
+    <div class="meta">
+      <div id="title" class="title">YT 미디어</div>
+      <div id="sub" class="sub">연결 대기 중…</div>
+    </div>
+    <button id="x" class="btn close">닫기</button>
+  </div>
+
+  <div class="sec">
+    <div class="label">1. 종류</div>
+    <div class="row">
+      <button class="choice" data-kind="video">영상</button>
+      <button class="choice" data-kind="audio">음성</button>
+    </div>
+  </div>
+
+  <div id="qualitySec" class="sec hidden">
+    <div id="qualityLabel" class="label">품질</div>
+    <select id="quality"></select>
+  </div>
+
+  <div id="targetSec" class="sec hidden">
+    <div class="label">2. 저장 위치</div>
+    <div class="row">
+      <button class="choice" data-target="local">로컬</button>
+      <button class="choice" data-target="drive">Drive</button>
+    </div>
+
+    <div id="driveBox" class="drivebox hidden">
+      <div class="label">Google Drive</div>
+      <div id="driveWidget"></div>
+      <button id="prepareDrive" class="btn">Drive 저장 준비</button>
+      <div class="hint">Google 공식 ‘Drive에 저장’ 기능을 사용합니다. 저장 위치는 내 드라이브입니다.</div>
+    </div>
+  </div>
+
+  <div id="status" class="status">연결 대기 중…</div>
+  <div class="foot">
+    <button id="save" class="btn primary">저장</button>
+    <button id="close2" class="btn close">닫기</button>
+  </div>
+</div>
+<script>
+(()=>{
+  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+  const hash=new URLSearchParams((location.hash||'').slice(1));
+  const token=hash.get('token')||(location.hash||'').slice(1);
+  let init=null, kind='', target='', driveSource=null;
+
+  const send=o=>{
+    const msg={...o,token};
+    try{if(parent&&parent!==self)parent.postMessage(msg,'*')}catch{}
+    try{if(opener)opener.postMessage(msg,'*')}catch{}
+  };
+  const show=(s,on)=>$(s).classList.toggle('hidden',!on);
+  const status=(text,cls='')=>{const e=$('#status');e.textContent=text||'';e.className='status '+cls};
+  const fill=(items=[])=>{
+    const q=$('#quality'); q.replaceChildren();
+    if(!items.length){const o=document.createElement('option');o.value='';o.textContent='사용 가능한 품질 없음';q.append(o);return}
+    for(const x of items){const o=document.createElement('option');o.value=String(x.value??x.id??x.label??'');o.textContent=String(x.label??x.value??'');q.append(o)}
+  };
+  const mediaItems=()=>kind==='video'?(init?.media?.video||[]):kind==='audio'?(init?.media?.audio||[]):[];
+
+  function render(){
+    $$('[data-kind]').forEach(b=>b.classList.toggle('on',b.dataset.kind===kind));
+    $$('[data-target]').forEach(b=>b.classList.toggle('on',b.dataset.target===target));
+    show('#qualitySec',!!kind);
+    show('#targetSec',!!kind);
+    show('#driveBox',!!kind&&target==='drive');
+    $('#qualityLabel').textContent=kind==='audio'?'음질':'화질';
+    $('#save').textContent=target==='drive'?'Drive 저장 준비':'로컬 저장';
+  }
+
+  function start(d){
+    init=d;
+    const v=d.video||{};
+    $('#title').textContent=v.title||'YT 미디어';
+    $('#sub').textContent=[v.channel,v.duration].filter(Boolean).join(' · ')||'영상 또는 음성을 선택하세요';
+    if(v.thumbnail)$('#thumb').src=v.thumbnail;
+    kind='';target='';driveSource=null;
+    status('준비됨','ok');
+    render();
+  }
+
+  function selectKind(k){
+    kind=k; target=''; driveSource=null;
+    fill(mediaItems());
+    $('#driveWidget').replaceChildren();
+    status(kind==='video'?'영상 화질을 확인하세요.':'음질을 확인하세요.');
+    render();
+  }
+
+  $$('[data-kind]').forEach(b=>b.onclick=()=>selectKind(b.dataset.kind));
+  $$('[data-target]').forEach(b=>b.onclick=()=>{
+    target=b.dataset.target; driveSource=null; $('#driveWidget').replaceChildren();
+    status(target==='drive'?'Drive 저장 준비를 누르세요.':'로컬 저장 준비됨');
+    render();
+  });
+
+  function requestDrive(){
+    if(!kind)return status('영상 또는 음성을 선택하세요.','bad');
+    const quality=$('#quality').value;
+    if(!quality)return status('사용 가능한 품질이 없습니다.','bad');
+    status('Drive용 파일 주소 준비 중…');
+    send({type:'YT_MEDIA_ACTION',action:'request-drive-source',kind,quality});
+  }
+
+  function renderDrive(src,filename){
+    driveSource={src,filename};
+    const box=$('#driveWidget');box.replaceChildren();
+    const c=document.createElement('div');box.append(c);
+    const run=()=>{
+      if(!window.gapi?.savetodrive)return false;
+      try{
+        window.gapi.savetodrive.render(c,{src,filename,sitename:'YT 미디어'});
+        $('#prepareDrive').classList.add('hidden');
+        status('Google Drive 버튼이 준비됐습니다.','ok');
+        return true;
+      }catch(e){status('Drive 버튼 오류: '+(e?.message||e),'bad');return true}
+    };
+    if(!run()){
+      status('Google Drive 기능 로딩 중…');
+      let n=0,t=setInterval(()=>{if(run()||++n>40){clearInterval(t);if(n>40)status('Google Drive 기능을 불러오지 못했습니다.','bad')}},250);
+    }
+  }
+
+  $('#prepareDrive').onclick=requestDrive;
+  $('#save').onclick=()=>{
+    if(!kind)return status('영상 또는 음성을 선택하세요.','bad');
+    if(!target)return status('저장 위치를 선택하세요.','bad');
+    const quality=$('#quality').value;
+    if(!quality)return status('사용 가능한 품질이 없습니다.','bad');
+    if(target==='local'){
+      status('로컬 저장 요청 중…');
+      send({type:'YT_MEDIA_ACTION',action:'save-local',kind,quality});
+    }else requestDrive();
+  };
+
+  const close=()=>send({type:'YT_MEDIA_ACTION',action:'close'});
+  $('#x').onclick=close;$('#close2').onclick=close;
+
+  addEventListener('message',e=>{
+    const d=e.data||{};
+    if(d.token!==token)return;
+    if(d.type==='YT_MEDIA_INIT')start(d);
+    if(d.type==='YT_MEDIA_STATUS')status(d.message,d.state==='success'?'ok':d.state==='error'?'bad':'');
+    if(d.type==='YT_MEDIA_DRIVE_SOURCE'){
+      if(!d.src||!d.filename)return status('Drive용 파일 주소를 받지 못했습니다.','bad');
+      renderDrive(d.src,d.filename);
+    }
+  });
+
+  send({type:'YT_MEDIA_READY'});
+})();
+</script>
+</body>
+</html>
