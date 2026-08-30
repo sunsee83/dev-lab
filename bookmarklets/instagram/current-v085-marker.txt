@@ -1,1 +1,0 @@
-current.js is pinned to latest save body; updater must fetch current.js only.
