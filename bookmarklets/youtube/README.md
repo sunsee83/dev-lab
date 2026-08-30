@@ -1,29 +1,41 @@
-# YouTube 수집도구
+# 유튜브다운로드
 
 Android 모바일 YouTube용 **단일 북마클릿** 프로젝트입니다.
 
 이 문서는 진행 기록이 아니라 **현재 구조의 기준 문서**입니다.
 
-## 1. 전체 구조
+## 1. 이름 체계
+
+```text
+모바일 북마클릿 이름  유튜브다운로드
+Apps Script 프로젝트  유튜브다운로드앱_v1
+Google Sheets 파일     유튜브다운로드sheet_v1
+```
+
+이 세 이름은 서로 다른 대상을 뜻하며 섞어 쓰지 않습니다.
+
+## 2. 전체 구조
 
 ```text
 Android 모바일 북마크
+유튜브다운로드
 └─ URL 칸에 bookmarklet.js 전체 내용
    ├─ YouTube 영상/음성/데이터 추출 코어
    ├─ 통합 UI
    └─ GAS_WEBAPP_URL 호출
           ↓
       독립형 Apps Script 프로젝트
-      유튜브다운로드 v1
+      유튜브다운로드앱_v1
       ├─ Transport.gs : 모바일 iframe POST 브리지
       └─ Code.gs      : SpreadsheetApp 처리
           ↓
       각 사용자 계정의 Google Sheets
+      유튜브다운로드sheet_v1
 ```
 
 Apps Script 프로젝트는 특정 Google Sheets에 붙이지 않는 **독립형 프로젝트**입니다.
 
-## 2. 모바일 북마크에 들어가는 공용 주소
+## 3. 모바일 북마크에 들어가는 공용 주소
 
 Apps Script 웹앱 `/exec` URL은 `bookmarklet.js` 내부 `GAS_WEBAPP_URL` 값입니다.
 
@@ -31,9 +43,9 @@ Apps Script 웹앱 `/exec` URL은 `bookmarklet.js` 내부 `GAS_WEBAPP_URL` 값�
 https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec
 ```
 
-이 주소는 공용 프로그램 주소이며 개인 Google Sheets 주소가 아닙니다.
+이 주소는 `유튜브다운로드앱_v1`의 공용 웹앱 주소이며 개인 Google Sheets 주소가 아닙니다.
 
-## 3. 최초 설정은 자동 생성
+## 4. 최초 설정은 자동 생성
 
 사용자는 Google Sheets를 미리 만들거나 링크를 붙여넣을 필요가 없습니다.
 
@@ -54,27 +66,27 @@ https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctP
 
 기존 Google Sheets를 추가로 쓰고 싶은 경우에만 `connect-file`로 별도 파일을 연결합니다.
 
-## 4. 데이터 저장 경로
+## 5. 데이터 저장 경로
 
 ```text
-YouTube 북마클릿
+유튜브다운로드 북마클릿
 → GAS_WEBAPP_URL
-→ 독립형 Apps Script
+→ 유튜브다운로드앱_v1
 → SpreadsheetApp
-→ 자동 생성 또는 사용자가 추가 연결한 Google Sheets
+→ 유튜브다운로드sheet_v1 또는 추가 연결한 Google Sheets
 ```
 
 영상/음성 로컬 저장:
 
 ```text
-YouTube 북마클릿
+유튜브다운로드 북마클릿
 → 미디어 fetch
 → Android 파일 저장
 ```
 
 영상/음성 Drive 저장은 Google 공식 Save to Drive 경로를 별도로 사용합니다.
 
-## 5. Sheets 구조
+## 6. Sheets 구조
 
 자동 생성 기본값:
 
@@ -94,10 +106,10 @@ YouTube 북마클릿
 - 데이터 시트당 최대 2,000개
 - 1,800개부터 한도 경고
 
-## 6. 기준 파일과 책임
+## 7. 기준 파일과 책임
 
-- `README.md` : 전체 구조와 값의 배치 위치
-- `bookmarklet.js` : 모바일 북마크 URL 칸에 복사하는 실제 단일 북마클릿 코드
+- `README.md` : 전체 구조와 이름 체계
+- `bookmarklet.js` : 모바일 북마크 `유튜브다운로드`의 URL 칸에 복사하는 실제 단일 북마클릿 코드
 - `CORE_SPEC.md` : 모바일 북마클릿 코어 책임
 - `PROTOCOL.md` : 북마클릿 ↔ UI 메시지 규격
 - `APPS_SCRIPT_BRIDGE.md` : 북마클릿 ↔ Apps Script 통신 규격
@@ -107,7 +119,7 @@ YouTube 북마클릿
 - `apps-script/Transport.gs` : iframe POST 브리지와 최초 저장공간 생성 진입
 - `apps-script/Code.gs` : SpreadsheetApp 처리
 
-## 7. 문서 관리 원칙
+## 8. 문서 관리 원칙
 
 - 문서는 현재 확정 구조만 기록합니다.
 - 실패 이력, 임시 테스트 순서, 작업 로그를 기준 문서에 누적하지 않습니다.
