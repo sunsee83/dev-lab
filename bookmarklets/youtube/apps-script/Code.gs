@@ -10,69 +10,112 @@
  */
 
 const APP_ = Object.freeze({
-  VERSION: '0.1.0',
+  VERSION: '0.2.0',
   USER_STATE_KEY: 'ytCollector.userState.v1',
   MAX_STATE_CHARS: 8000,
   MAX_REQUEST_CHARS: 1000000,
-  MAX_FILES: 20,
-  MAX_CATEGORY_GROUPS: 50,
+
+  // 수집도구 자체 제한. Google의 물리 한도보다 의도적으로 낮게 둔다.
+  MAX_FILES: 10,
+  GUIDE_SHEET_NAME: '안내',
+  GUIDE_TITLE: 'YouTube 수집도구 안내',
+  MAX_DATA_SHEETS_PER_FILE: 10,
+  MAX_TOTAL_SHEETS_PER_FILE: 11, // 안내 1 + 데이터 10
+  MAX_DATA_ROWS_PER_SHEET: 2000,
+  ROW_WARNING_AT: 1800,
+
+  MAX_CATEGORY_GROUPS: 100,
   MAX_CATEGORIES_PER_SHEET: 30,
   MAX_FILE_NAME_CHARS: 120,
   MAX_SHEET_NAME_CHARS: 100,
   MAX_CATEGORY_CHARS: 60,
+  MAX_PURPOSE_CHARS: 40,
   MAX_STATUS_CHARS: 40,
   MAX_MEMO_CHARS: 10000,
   MAX_CELL_CHARS: 49000,
+
   ALLOWED_ORIGINS: Object.freeze([
     'https://www.youtube.com',
     'https://m.youtube.com',
     'https://youtube.com',
     'https://music.youtube.com'
   ]),
+
+  PURPOSES: Object.freeze(['공부', '자료조사', '아이디어', '보관']),
+  STATUSES: Object.freeze(['미분석', '분석중', '완료', '보류']),
+
+  // 사용자가 일부 항목만 수집해도 열 위치는 바뀌지 않는다.
   HEADERS: Object.freeze([
-    '영상 ID',
+    '썸네일',
     '제목',
     '채널명',
-    '영상 URL',
+    '카테고리',
+    '활용 목적',
+    '중요도',
+    '상태',
+    '내 태그',
     '업로드일',
     '영상 길이',
     '조회수',
-    '썸네일',
+    '좋아요',
+    '영상 언어',
+    '태그 / 해시태그',
     '설명',
-    '태그',
     '대본',
     '댓글',
-    '좋아요',
-    '자막 원본',
+    '인상적인 구간',
+    '관련 그룹 ID',
+    'AI 전송',
+    'AI 요약',
+    '핵심 주장',
+    '핵심 키워드',
+    '사실확인 필요',
+    '댓글 반응 요약',
+    '타임스탬프 핵심',
+    '영상 URL',
+    '영상 ID',
     '채널 ID',
+    '자막 원본',
     '원본 메타데이터',
-    '내 태그',
-    '중요도',
-    '상태',
-    '메모',
-    '카테고리',
     '수집일시',
     '수정일시'
   ])
 });
 
 const RECORD_COLUMNS_ = Object.freeze({
-  videoId: '영상 ID',
+  thumbnail: '썸네일',
   title: '제목',
   channel: '채널명',
-  url: '영상 URL',
   publishedAt: '업로드일',
   duration: '영상 길이',
   views: '조회수',
-  thumbnail: '썸네일',
+  likes: '좋아요',
+  language: '영상 언어',
+  tags: '태그 / 해시태그',
   description: '설명',
-  tags: '태그',
   transcript: '대본',
   comments: '댓글',
-  likes: '좋아요',
-  rawCaptions: '자막 원본',
+  videoId: '영상 ID',
   channelId: '채널 ID',
+  rawCaptions: '자막 원본',
   rawMetadata: '원본 메타데이터'
+});
+
+const MANAGEMENT_COLUMNS_ = Object.freeze({
+  purpose: '활용 목적',
+  priority: '중요도',
+  status: '상태',
+  tags: '내 태그',
+  memo: null,
+  highlights: '인상적인 구간',
+  groupId: '관련 그룹 ID',
+  aiSend: 'AI 전송',
+  aiSummary: 'AI 요약',
+  keyClaims: '핵심 주장',
+  keyKeywords: '핵심 키워드',
+  factCheck: '사실확인 필요',
+  commentSummary: '댓글 반응 요약',
+  timestampSummary: '타임스탬프 핵심'
 });
 
 /**
@@ -101,7 +144,7 @@ function dispatch(request) {
 
     switch (action) {
       case 'ping':
-        return ok_({ version: APP_.VERSION });
+        return ok_({ version: APP_.VERSION, limits: publicLimits_() });
       case 'get-state':
         return ok_(getPublicState_());
       case 'connect-file':
@@ -128,10 +171,22 @@ function dispatch(request) {
   }
 }
 
+function publicLimits_() {
+  return {
+    maxFiles: APP_.MAX_FILES,
+    guideSheetsPerFile: 1,
+    maxDataSheetsPerFile: APP_.MAX_DATA_SHEETS_PER_FILE,
+    maxTotalSheetsPerFile: APP_.MAX_TOTAL_SHEETS_PER_FILE,
+    maxDataRowsPerSheet: APP_.MAX_DATA_ROWS_PER_SHEET,
+    rowWarningAt: APP_.ROW_WARNING_AT
+  };
+}
+
 function getPublicState_() {
   const state = loadState_();
   return {
     version: APP_.VERSION,
+    limits: publicLimits_(),
     files: state.files.map(function (file) {
       return publicFile_(file);
     }),
@@ -156,6 +211,9 @@ function connectFile_(payload) {
   } catch (err) {
     fail_('FILE_NO_ACCESS', '이 Google Sheets 파일을 열 수 없습니다. 현재 계정의 접근 권한을 확인해 주세요.');
   }
+
+  // 연결한 파일은 반드시 첫 탭을 안내 시트로 유지한다.
+  ensureGuideSheet_(ss);
 
   const fileName = trimText_(ss.getName(), APP_.MAX_FILE_NAME_CHARS);
   const state = loadState_();
@@ -182,7 +240,8 @@ function connectFile_(payload) {
 
   return {
     file: publicFile_(stored),
-    sheets: sheetListFromSpreadsheet_(ss)
+    sheets: sheetListFromSpreadsheet_(ss),
+    capacity: fileSheetCapacity_(ss)
   };
 }
 
@@ -207,24 +266,33 @@ function unlinkFile_(payload) {
 function listSheets_(payload) {
   const fileId = requireLinkedFileId_(payload.fileId);
   const ss = openLinkedSpreadsheet_(fileId);
+  ensureGuideSheet_(ss);
   refreshStoredFileName_(fileId, ss.getName());
 
   return {
-    file: { id: fileId, name: trimText_(ss.getName(), APP_.MAX_FILE_NAME_CHARS), url: spreadsheetUrl_(fileId) },
-    sheets: sheetListFromSpreadsheet_(ss)
+    file: publicFile_({ id: fileId, name: ss.getName() }),
+    sheets: sheetListFromSpreadsheet_(ss),
+    capacity: fileSheetCapacity_(ss)
   };
 }
 
 function createSheet_(payload) {
   const fileId = requireLinkedFileId_(payload.fileId);
-  const sheetName = validateSheetName_(payload.sheetName);
+  const sheetName = validateDataSheetName_(payload.sheetName);
 
   return withScriptLock_(function () {
     const ss = openLinkedSpreadsheet_(fileId);
+    ensureGuideSheet_(ss);
+
     let sheet = ss.getSheetByName(sheetName);
     let created = false;
 
     if (!sheet) {
+      const capacity = fileSheetCapacity_(ss);
+      if (capacity.dataSheets >= APP_.MAX_DATA_SHEETS_PER_FILE) {
+        fail_('SHEET_LIMIT', '데이터 시트는 파일당 최대 10개까지 만들 수 있습니다.');
+      }
+
       try {
         sheet = ss.insertSheet(sheetName);
         created = true;
@@ -232,21 +300,24 @@ function createSheet_(payload) {
         fail_('SHEET_CREATE_FAILED', '새 시트를 만들 수 없습니다. 파일 편집 권한을 확인해 주세요.');
       }
       initializeEmptySheet_(sheet);
+    } else if (isGuideSheet_(sheet)) {
+      fail_('GUIDE_IS_RESERVED', '안내 시트에는 수집 데이터를 저장할 수 없습니다.');
     }
 
     ensureCategoryGroup_(fileId, sheetName);
 
     return {
       created: created,
-      sheet: publicSheet_(ss, sheet)
+      sheet: publicSheet_(ss, sheet),
+      capacity: fileSheetCapacity_(ss)
     };
   });
 }
 
 function listCategories_(payload) {
   const fileId = requireLinkedFileId_(payload.fileId);
-  const sheetName = validateSheetName_(payload.sheetName);
-  requireExistingSheet_(fileId, sheetName);
+  const sheetName = validateDataSheetName_(payload.sheetName);
+  requireExistingDataSheet_(fileId, sheetName);
 
   const state = loadState_();
   const group = findCategoryGroup_(state, fileId, sheetName);
@@ -259,9 +330,9 @@ function listCategories_(payload) {
 
 function addCategory_(payload) {
   const fileId = requireLinkedFileId_(payload.fileId);
-  const sheetName = validateSheetName_(payload.sheetName);
+  const sheetName = validateDataSheetName_(payload.sheetName);
   const category = validateCategory_(payload.category);
-  requireExistingSheet_(fileId, sheetName);
+  requireExistingDataSheet_(fileId, sheetName);
 
   const lock = LockService.getUserLock();
   if (!lock.tryLock(5000)) {
@@ -299,13 +370,13 @@ function addCategory_(payload) {
 
 function checkDuplicate_(payload) {
   const fileId = requireLinkedFileId_(payload.fileId);
-  const sheetName = validateSheetName_(payload.sheetName);
+  const sheetName = validateDataSheetName_(payload.sheetName);
   const videoId = validateVideoId_(payload.videoId);
   const ss = openLinkedSpreadsheet_(fileId);
-  const sheet = getSheetOrFail_(ss, sheetName);
+  const sheet = getDataSheetOrFail_(ss, sheetName);
 
   if (sheet.getLastRow() === 0) {
-    return { found: false, rows: [] };
+    return { found: false, rows: [], capacity: sheetCapacity_(sheet) };
   }
 
   assertCompatibleSchema_(sheet);
@@ -316,15 +387,16 @@ function checkDuplicate_(payload) {
     rows: rows.map(function (row) {
       return {
         row: row,
-        url: sheetRangeUrl_(ss, sheet, 'A' + row)
+        url: sheetRangeUrl_(ss, sheet, 'B' + row)
       };
-    })
+    }),
+    capacity: sheetCapacity_(sheet)
   };
 }
 
 function saveRecord_(payload) {
   const fileId = requireLinkedFileId_(payload.fileId);
-  const sheetName = validateSheetName_(payload.sheetName);
+  const sheetName = validateDataSheetName_(payload.sheetName);
   const category = payload.category == null || payload.category === '' ? '' : validateCategory_(payload.category);
   const record = isPlainObject_(payload.record) ? payload.record : {};
   const management = isPlainObject_(payload.management) ? payload.management : {};
@@ -341,7 +413,7 @@ function saveRecord_(payload) {
 
   return withScriptLock_(function () {
     const ss = openLinkedSpreadsheet_(fileId);
-    const sheet = getSheetOrFail_(ss, sheetName);
+    const sheet = getDataSheetOrFail_(ss, sheetName);
     ensureWritableSchema_(sheet);
 
     const duplicateRows = findVideoRows_(sheet, videoId);
@@ -349,8 +421,9 @@ function saveRecord_(payload) {
       return {
         status: 'duplicate',
         duplicates: duplicateRows.map(function (row) {
-          return { row: row, url: sheetRangeUrl_(ss, sheet, 'A' + row) };
-        })
+          return { row: row, url: sheetRangeUrl_(ss, sheet, 'B' + row) };
+        }),
+        capacity: sheetCapacity_(sheet)
       };
     }
 
@@ -373,22 +446,35 @@ function saveRecord_(payload) {
       const current = sheet.getRange(rowToUpdate, 1, 1, APP_.HEADERS.length).getValues()[0];
       const merged = mergeRecordRow_(current, videoId, record, management, category, false);
       sheet.getRange(rowToUpdate, 1, 1, APP_.HEADERS.length).setValues([merged]);
+      applyRowPresentation_(sheet, rowToUpdate, record, videoId);
 
       return {
         status: 'updated',
         row: rowToUpdate,
-        url: sheetRangeUrl_(ss, sheet, 'A' + rowToUpdate)
+        url: sheetRangeUrl_(ss, sheet, 'B' + rowToUpdate),
+        capacity: sheetCapacity_(sheet)
       };
     }
 
-    const rowValues = mergeRecordRow_(new Array(APP_.HEADERS.length).fill(''), videoId, record, management, category, true);
+    const capacityBefore = sheetCapacity_(sheet);
+    if (capacityBefore.used >= APP_.MAX_DATA_ROWS_PER_SHEET || capacityBefore.overLimit) {
+      fail_('ROW_LIMIT', '이 시트는 새 기록 한도 2,000개에 도달했습니다. 새 시트를 선택해 주세요.');
+    }
+
     const newRow = Math.max(sheet.getLastRow() + 1, 2);
+    if (newRow > APP_.MAX_DATA_ROWS_PER_SHEET + 1) {
+      fail_('ROW_LIMIT', '이 시트는 새 기록 한도 2,000개에 도달했습니다. 새 시트를 선택해 주세요.');
+    }
+
+    const rowValues = mergeRecordRow_(new Array(APP_.HEADERS.length).fill(''), videoId, record, management, category, true);
     sheet.getRange(newRow, 1, 1, APP_.HEADERS.length).setValues([rowValues]);
+    applyRowPresentation_(sheet, newRow, record, videoId);
 
     return {
       status: 'created',
       row: newRow,
-      url: sheetRangeUrl_(ss, sheet, 'A' + newRow)
+      url: sheetRangeUrl_(ss, sheet, 'B' + newRow),
+      capacity: sheetCapacity_(sheet)
     };
   });
 }
@@ -401,27 +487,70 @@ function mergeRecordRow_(baseRow, videoId, record, management, category, isNew) 
   row[index['영상 ID']] = safeCellValue_(videoId);
 
   Object.keys(RECORD_COLUMNS_).forEach(function (field) {
-    if (field === 'videoId') return;
+    if (field === 'videoId' || field === 'thumbnail') return;
     if (Object.prototype.hasOwnProperty.call(record, field)) {
       row[index[RECORD_COLUMNS_[field]]] = serializeField_(field, record[field]);
     }
   });
 
-  if (Object.prototype.hasOwnProperty.call(management, 'tags')) {
-    row[index['내 태그']] = safeCellValue_(serializeList_(management.tags));
+  // 썸네일은 저장 후 검증된 IMAGE 수식으로만 표시한다.
+  row[index['썸네일']] = '';
+
+  if (category !== '') {
+    row[index['카테고리']] = safeCellValue_(category);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(management, 'purpose')) {
+    row[index['활용 목적']] = validatePurpose_(management.purpose);
   }
   if (Object.prototype.hasOwnProperty.call(management, 'priority')) {
     row[index['중요도']] = validatePriority_(management.priority);
   }
   if (Object.prototype.hasOwnProperty.call(management, 'status')) {
-    row[index['상태']] = safeCellValue_(optionalString_(management.status, APP_.MAX_STATUS_CHARS));
+    row[index['상태']] = validateStatus_(management.status);
   }
-  if (Object.prototype.hasOwnProperty.call(management, 'memo')) {
-    row[index['메모']] = safeCellValue_(optionalString_(management.memo, APP_.MAX_MEMO_CHARS));
+  if (Object.prototype.hasOwnProperty.call(management, 'tags')) {
+    row[index['내 태그']] = safeCellValue_(serializeList_(management.tags));
   }
-  if (category !== '') {
-    row[index['카테고리']] = safeCellValue_(category);
+  if (Object.prototype.hasOwnProperty.call(management, 'highlights')) {
+    row[index['인상적인 구간']] = safeCellValue_(serializeList_(management.highlights));
   }
+  if (Object.prototype.hasOwnProperty.call(management, 'groupId')) {
+    row[index['관련 그룹 ID']] = safeCellValue_(optionalString_(management.groupId, 120));
+  }
+  if (Object.prototype.hasOwnProperty.call(management, 'aiSend')) {
+    row[index['AI 전송']] = Boolean(management.aiSend);
+  }
+  if (Object.prototype.hasOwnProperty.call(management, 'aiSummary')) {
+    row[index['AI 요약']] = safeCellValue_(optionalString_(management.aiSummary, APP_.MAX_CELL_CHARS));
+  }
+  if (Object.prototype.hasOwnProperty.call(management, 'keyClaims')) {
+    row[index['핵심 주장']] = safeCellValue_(serializeFlexibleText_(management.keyClaims));
+  }
+  if (Object.prototype.hasOwnProperty.call(management, 'keyKeywords')) {
+    row[index['핵심 키워드']] = safeCellValue_(serializeList_(management.keyKeywords));
+  }
+  if (Object.prototype.hasOwnProperty.call(management, 'factCheck')) {
+    row[index['사실확인 필요']] = safeCellValue_(serializeFlexibleText_(management.factCheck));
+  }
+  if (Object.prototype.hasOwnProperty.call(management, 'commentSummary')) {
+    row[index['댓글 반응 요약']] = safeCellValue_(serializeFlexibleText_(management.commentSummary));
+  }
+  if (Object.prototype.hasOwnProperty.call(management, 'timestampSummary')) {
+    row[index['타임스탬프 핵심']] = safeCellValue_(serializeFlexibleText_(management.timestampSummary));
+  }
+
+  // 현재 UI의 메모는 아직 독립 열을 유지하지 않는다. 읽기/쓰기 최종 규칙 확정 때 다시 결정한다.
+  if (Object.prototype.hasOwnProperty.call(management, 'memo') && management.memo) {
+    const memoText = optionalString_(management.memo, APP_.MAX_MEMO_CHARS);
+    if (memoText) {
+      const current = String(row[index['핵심 주장']] || '');
+      row[index['핵심 주장']] = safeCellValue_(current ? current + '\n\n[메모]\n' + memoText : '[메모]\n' + memoText);
+    }
+  }
+
+  const canonicalVideoUrl = canonicalVideoUrl_(videoId, record.url);
+  row[index['영상 URL']] = safeCellValue_(canonicalVideoUrl);
 
   const now = new Date().toISOString();
   if (isNew || !row[index['수집일시']]) {
@@ -451,15 +580,134 @@ function serializeField_(field, value) {
   return safeCellValue_(value);
 }
 
+function serializeFlexibleText_(value) {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map(String).join('\n');
+  if (isPlainObject_(value)) return jsonText_(value);
+  return String(value);
+}
+
+/**
+ * 첫 번째 시트는 항상 안내 시트로 유지한다.
+ * 기존에 같은 이름의 시트가 있으나 우리 안내 시트가 아니면 덮어쓰지 않고 중단한다.
+ */
+function ensureGuideSheet_(ss) {
+  let guide = ss.getSheetByName(APP_.GUIDE_SHEET_NAME);
+
+  if (guide) {
+    const a1 = String(guide.getRange('A1').getDisplayValue() || '').trim();
+    if (a1 && a1 !== APP_.GUIDE_TITLE) {
+      fail_('GUIDE_NAME_CONFLICT', '이 파일에 이미 다른 용도의 "안내" 시트가 있습니다. 해당 탭 이름을 바꾼 뒤 다시 연결해 주세요.');
+    }
+  } else {
+    try {
+      guide = ss.insertSheet(APP_.GUIDE_SHEET_NAME, 0);
+    } catch (err) {
+      fail_('FILE_NOT_WRITABLE', '안내 시트를 만들 수 없습니다. 이 파일의 편집 권한을 확인해 주세요.');
+    }
+  }
+
+  initializeGuideSheet_(guide);
+
+  try {
+    ss.setActiveSheet(guide);
+    ss.moveActiveSheet(1);
+  } catch (err) {
+    fail_('FILE_NOT_WRITABLE', '안내 시트를 첫 번째 위치로 이동할 수 없습니다. 파일 편집 권한을 확인해 주세요.');
+  }
+
+  return guide;
+}
+
+function initializeGuideSheet_(sheet) {
+  const a1 = String(sheet.getRange('A1').getDisplayValue() || '').trim();
+  if (a1 && a1 !== APP_.GUIDE_TITLE) return;
+
+  const rows = [
+    [APP_.GUIDE_TITLE],
+    [''],
+    ['이 파일은 YouTube 수집도구가 연결한 Google Sheets 파일입니다.'],
+    ['저장 경로'],
+    ['YouTube 페이지 → YouTube 수집 북마클릿 → Apps Script 웹앱 → 이 Google Sheets 파일 → 선택한 데이터 시트'],
+    [''],
+    ['현재 기본 규칙'],
+    ['• 첫 번째 탭은 항상 이 안내 시트입니다.'],
+    ['• 데이터 시트는 파일당 최대 10개까지 사용할 수 있습니다.'],
+    ['• 각 데이터 시트는 최대 2,000개의 수집 기록을 저장합니다.'],
+    ['• 1,800개부터 새 시트 사용을 안내하고, 2,000개부터 새 기록 추가를 차단합니다. 기존 기록 업데이트는 허용합니다.'],
+    [''],
+    ['읽기/쓰기 세부 규칙은 다음 단계에서 확정한 뒤 이 안내 시트에 추가합니다.'],
+    ['도구 버전: ' + APP_.VERSION]
+  ];
+
+  sheet.getRange(1, 1, rows.length, 1).setValues(rows);
+  sheet.getRange('A1').setFontWeight('bold').setFontSize(16);
+  sheet.getRange('A4').setFontWeight('bold');
+  sheet.getRange('A7').setFontWeight('bold');
+  sheet.getRange(1, 1, rows.length, 1).setWrap(true).setVerticalAlignment('top');
+  sheet.setColumnWidth(1, 760);
+  sheet.setFrozenRows(1);
+  sheet.setHiddenGridlines(true);
+}
+
 function initializeEmptySheet_(sheet) {
   if (sheet.getLastRow() !== 0) return;
+
   const range = sheet.getRange(1, 1, 1, APP_.HEADERS.length);
   range.setValues([APP_.HEADERS.slice()]);
   range.setFontWeight('bold');
+  range.setWrap(true);
+
   sheet.setFrozenRows(1);
+  sheet.setFrozenColumns(3);
+  sheet.setRowHeight(1, 34);
+
+  // 모바일에서 첫 화면만 봐도 영상 식별이 되도록 앞쪽 열을 넉넉하게 둔다.
+  sheet.setColumnWidth(1, 120); // 썸네일
+  sheet.setColumnWidth(2, 280); // 제목
+  sheet.setColumnWidth(3, 180); // 채널
+  sheet.setColumnWidth(4, 110);
+  sheet.setColumnWidth(5, 110);
+  sheet.setColumnWidth(6, 70);
+  sheet.setColumnWidth(7, 90);
+  sheet.setColumnWidth(8, 160);
+
+  // 긴 원문/AI 데이터는 기본 폭을 과도하게 키우지 않는다.
+  [15, 16, 17, 21, 22, 24, 25, 26, 30, 31].forEach(function (column) {
+    sheet.setColumnWidth(column, 220);
+  });
+
+  const rowCount = APP_.MAX_DATA_ROWS_PER_SHEET;
+
+  const purposeRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(APP_.PURPOSES.slice(), true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 5, rowCount, 1).setDataValidation(purposeRule);
+
+  const priorityRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['1', '2', '3', '4', '5'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 6, rowCount, 1).setDataValidation(priorityRule);
+
+  const statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(APP_.STATUSES.slice(), true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 7, rowCount, 1).setDataValidation(statusRule);
+
+  const checkboxRule = SpreadsheetApp.newDataValidation()
+    .requireCheckbox()
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 20, rowCount, 1).setDataValidation(checkboxRule);
 }
 
 function ensureWritableSchema_(sheet) {
+  if (isGuideSheet_(sheet)) {
+    fail_('GUIDE_IS_RESERVED', '안내 시트에는 수집 데이터를 저장할 수 없습니다.');
+  }
   if (sheet.getLastRow() === 0) {
     initializeEmptySheet_(sheet);
     return;
@@ -479,11 +727,57 @@ function assertCompatibleSchema_(sheet) {
   }
 }
 
+function applyRowPresentation_(sheet, rowNumber, record, videoId) {
+  const index = headerIndex_();
+
+  // 썸네일은 파일로 저장하지 않고 검증된 YouTube 썸네일 URL을 셀 이미지로 표시한다.
+  const thumbnailUrl = validateThumbnailUrl_(record.thumbnail);
+  const thumbnailCell = sheet.getRange(rowNumber, index['썸네일'] + 1);
+  if (thumbnailUrl) {
+    const formulaUrl = thumbnailUrl.replace(/"/g, '""');
+    thumbnailCell.setFormula('=IMAGE("' + formulaUrl + '")');
+    sheet.setRowHeight(rowNumber, 68);
+  } else {
+    thumbnailCell.clearContent();
+  }
+
+  const videoUrl = canonicalVideoUrl_(videoId, record.url);
+  setLinkedText_(sheet.getRange(rowNumber, index['제목'] + 1), record.title, videoUrl);
+  setLinkedText_(sheet.getRange(rowNumber, index['영상 URL'] + 1), videoUrl, videoUrl);
+
+  const channelId = validateChannelIdSoft_(record.channelId);
+  if (channelId) {
+    setLinkedText_(
+      sheet.getRange(rowNumber, index['채널명'] + 1),
+      record.channel,
+      'https://www.youtube.com/channel/' + encodeURIComponent(channelId)
+    );
+  }
+}
+
+function setLinkedText_(range, text, url) {
+  const label = safeCellValue_(text == null ? '' : text);
+  if (!label || !url) {
+    range.setValue(label || '');
+    return;
+  }
+  try {
+    const rich = SpreadsheetApp.newRichTextValue()
+      .setText(String(label))
+      .setLinkUrl(String(url))
+      .build();
+    range.setRichTextValue(rich);
+  } catch (err) {
+    range.setValue(label);
+  }
+}
+
 function findVideoRows_(sheet, videoId) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
 
-  const range = sheet.getRange(2, 1, lastRow - 1, 1);
+  const videoIdColumn = headerIndex_()['영상 ID'] + 1;
+  const range = sheet.getRange(2, videoIdColumn, lastRow - 1, 1);
   const matches = range
     .createTextFinder(videoId)
     .matchEntireCell(true)
@@ -495,6 +789,34 @@ function findVideoRows_(sheet, videoId) {
   });
 }
 
+function sheetCapacity_(sheet) {
+  const used = Math.max(0, sheet.getLastRow() - 1);
+  return {
+    used: used,
+    max: APP_.MAX_DATA_ROWS_PER_SHEET,
+    warningAt: APP_.ROW_WARNING_AT,
+    nearLimit: used >= APP_.ROW_WARNING_AT,
+    full: used >= APP_.MAX_DATA_ROWS_PER_SHEET,
+    overLimit: used > APP_.MAX_DATA_ROWS_PER_SHEET
+  };
+}
+
+function fileSheetCapacity_(ss) {
+  const sheets = ss.getSheets();
+  const dataSheets = sheets.filter(function (sheet) {
+    return !isGuideSheet_(sheet);
+  }).length;
+
+  return {
+    totalSheets: sheets.length,
+    dataSheets: dataSheets,
+    maxDataSheets: APP_.MAX_DATA_SHEETS_PER_FILE,
+    maxTotalSheets: APP_.MAX_TOTAL_SHEETS_PER_FILE,
+    full: dataSheets >= APP_.MAX_DATA_SHEETS_PER_FILE,
+    overLimit: dataSheets > APP_.MAX_DATA_SHEETS_PER_FILE || sheets.length > APP_.MAX_TOTAL_SHEETS_PER_FILE
+  };
+}
+
 function openLinkedSpreadsheet_(fileId) {
   requireLinkedFileId_(fileId);
   try {
@@ -504,17 +826,24 @@ function openLinkedSpreadsheet_(fileId) {
   }
 }
 
-function requireExistingSheet_(fileId, sheetName) {
+function requireExistingDataSheet_(fileId, sheetName) {
   const ss = openLinkedSpreadsheet_(fileId);
-  return getSheetOrFail_(ss, sheetName);
+  return getDataSheetOrFail_(ss, sheetName);
 }
 
-function getSheetOrFail_(ss, sheetName) {
+function getDataSheetOrFail_(ss, sheetName) {
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     fail_('SHEET_NOT_FOUND', '선택한 시트를 찾을 수 없습니다.');
   }
+  if (isGuideSheet_(sheet)) {
+    fail_('GUIDE_IS_RESERVED', '안내 시트에는 수집 데이터를 저장할 수 없습니다.');
+  }
   return sheet;
+}
+
+function isGuideSheet_(sheet) {
+  return sheet && sheet.getName() === APP_.GUIDE_SHEET_NAME;
 }
 
 function sheetListFromSpreadsheet_(ss) {
@@ -524,18 +853,23 @@ function sheetListFromSpreadsheet_(ss) {
 }
 
 function publicSheet_(ss, sheet) {
-  return {
+  const guide = isGuideSheet_(sheet);
+  const result = {
     id: sheet.getSheetId(),
     name: sheet.getName(),
     hidden: sheet.isSheetHidden(),
+    kind: guide ? 'guide' : 'data',
+    selectable: !guide,
     url: sheetRangeUrl_(ss, sheet, '')
   };
+  if (!guide) result.capacity = sheetCapacity_(sheet);
+  return result;
 }
 
 function publicFile_(file) {
   return {
     id: file.id,
-    name: file.name,
+    name: trimText_(file.name || 'Google Sheets', APP_.MAX_FILE_NAME_CHARS),
     url: spreadsheetUrl_(file.id)
   };
 }
@@ -547,6 +881,44 @@ function spreadsheetUrl_(fileId) {
 function sheetRangeUrl_(ss, sheet, rangeA1) {
   const base = ss.getUrl() + '#gid=' + sheet.getSheetId();
   return rangeA1 ? base + '&range=' + encodeURIComponent(rangeA1) : base;
+}
+
+function canonicalVideoUrl_(videoId, suppliedUrl) {
+  const url = validateYoutubeVideoUrlSoft_(suppliedUrl);
+  return url || 'https://www.youtube.com/watch?v=' + encodeURIComponent(videoId);
+}
+
+function validateYoutubeVideoUrlSoft_(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 2048) return '';
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== 'https:') return '';
+    const host = parsed.hostname.toLowerCase();
+    if (['www.youtube.com', 'youtube.com', 'm.youtube.com', 'youtu.be'].indexOf(host) < 0) return '';
+    return parsed.toString();
+  } catch (err) {
+    return '';
+  }
+}
+
+function validateThumbnailUrl_(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 2048) return '';
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== 'https:') return '';
+    const host = parsed.hostname.toLowerCase();
+    if (host !== 'i.ytimg.com' && host !== 'img.youtube.com') return '';
+    return parsed.toString();
+  } catch (err) {
+    return '';
+  }
+}
+
+function validateChannelIdSoft_(value) {
+  const id = String(value || '').trim();
+  return /^[A-Za-z0-9_-]{6,128}$/.test(id) ? id : '';
 }
 
 function extractSpreadsheetId_(url) {
@@ -594,6 +966,14 @@ function validateSheetName_(sheetName) {
   return name;
 }
 
+function validateDataSheetName_(sheetName) {
+  const name = validateSheetName_(sheetName);
+  if (name === APP_.GUIDE_SHEET_NAME) {
+    fail_('GUIDE_IS_RESERVED', '"안내"는 첫 번째 안내 시트 전용 이름입니다.');
+  }
+  return name;
+}
+
 function validateCategory_(category) {
   const value = requireString_(category, '카테고리', APP_.MAX_CATEGORY_CHARS).trim();
   if (!value) {
@@ -602,13 +982,31 @@ function validateCategory_(category) {
   return value;
 }
 
+function validatePurpose_(value) {
+  if (value === '' || value == null) return '';
+  const text = optionalString_(value, APP_.MAX_PURPOSE_CHARS);
+  if (APP_.PURPOSES.indexOf(text) < 0) {
+    fail_('INVALID_PURPOSE', '활용 목적 값이 올바르지 않습니다.');
+  }
+  return text;
+}
+
 function validatePriority_(value) {
   if (value === '' || value == null) return '';
   const number = Number(value);
-  if (!Number.isInteger(number) || number < 0 || number > 3) {
-    fail_('INVALID_PRIORITY', '중요도는 0~3 범위여야 합니다.');
+  if (!Number.isInteger(number) || number < 1 || number > 5) {
+    fail_('INVALID_PRIORITY', '중요도는 1~5 범위여야 합니다.');
   }
-  return number === 0 ? '' : number;
+  return number;
+}
+
+function validateStatus_(value) {
+  if (value === '' || value == null) return '';
+  const text = optionalString_(value, APP_.MAX_STATUS_CHARS);
+  if (APP_.STATUSES.indexOf(text) < 0) {
+    fail_('INVALID_STATUS', '상태 값이 올바르지 않습니다.');
+  }
+  return text;
 }
 
 function validateRequest_(request) {
@@ -790,7 +1188,7 @@ function normalizeState_(input) {
       if (!isPlainObject_(group)) return;
       const fileId = String(group.fileId || '').trim();
       const sheetName = trimText_(group.sheetName || '', APP_.MAX_SHEET_NAME_CHARS);
-      if (!seenFiles[fileId] || !sheetName) return;
+      if (!seenFiles[fileId] || !sheetName || sheetName === APP_.GUIDE_SHEET_NAME) return;
 
       const items = [];
       if (Array.isArray(group.items)) {
@@ -854,14 +1252,21 @@ function errorResult_(err) {
     INVALID_VIDEO_ID: '영상 ID가 올바르지 않습니다.',
     INVALID_SHEET_NAME: '사용할 수 없는 시트 이름입니다.',
     INVALID_CATEGORY: '카테고리 이름이 올바르지 않습니다.',
+    INVALID_PURPOSE: '활용 목적 값이 올바르지 않습니다.',
     INVALID_PRIORITY: '중요도 값이 올바르지 않습니다.',
+    INVALID_STATUS: '상태 값이 올바르지 않습니다.',
     INVALID_DUPLICATE_MODE: '중복 처리 방식이 올바르지 않습니다.',
     INVALID_ROW: '수정할 행 정보가 올바르지 않습니다.',
     FILE_NO_ACCESS: '이 Google Sheets 파일을 열 수 없습니다. 현재 계정의 접근 권한을 확인해 주세요.',
+    FILE_NOT_WRITABLE: '이 Google Sheets 파일을 수정할 수 없습니다. 현재 계정의 편집 권한을 확인해 주세요.',
     FILE_NOT_LINKED: '먼저 이 Google Sheets 파일을 연결해 주세요.',
-    FILE_LIMIT: '연결할 수 있는 파일 수를 초과했습니다.',
+    FILE_LIMIT: '연결 파일은 최대 10개까지 사용할 수 있습니다.',
     SHEET_NOT_FOUND: '선택한 시트를 찾을 수 없습니다.',
     SHEET_CREATE_FAILED: '새 시트를 만들 수 없습니다. 파일 편집 권한을 확인해 주세요.',
+    SHEET_LIMIT: '안내 시트를 제외한 데이터 시트는 파일당 최대 10개까지 사용할 수 있습니다.',
+    GUIDE_NAME_CONFLICT: '기존 "안내" 탭을 보호하기 위해 연결을 중단했습니다. 기존 탭 이름을 바꾼 뒤 다시 시도해 주세요.',
+    GUIDE_IS_RESERVED: '안내 시트에는 수집 데이터를 저장할 수 없습니다.',
+    ROW_LIMIT: '이 시트는 새 기록 한도 2,000개에 도달했습니다. 새 시트를 선택해 주세요.',
     SCHEMA_MISMATCH: '기존 내용을 보호하기 위해 저장을 중단했습니다. YouTube 수집도구용 새 시트를 사용해 주세요.',
     MULTIPLE_DUPLICATES: '같은 영상 ID가 여러 행에 있습니다. 수정할 기록을 먼저 선택해 주세요.',
     DUPLICATE_NOT_FOUND: '업데이트할 기존 기록을 찾지 못했습니다.',
