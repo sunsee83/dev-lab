@@ -5,7 +5,7 @@
 ## 1. 북마클릿 내부 고정 값
 
 ```js
-const GAS_WEBAPP_URL='https://script.google.com/macros/s/AKfycbxNvYE5AxCJ_9yNI_mS1GKOrRMBX6Qy3_u9CkUvNyiyOM0aof_CNaUDa0lEGHDFCdsa/exec';
+const GAS_WEBAPP_URL='https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec';
 ```
 
 배치 위치:
@@ -16,7 +16,7 @@ Android 브라우저 북마크
 → javascript:(()=>{ ... GAS_WEBAPP_URL ... })()
 ```
 
-`GAS_WEBAPP_URL`은 공용 Apps Script 주소입니다. 개인 Google Sheets URL은 북마클릿에 고정하지 않습니다.
+`GAS_WEBAPP_URL`은 **독립형 Apps Script 프로젝트 `유튜브다운로드 v1`의 공용 웹앱 주소**입니다. 개인 Google Sheets URL은 북마클릿에 고정하지 않습니다.
 
 ## 2. 코어 책임
 
@@ -25,13 +25,27 @@ Android 브라우저 북마크
 영상 ID와 기본 메타데이터 확인
 영상/음성 스트림 후보 생성
 데이터 선택 필드 추출
-UI 메시지 처리
+통합 UI 제어
 로컬 파일 저장
-Apps Script 브리지 호출
+독립형 Apps Script 브리지 호출
 영상/음성 Drive 저장 정보 전달
 ```
 
-## 3. 실행 상태
+## 3. Google 저장 구조
+
+```text
+북마클릿
+→ GAS_WEBAPP_URL
+→ 독립형 Apps Script
+   ├─ Transport.gs
+   └─ Code.gs
+→ SpreadsheetApp.openById(...)
+→ 사용자가 연결한 Google Sheets
+```
+
+Google Sheets는 Apps Script에 바인딩된 부모 파일이 아니라 사용자별 데이터 저장 대상입니다.
+
+## 4. 실행 상태
 
 현재 북마클릿 실행 동안만 유지합니다.
 
@@ -47,7 +61,7 @@ Apps Script bridge nonce
 
 미디어 URL, OAuth token, 쿠키를 영구 저장하지 않습니다.
 
-## 4. 검증된 YouTube player 경로
+## 5. 검증된 YouTube player 경로
 
 ```js
 fetch('https://www.youtube.com/youtubei/v1/player',{
@@ -91,7 +105,7 @@ streamingData.adaptiveFormats
 
 현재 Android Whale에서 일반 영상과 Shorts의 직접 저장이 검증되어 있으며 통합 영상의 검증 화질은 360p입니다.
 
-## 5. 로컬 미디어 저장
+## 6. 로컬 미디어 저장
 
 ```js
 const handle=await showSaveFilePicker(...);
@@ -101,7 +115,7 @@ await response.body.pipeTo(await handle.createWritable());
 
 영상/음성은 독립 작업으로 처리합니다.
 
-## 6. UI 초기화
+## 7. UI 초기화
 
 UI에는 실제 미디어 URL 대신 임시 후보 ID를 전달합니다.
 
@@ -119,9 +133,9 @@ UI에는 실제 미디어 URL 대신 임시 후보 ID를 전달합니다.
 
 메시지 세부 형식은 `PROTOCOL.md`가 기준입니다.
 
-## 7. Apps Script 브리지
+## 8. Apps Script 브리지
 
-코어는 `APPS_SCRIPT_BRIDGE.md`의 기준 구현을 포함하고 다음 인터페이스만 사용합니다.
+코어는 `APPS_SCRIPT_BRIDGE.md`의 기준 구현을 사용합니다.
 
 ```js
 const gas=createGasBridge(GAS_WEBAPP_URL,token);
@@ -147,11 +161,9 @@ token 일치
 requestId 일치
 ```
 
-Apps Script HTML Service의 sandbox frame 구조는 브라우저에 따라 달라질 수 있으므로 특정 `event.source`를 필수 조건으로 고정하지 않습니다.
+처음 사용하는 Google 계정은 `google-connect`에서 새 독립형 Apps Script 프로젝트에 대한 권한 승인을 진행합니다.
 
-처음 사용하는 Google 계정은 `google-connect`에서 `gas.authorize()`로 권한 승인을 진행합니다.
-
-## 8. UI 시작 시 Google 상태 구성
+## 9. UI 시작 시 Google 상태 구성
 
 ```text
 get-state
@@ -170,7 +182,9 @@ get-state
 + selectable 데이터 시트 있음
 ```
 
-## 9. Google UI action 라우팅
+새 독립형 Apps Script 프로젝트의 `UserProperties`는 이전 프로젝트와 별개이므로 최초 1회는 Sheets를 다시 연결합니다.
+
+## 10. Google UI action 라우팅
 
 ```text
 google-connect
@@ -196,7 +210,7 @@ add-category
 
 개인 `sheetUrl`은 `connect-file` 호출 때만 전달합니다.
 
-## 10. 데이터 추출 결과
+## 11. 데이터 추출 결과
 
 사용자가 선택한 필드만 조사합니다.
 
@@ -214,19 +228,19 @@ add-category
 
 세부 필드 규격은 `DATA_EXTRACT_FLOW.md`를 따릅니다.
 
-## 11. 로컬 데이터 저장
+## 12. 로컬 데이터 저장
 
 ```text
 UI save-local
 → UI가 showSaveFilePicker()로 파일 핸들 확보
 → 코어가 선택 데이터 수집
 → YT_TOOL_DATA_RESULT
-→ ui.html이 원문/TXT/JSON으로 기록
+→ UI가 원문/TXT/JSON으로 기록
 ```
 
 출력 규격은 `DATA_OUTPUT_FLOW.md`를 따릅니다.
 
-## 12. Sheets 데이터 저장
+## 13. Sheets 데이터 저장
 
 ```text
 UI save-drive
@@ -266,18 +280,18 @@ save-record status=duplicate → UI 중복 화면 표시
 
 Sheets 규칙은 `SHEET_RULES.md`가 기준입니다.
 
-## 13. 영상/음성 Drive 저장
+## 14. 영상/음성 Drive 저장
 
 ```text
 선택 미디어 URL/파일명
 → YT_TOOL_DRIVE_MEDIA
-→ ui.html
+→ UI
 → Google 공식 Save to Drive 버튼
 ```
 
 Sheets 저장 경로와 분리합니다.
 
-## 14. 오류 분리
+## 15. 오류 분리
 
 ```text
 데이터 실패 + 영상 성공 → 영상 저장 유지
@@ -286,7 +300,7 @@ Apps Script 실패 → 로컬 저장 유지
 Drive 버튼 실패 → 로컬 저장 유지
 ```
 
-## 15. 영구 저장 금지
+## 16. 영구 저장 금지
 
 ```text
 실행 중 media URL
