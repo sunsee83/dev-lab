@@ -21,13 +21,15 @@ Transport.gs / Code.gs
 공용 Apps Script /exec 주소 보유
 실행 token 생성
 숨은 iframe + form POST 브리지 생성
-bridgeNonce 발급/갱신
+bridgeNonce 발급
 get-ui 호출
-ui.html을 iframe.srcdoc으로 표시
+받은 ui.html로 Blob URL 생성
+Blob URL을 iframe.src로 표시
 ui.html에 Apps Script call 함수 제공
-Google 승인 실패 시 최소 fallback 화면 표시
-종료 시 iframe/listener/전역 실행값 정리
+종료 시 iframe/Blob URL/전역 실행값 정리
 ```
+
+YouTube의 Trusted Types 정책 때문에 `iframe.srcdoc`은 사용하지 않습니다.
 
 목표는 모바일 Whale 북마크 URL 길이를 짧게 유지하는 것입니다.
 
@@ -47,7 +49,7 @@ Apps Script action 호출
 Drive 저장 영역
 ```
 
-`ui.html`은 `iframe.srcdoc`으로 YouTube 페이지 컨텍스트에서 실행되므로 부모 YouTube 문서와 fetch 기능을 사용합니다.
+`ui.html`은 YouTube 페이지가 만든 Blob URL iframe에서 실행됩니다. Blob 문서는 부모 YouTube 문서와 같은 실행 출처를 사용하므로 부모 문서의 영상 URL/메타데이터와 fetch 기능을 참조합니다.
 
 ## 4. YouTube player
 
@@ -78,80 +80,81 @@ fetch('https://www.youtube.com/youtubei/v1/player',{
 - 실제 URL은 실행 메모리의 후보 Map에만 보관
 - UI select에는 후보 ID와 품질 표시만 사용
 
-## 5. Google 초기화
+## 5. Google 저장공간
 
 ```text
 ui.html 시작
 → create-storage
-   ├─ 기존 연결 있으면 재사용
-   └─ 없으면 유튜브다운로드sheet_v1 생성
-→ get-state
-→ defaultFileId
-→ list-sheets
-→ 수집 우선 선택
-→ list-categories
-→ 기본 카테고리 보장
-→ check-duplicate
+→ 기존 연결 있으면 재사용
+→ 없으면 유튜브다운로드sheet_v1 생성
+→ 수집 시트 + 기본 카테고리
+→ get-state / list-sheets / list-categories
 ```
 
-## 6. 로컬 저장
-
-한 종류:
+기본값:
 
 ```text
-저장 클릭
-→ showSaveFilePicker
-→ 파일 기록
+파일      유튜브다운로드sheet_v1
+시트      수집
+카테고리  기본
 ```
 
-복수 종류:
+## 6. 데이터 저장
 
 ```text
-저장 클릭
-→ showDirectoryPicker
-→ 선택 항목별 파일 생성
-```
-
-파일 선택 API는 `저장` 클릭 핸들러에서 네트워크 작업보다 먼저 실행합니다.
-
-## 7. 현재 데이터 수집
-
-현재 즉시 확보하는 항목:
-
-```text
-썸네일
-제목
-영상 URL
-채널명
-업로드일
-영상 길이
-조회수
-설명
-태그
-영상 ID
-채널 ID
-원본 메타데이터(스트리밍 URL 제외)
-```
-
-`좋아요 / 대본 / 댓글 / 자막 원본`은 아직 실제 값을 확보하지 못하면 빈 성공값을 만들지 않고 오류로 표시합니다.
-
-## 8. Sheets 저장
-
-```text
-데이터 + Drive 저장
-→ 선택 필드 수집
-→ 관리정보 결합
+데이터 + Drive
+→ ui.html collect
 → save-record
-→ 영상 ID 기준 중복/업데이트
+→ SpreadsheetApp
 ```
 
-중요도 미선택은 Apps Script에 전달하지 않습니다.
+이번 실행에서 실제로 얻은 필드만 `record`에 포함합니다.
+
+```js
+{
+  fileId,
+  sheetName,
+  videoId,
+  record,
+  management:{category,purpose,priority,status,tags,memo,aiSend},
+  duplicateMode
+}
+```
+
+중요도 미선택은 `priority`를 보내지 않습니다.
+
+## 7. 로컬 저장
+
+`저장` 버튼 클릭 안에서 파일/폴더 선택창을 먼저 엽니다. 사용자 활성화가 사라지기 전에 `showSaveFilePicker()` 또는 `showDirectoryPicker()`를 호출합니다.
+
+```text
+단일 항목
+→ showSaveFilePicker
+
+복수 항목
+→ showDirectoryPicker
+→ 항목별 파일 생성
+```
+
+그 뒤 준비된 direct URL/데이터를 선택한 파일 핸들에 기록합니다.
+
+## 8. 영상/음성 Drive
+
+```text
+미디어 direct URL
+→ ui.html
+→ Google Save to Drive 버튼
+```
+
+Sheets 데이터 저장 경로와 별도입니다.
 
 ## 9. 영구 저장 금지
 
 ```text
-실행 중 media URL
-OAuth access/refresh token
-로그인 쿠키
-인증 세션 비밀값
+미디어 direct URL
+인증 쿠키
+Google OAuth access/refresh token
+YouTube 로그인 정보
 ```
+
+실행 종료 시 북마클릿 전역 브리지 값과 Blob URL을 정리합니다.
