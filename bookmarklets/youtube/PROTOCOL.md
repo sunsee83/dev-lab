@@ -35,12 +35,8 @@
   action: 'save-local',
   types: ['video', 'audio', 'data'],
   target: 'local',
-  video: {
-    id: 'video-option-id'
-  },
-  audio: {
-    id: 'audio-option-id'
-  },
+  video: { id: 'video-option-id' },
+  audio: { id: 'audio-option-id' },
   data: {
     fields: [],
     format: 'original' | 'txt' | 'json',
@@ -56,23 +52,9 @@
 
 영상/음성의 `id`는 실제 URL이 아니라 코어 내부 후보표를 가리키는 임시 ID다.
 
-### 로컬 영상 저장
-
-코어는 `video.id`를 실제 영상 후보로 해석한 뒤 다음 순서로 처리한다.
-
-1. 저장 파일명 결정
-2. Android 브라우저 파일 저장 선택창 표시
-3. 선택된 영상 URL을 `fetch`
-4. 응답 스트림을 선택한 파일에 기록
-5. 완료 상태 반환
-
-### 로컬 음성 저장
-
-영상과 동일하되 `audio.id`를 음성 후보로 해석하고 음성용 확장자를 사용한다.
-
 현재 검증된 저장 방식은 `showSaveFilePicker()` → 미디어 `fetch` → `response.body.pipeTo(await handle.createWritable())` 흐름이다.
 
-## Drive 저장
+## Drive 저장 요청
 
 ```js
 {
@@ -99,7 +81,29 @@
 }
 ```
 
-Drive 동작은 후속 단계에서 연결한다.
+### 영상·음성 1차 처리
+
+1. 코어는 `video.id` / `audio.id`를 실제 현재 스트림으로 해석한다.
+2. 실제 URL을 초기화 메시지나 저장소에 넣지 않는다.
+3. 저장 요청 시점에만 항목별 `YT_TOOL_DRIVE_MEDIA`를 UI로 보낸다.
+4. UI는 Google 공식 `Save to Drive` 버튼을 렌더링한다.
+5. 사용자가 공식 버튼을 눌러 실제 저장을 실행한다.
+
+영상과 음성을 함께 선택하면 항목별로 `YT_TOOL_DRIVE_MEDIA`를 한 번씩 보낼 수 있다.
+
+### Drive 버튼 오류 보고
+
+Google 공식 버튼 자체를 준비하지 못한 경우 UI가 코어에 다음 메시지를 보낼 수 있다.
+
+```js
+{
+  type: 'YT_TOOL_ACTION',
+  token,
+  action: 'drive-widget-error',
+  kind: 'video' | 'audio',
+  message: '오류 문구'
+}
+```
 
 ## 최초 설정
 
@@ -185,6 +189,29 @@ Drive 동작은 후속 단계에서 연결한다.
 
 복수 선택 저장에서는 항목별 상태를 순서대로 보낼 수 있다.
 
+## Drive 미디어 일시 전달
+
+영상·음성 Drive 저장 1차 경로에서만 사용한다.
+
+```js
+{
+  type: 'YT_TOOL_DRIVE_MEDIA',
+  token,
+  kind: 'video' | 'audio',
+  src: '현재 저장 동작용 HTTPS 미디어 URL',
+  filename: '저장 파일명.mp4'
+}
+```
+
+규칙:
+
+- `src`는 현재 저장 동작에서만 사용한다.
+- UI는 `src`를 localStorage/IndexedDB 등에 저장하지 않는다.
+- 화질/음질/항목/저장 위치가 바뀌면 기존 Drive 버튼을 제거한다.
+- UI는 `https://apis.google.com/js/platform.js`를 필요할 때만 로드한다.
+- Google 공식 `gapi.savetodrive.render()`로 버튼을 만든다.
+- 이 1차 방식은 특정 Drive 폴더를 지정하지 않는다.
+
 ## Drive 선택지 갱신
 
 ```js
@@ -225,15 +252,17 @@ Drive 동작은 후속 단계에서 연결한다.
 
 ---
 
-# 3. 로컬 저장 오류 분리
+# 3. 실패 분리
 
 영상/음성/데이터를 독립적으로 처리한다.
 
 예:
 
 - 영상 저장 성공 + 음성 저장 실패 → 영상 성공 결과 유지
-- 음성 후보 없음 → 영상 로컬 저장은 계속 가능
-- 데이터 기능 미구현/실패 → 영상·음성 로컬 저장에는 영향 없음
+- 음성 후보 없음 → 영상 저장은 계속 가능
+- Google Save to Drive 버튼 로드 실패 → 로컬 저장에는 영향 없음
+- GoogleVideo CORS 문제 → 해당 Drive 저장만 실패 처리
+- 데이터 기능 미구현/실패 → 영상·음성 저장에는 영향 없음
 
 사용자가 파일 선택창을 취소한 경우에는 다른 오류와 구분하여 `취소됨` 상태로 처리한다.
 
@@ -244,4 +273,5 @@ Drive 동작은 후속 단계에서 연결한다.
 - 화면 구조: `UI_SPEC.md`
 - 북마클릿 코어 역할: `CORE_SPEC.md`
 - 로컬 저장 연결: `LOCAL_SAVE_FLOW.md`
+- Drive 미디어 1차 연결: `DRIVE_SAVE_FLOW.md`
 - 통신 형식: 이 문서
