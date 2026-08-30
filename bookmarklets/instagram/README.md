@@ -1,6 +1,6 @@
 # Instagram RI Bookmarklet
 
-현재 활성 버전: **v0.9.0**
+현재 활성 버전: **v0.9.2**
 
 ## 활성 파일
 
@@ -24,13 +24,15 @@ bookmarklets/instagram/
 - 본체 실행 실패 때만 Loader 버튼이 비상 복구용으로 남는다.
 
 ## 업데이트 경로 확인
-- v0.8.5에서 큰 진단 패널이 Loader의 `RI 업데이트` 버튼을 가리는 z-index 충돌이 있었다.
-- v0.8.8은 Android Edge에서 `Response(decompressedStream).text()`가 `Failed to fetch`로 실패했다.
-- v0.8.9에서 압축 스트림을 `getReader()` + `TextDecoder`로 직접 읽도록 변경했고 Android Edge에서 실제 실행을 확인했다.
-- 따라서 현재 북마크 주소를 다시 바꾸지 않고 `RI 업데이트`로 이후 버전을 받는 구조를 유지한다.
+- v0.8.5: 큰 진단 패널이 Loader의 `RI 업데이트`를 가리는 z-index 충돌 확인.
+- v0.8.8: Android Edge에서 `Response(decompressedStream).text()`가 `Failed to fetch`로 실패.
+- v0.8.9: `getReader()` + `TextDecoder` 경로로 변경 후 Android Edge 실제 실행 확인.
+- v0.9.0: 업로드된 Base64 패키지가 검증본과 달라 `atob` 실패.
+- v0.9.1: 업로드 후 Git blob 무결성 확인 방식으로 복구했고 실기기 실행 확인.
+- v0.9.2: 로컬 검증 wrapper Git SHA와 `main/current.js` Git SHA를 동일하게 고정한 뒤 배포.
 
 ## 확장앱 참고 원칙
-- `reels-inspector/**`는 읽기 전용 참고자료다.
+- `reels-inspector/**`는 **읽기 전용 참고자료**다.
 - 해당 폴더의 코드·문서·테스트는 수정·삭제·정리·커밋하지 않는다.
 - 완성 제품으로 간주하지 않고 계산식·UI 구조·상태 처리 중 필요한 부분만 선별 참고한다.
 - 북마클릿은 별도 런타임과 별도 저장공간을 사용한다.
@@ -45,18 +47,29 @@ bookmarklets/instagram/
 - shortcode 중심 짧은 파일명
 - 실시간 재인코딩 없이 저장
 
-## v0.9.0 — Grid UI 압축 수정
-v0.8.9 실기기 스크린샷에서 3열 Grid 자체는 유지됐지만, RI overlay가 지나치게 크고 native 하단 UI 위까지 덮는 문제가 확인됐다.
+## v0.9.2 — Grid 흔들림 구조 수정
 
-v0.9.0에서는:
-- Grid overlay layer의 z-index를 낮춰 Instagram 하단 내비 / 앱 배너 / 상단 고정 UI가 RI overlay보다 우선한다.
-- Grid 하단 지표 2줄 높이를 축소한다.
-- `저장` 버튼 크기와 불투명도를 줄인다.
-- 콘텐츠 유형 badge를 축소한다.
-- 영상 저장 선택 메뉴를 세로 4줄에서 **2×2 compact menu**로 변경한다.
-- 메뉴 문구를 `영상 / 음원 / 이미지 / 3개 모두`로 줄인다.
-- 단순히 저장 항목을 고르는 순간에는 큰 Activity를 띄우지 않는다.
-- Activity는 실제 저장 / 실패 등 작업 상태에 집중하고 더 작은 toast로 표시한다.
+v0.9.1까지 북마클릿 Grid UI는 화면 전체에 `position:fixed` overlay를 두고 각 카드의 `getBoundingClientRect()` 좌표를 스크롤마다 다시 계산했다. Android Edge에서 visual viewport와 fractional pixel 변화가 생기면 하단 지표가 카드와 1px 안팎으로 따로 움직이는 현상이 생길 수 있다.
+
+확장앱 Grid 구현을 **읽기 전용으로 비교**했을 때 유용했던 부분은 다음과 같다.
+- 지표 UI를 카드 내부에 absolute overlay로 부착
+- 2행 × 4칸 고정 슬롯
+- 슬롯 폭을 고정해 숫자 길이 변화로 인한 흔들림 억제
+- `font-variant-numeric: tabular-nums`
+- 하단 gradient + 강한 text shadow/stroke로 썸네일 위 가독성 확보
+- 작은 원형 빠른 작업 버튼
+
+v0.9.2 북마클릿 적용:
+- 전역 fixed Grid overlay와 카드별 scroll 좌표 재계산을 제거한다.
+- `.ri92-card-ui`를 각 Instagram Grid 카드 anchor 내부에 직접 붙인다.
+- 카드가 움직이면 RI UI도 같은 DOM 좌표계에서 함께 움직인다.
+- scroll/resize에서는 카드 위치를 다시 쓰지 않고 열린 저장 메뉴만 닫는다.
+- DOM 변경 때만 새 카드에 UI를 주입한다.
+- 하단 지표는 2행 × 4칸 고정 슬롯과 tabular number를 사용한다.
+- 두꺼운 고정 바 대신 하단 gradient를 사용한다.
+- 빠른 저장은 **좌측 위 작은 원형 다운로드 아이콘**으로 둔다. 하단은 지표 전용 영역으로 비운다.
+- 우측 위 콘텐츠 유형은 Instagram native Reel/슬라이드 표시를 우선 사용해 중복 badge를 피한다.
+- 실제 수치 엔진은 아직 연결 전이며, 검증되지 않은 값은 `0` 대신 missing으로 표시한다.
 
 ## 통합 UI 방향
 
@@ -95,16 +108,15 @@ RI 리서치 시스템
 
 ## 현재 작업 순서
 
-### P0.5A — v0.9.0 Grid UI 실기기 확인
-- 원래 3열 Grid 크기와 간격이 유지되는지
-- 스크롤 시 overlay가 정확히 카드에 붙는지
-- RI 지표가 native 하단 내비 / 앱 배너 위를 덮지 않는지
-- `저장` 메뉴가 카드 폭에 가까운 2×2 compact 형태인지
-- 메뉴를 열었을 때 별도의 큰 `저장 항목 선택` Activity가 뜨지 않는지
+### P0.5A — v0.9.2 Grid UI 안정성
+- 원래 3열 Grid 크기와 간격 유지
+- 위/아래 스크롤 때 하단 지표가 카드와 같이 움직이며 흔들리지 않음
+- 빠른 저장 아이콘과 native 콘텐츠 유형 아이콘 충돌 없음
+- native 하단 내비 / 앱 배너 침범 없음
 
-### P0.5A-2 — 선택 저장 확인
-- 영상 카드에서 `저장` → 파일이 즉시 내려받아지지 않음
-- `영상 / 음원 / 이미지 / 3개 모두` 중 사용자가 고른 항목만 저장
+### P0.5A-2 — 선택 저장
+- 영상 카드 빠른 저장 → 즉시 다운로드하지 않고 항목 선택
+- 영상 / 음원 / 이미지 / 3개 모두 중 사용자가 고른 항목만 저장
 - 선택 카드 shortcode와 저장 파일 shortcode 일치
 - 영상 파일은 소리 포함 정상 MP4
 
@@ -152,8 +164,8 @@ RI 리서치 시스템
 
 ## 실기기 완료 기준
 - Instagram 원래 3열 Grid가 변하지 않는다.
+- Grid 지표가 스크롤 중 카드와 분리되어 흔들리지 않는다.
 - RI overlay가 native UI를 침범하지 않는다.
-- 저장 버튼이나 수치 때문에 카드 크기·행 높이가 바뀌지 않는다.
 - 선택한 콘텐츠와 저장 파일/수치 shortcode가 일치한다.
 - 확인되지 않은 수치는 `0`이 아니라 missing 상태다.
 - 영상은 소리 포함 정상 재생된다.
