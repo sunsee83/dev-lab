@@ -64,13 +64,19 @@ function bridgeDispatch_(request) {
 
 function bridgeCreateStorage_(p) {
   const state = loadState_();
-  if (state.files.length) {
-    return { created: false, state: publicState_() };
-  }
-
-  const fileName = trim_(p.fileName || 'YouTube 수집', 120) || 'YouTube 수집';
+  const fileName = trim_(p.fileName || '유튜브다운로드sheet_v1', 120) || '유튜브다운로드sheet_v1';
   const sheetName = dataSheetName_(p.sheetName || '수집');
   const category = trim_(p.category || '기본', 60) || '기본';
+
+  if (state.files.length) {
+    const fileId = state.defaultFileId || state.files[0].id;
+    try {
+      const ss = SpreadsheetApp.openById(fileId);
+      if (ss.getName() === 'YouTube 수집' && fileName === '유튜브다운로드sheet_v1') ss.rename(fileName);
+      refreshFileName_(fileId, ss.getName());
+    } catch (err) {}
+    return { created: false, state: publicState_() };
+  }
 
   let ss;
   try {
