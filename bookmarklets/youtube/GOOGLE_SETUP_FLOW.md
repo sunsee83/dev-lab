@@ -30,7 +30,7 @@ https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctP
 → Google 계정 승인
 → get-state
 → 연결 파일이 없으면 create-storage
-→ SpreadsheetApp.create('YouTube 수집')
+→ SpreadsheetApp.create('유튜브다운로드sheet_v1')
 → 첫 데이터 시트를 '수집'으로 구성
 → '안내' 시트 생성 및 첫 탭 배치
 → 기본 카테고리 '기본' 등록
@@ -41,7 +41,7 @@ https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctP
 기본값:
 
 ```text
-파일명      YouTube 수집
+파일명      유튜브다운로드sheet_v1
 데이터 시트 수집
 카테고리    기본
 ```
@@ -75,11 +75,11 @@ get-state
 
 ```text
 사용자 A
-→ A 계정에 자동 생성된 YouTube 수집
+→ A 계정에 자동 생성된 유튜브다운로드sheet_v1
 → A의 UserProperties
 
 사용자 B
-→ B 계정에 자동 생성된 YouTube 수집
+→ B 계정에 자동 생성된 유튜브다운로드sheet_v1
 → B의 UserProperties
 ```
 
