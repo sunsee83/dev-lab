@@ -34,7 +34,7 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - 통합 팝업 UI
 - 조건부 화면 표시
 - 폼/상태 관리
-- 일반 파일 저장 UI/유틸리티
+- 일반 파일 저장 흐름
 - 원문/TXT/JSON 출력
 - Drive/Sheets 일반 UI
 - 메시지 프로토콜
@@ -90,51 +90,52 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - `UI_SPEC.md` : 최종 UI 기준본
 - `PROTOCOL.md` : 통합 북마클릿 ↔ UI 통신 기준
 - `CORE_SPEC.md` : 실제 코드를 공개하지 않고 북마클릿 코어 역할/입출력만 고정한 기준
-- `ui.html` : `UI_SPEC.md` 기준 통합 팝업 UI 구현본
+- `LOCAL_SAVE_FLOW.md` : 영상/음성 로컬 저장 연결 기준
+- `ui.html` : 통합 팝업 UI + `YT_TOOL_*` 프로토콜 연결본
 
 이전 미디어 전용 UI, bridge 실험본, GitHub Pages용 파일은 제거했습니다.
 
 ## 단계 2 완료: 통합 팝업 UI
 
-`ui.html`에 다음 화면과 조건부 표시를 구현했습니다.
-
-- 최초 설정 화면
-- 영상 / 음성 / 데이터 복수 선택
-- 영상 선택 시 화질
-- 음성 선택 시 음질
-- 데이터 선택 시 기본정보 / 내용 / 댓글 / 고급정보
-- 원문 / TXT / JSON
-- 로컬 / Drive
-- Drive 파일 → 시트 → 카테고리
-- 데이터 + Drive 관리정보
-- 중복 데이터 처리
-- 저장 / 닫기 / 상태 표시
+`ui.html`에 최초 설정, 영상/음성/데이터 복수 선택, 조건부 옵션, 로컬/Drive, 관리정보, 중복 처리, 저장/닫기 화면을 구현했습니다.
 
 ## 단계 3 완료: 북마클릿 코어 인터페이스 정리
 
-실제 YouTube 전용 추출 코드는 공개 저장소에 올리지 않고, `CORE_SPEC.md`에 역할과 입출력만 고정했습니다.
-
-보존 기준:
+실제 YouTube 전용 추출 코드는 공개 저장소에 올리지 않고 `CORE_SPEC.md`에 역할과 입출력만 고정했습니다.
 
 - 일반 영상/Shorts 공통 진입
 - 영상+음성 통합 영상 후보
 - 음성 전용 후보
 - 실제 가능한 화질/음질만 표시
-- UI에는 실제 스트림 URL 대신 실행 중 임시 선택 ID만 전달
+- UI에는 실제 URL 대신 실행 중 임시 ID 전달
 - 로컬 저장은 YouTube 페이지 안 코어가 담당
-- 한 기능 실패가 다른 기능을 깨뜨리지 않도록 분리
+- 기능별 실패 분리
 
-`PROTOCOL.md`에는 다음 통합 메시지를 확정했습니다.
+## 단계 4 완료: 영상/음성 로컬 저장 연결
 
-- `YT_TOOL_READY`
-- `YT_TOOL_INIT`
-- `YT_TOOL_ACTION`
-- `YT_TOOL_STATUS`
-- `YT_TOOL_OPTIONS`
-- `YT_TOOL_SETUP`
-- `YT_TOOL_DUPLICATE`
-- `YT_TOOL_DRIVE_MEDIA`
+`ui.html`을 `YT_TOOL_*` 통합 프로토콜에 맞췄습니다.
+
+로컬 선택 후 저장 시 UI는 다음을 코어에 전달합니다.
+
+- `action: save-local`
+- 선택된 `types`
+- 영상 임시 후보 ID
+- 음성 임시 후보 ID
+- 데이터가 선택된 경우 데이터 옵션
+
+코어는 임시 ID를 현재 실행의 실제 스트림 후보로 해석합니다.
+
+현재 검증된 저장 흐름은 그대로 보존합니다.
+
+- 영상: `showSaveFilePicker()` → 미디어 fetch → writable stream 기록 → MP4
+- 음성: `showSaveFilePicker()` → 음성 fetch → writable stream 기록
+- 일반 영상/Shorts 동일 흐름
+- 항목별 성공/실패 분리
+
+상세 연결은 `LOCAL_SAVE_FLOW.md`, 메시지 형식은 `PROTOCOL.md`를 기준으로 합니다.
+
+실제 YouTube 전용 player/스트림 판별 구현 전문은 계속 북마클릿 내부에만 둡니다.
 
 ## 다음 작업
 
-단계 4: 현재 성공한 영상/음성 **로컬 저장 코어를 통합 UI 프로토콜에 실제 연결**합니다.
+단계 5: 영상/음성 **Drive 저장 1차 경로**를 통합 UI에 연결하고 실제 저장 가능 여부를 검증합니다.
