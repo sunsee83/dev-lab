@@ -42,7 +42,7 @@ https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctP
 → Google 계정 승인
 → 연결된 저장공간이 없으면 create-storage
 → 사용자 계정에 Google Sheets 파일 자동 생성
-   파일명: YouTube 수집
+   파일명: 유튜브다운로드sheet_v1
 → 안내 시트 자동 생성
 → 데이터 시트 자동 생성
    시트명: 수집
@@ -79,7 +79,7 @@ YouTube 북마클릿
 자동 생성 기본값:
 
 ```text
-파일     YouTube 수집
+파일     유튜브다운로드sheet_v1
 1번 탭   안내
 2번 탭   수집
 카테고리 기본
