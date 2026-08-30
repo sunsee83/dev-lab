@@ -49,6 +49,8 @@ get-state
 
 같은 웹 앱을 여러 사용자가 사용해도 `UserProperties`와 데이터 파일은 사용자별로 분리됩니다.
 
+`UserProperties`에는 연결 파일 같은 최소 사용자 상태만 유지합니다. 새 카테고리 목록은 해당 Sheets의 `안내` 탭 숨김 관리영역에 저장합니다.
+
 ## 5. 기존 Sheets 추가
 
 자동 생성 기본 파일 외에 이미 가진 Sheets를 추가할 때만:
@@ -67,6 +69,8 @@ get-state
 ```text
 유튜브다운로드sheet_v1
 ├─ 안내
+│  ├─ A열: 사용자 안내
+│  └─ C:D 숨김 관리영역: 시트별 카테고리
 └─ 수집
    └─ 기본 카테고리
 ```
@@ -74,6 +78,7 @@ get-state
 - 데이터 시트 최대 10개
 - 시트당 기록 최대 2,000개
 - 1,800개부터 한도 경고
+- 기록 수와 다음 저장 행은 `영상 ID` 열 기준
 
 ## 7. ui.html의 위치
 
@@ -83,8 +88,11 @@ get-state
 Transport.gs / get-ui
 → Apps Script ui.html 내용 반환
 → bookmarklet.js
-→ iframe.srcdoc
+→ Blob URL 생성
+→ iframe.src에 Blob URL 지정
 → YouTube 페이지에 UI 표시
 ```
+
+YouTube의 Trusted Types 정책 때문에 `iframe.srcdoc`은 사용하지 않습니다.
 
 따라서 `유튜브다운로드sheet_v1`에는 코드나 UI 파일을 넣지 않습니다.
