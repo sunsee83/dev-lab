@@ -39,6 +39,7 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - 원문/TXT/JSON 변환
 - 데이터 로컬 파일 기록
 - Drive/Sheets 일반 UI
+- Google 최초 설정 구조
 - 메시지 프로토콜
 - 기타 일반 유틸리티
 
@@ -51,7 +52,10 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - OAuth access/refresh token
 - 로그인/세션 토큰
 - 인증 쿠키
+- Client Secret
 - 기타 계정 비밀정보
+
+OAuth Web Client ID는 공개 식별자이므로 비밀정보로 취급하지 않지만, access token은 실행 메모리에만 둡니다.
 
 데이터의 `원본 메타데이터`에도 인증/세션값과 미디어 스트림 URL은 포함하지 않습니다.
 
@@ -98,6 +102,7 @@ YouTube에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - `DRIVE_SAVE_FLOW.md` : 영상/음성 Drive 저장 1차 연결 기준
 - `DATA_EXTRACT_FLOW.md` : 데이터 선택 필드/결과/부분 실패 기준
 - `DATA_OUTPUT_FLOW.md` : 원문/TXT/JSON 변환과 데이터 로컬 저장 기준
+- `GOOGLE_SETUP_FLOW.md` : Google 계정/Drive/Sheets 최초 자동 설정 구조와 OAuth 제약
 - `ui.html` : 통합 팝업 UI + `YT_TOOL_*` 프로토콜 연결본
 
 이전 미디어 전용 UI, bridge 실험본, GitHub Pages용 파일은 제거했습니다.
@@ -195,6 +200,41 @@ Drive 선택 후 `[저장]`을 누르면 UI가 `save-drive`를 요청하고, 코
 
 `원문`과 `TXT`는 `.txt`, `JSON`은 `.json`으로 저장합니다.
 
+## 단계 8: Google 계정 최초 설정
+
+`GOOGLE_SETUP_FLOW.md`에 자동 설정 구조를 확정했습니다.
+
+자동 생성 목표:
+
+1. Google 계정 선택/동의
+2. `YouTube 수집` Drive 폴더 생성
+3. 폴더 안에 `YouTube Research` Google Sheets 파일 생성
+4. 기본 시트 `AI 자료` 설정
+5. 기본 카테고리 `생성형 AI` 초기화
+6. 생성된 폴더/파일/시트 ID와 이름만 설정값으로 보관
+
+기본 OAuth 범위는 `drive.file` 하나를 사용합니다.
+
+### 현재 막힌 부분
+
+Google Identity Services의 브라우저 OAuth는 등록된 **Authorized JavaScript origin**에서 실행되어야 합니다.
+
+현재 프로젝트는 GitHub Pages와 별도 서버를 사용하지 않도록 정리되어 있으므로, OAuth를 실행할 HTTPS origin이 없습니다.
+
+따라서 단계 8은 현재:
+
+```text
+자동 생성 구조      완료
+OAuth 권한 범위      완료
+Drive/Sheets 호출 순서 완료
+실제 Google 로그인   대기
+실제 폴더/Sheets 생성 대기
+```
+
+실제 자동 설정을 끝내려면 **인증 전용 정적 HTTPS origin**을 하나 허용해야 합니다. 백엔드는 필요하지 않습니다.
+
+HTTPS origin을 끝까지 사용하지 않으면 자동 계정 연결/폴더/Sheets 생성은 불가능하므로 수동 설정 UI로 요구사항을 바꿔야 합니다.
+
 ## 다음 작업
 
-단계 8: Google 계정 최초 설정 흐름 구현.
+단계 8의 인증 origin을 확정한 뒤 Google Identity Services 연결을 구현합니다. 그 다음 단계 9에서 Drive/Sheets 데이터 기록을 연결합니다.
