@@ -34,7 +34,7 @@ YouTube 페이지
 
 핵심은 **북마클릿을 짧은 로더로 유지**하고 실제 기능은 Apps Script에서 받은 `ui.html`이 YouTube 페이지의 `srcdoc` 안에서 실행하는 것입니다.
 
-현재 `bookmarklet.js` 크기는 약 3.9KB이며 UI 전체를 북마크 URL에 넣지 않습니다.
+현재 `bookmarklet.js`는 **약 4KB** 규모이며 UI 전체를 북마크 URL에 넣지 않습니다.
 
 ## 3. Apps Script 구조
 
