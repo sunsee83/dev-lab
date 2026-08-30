@@ -13,7 +13,7 @@ YouTube 모바일 웹에서 사용하는 서버리스 북마클릿 프로젝트�
 - 영상 저장
 - 음성 저장
 - 로컬 저장
-- Google Drive 저장(가능한 공식 브라우저 경로부터 검증)
+- Google 공식 `Save to Drive`를 이용한 Drive 저장 1차 경로
 - 실제 접근 가능한 품질만 표시
 
 ### 2. YT 수집
@@ -22,7 +22,7 @@ YouTube 모바일 웹에서 사용하는 서버리스 북마클릿 프로젝트�
 - 설명 / 태그 / 대본 / 댓글
 - 중요도 1~3 / 상태 / 메모
 - 원문(TXT 성격) / JSON 출력
-- 로컬 또는 개인 Google Drive/Sheets 저장 구조
+- 복사 / 로컬 / 개인 Google Drive·Sheets 저장 구조
 
 ## 코드 배치 원칙
 
@@ -44,6 +44,7 @@ YouTube 구조에 직접 의존하는 짧고 중요한 로직만 둡니다.
 - 팝업 UI
 - 메시지 프로토콜
 - 파일 저장 UI
+- Google 공식 Drive 저장 UI
 - Drive/Sheets용 일반 UI
 - TXT/JSON 출력 UI
 - 상태 표시 / 폼 / 유틸리티
@@ -61,39 +62,41 @@ YouTube 구조에 직접 의존하는 짧고 중요한 로직만 둡니다.
 
 사용자 인증이 필요한 기능은 사용자의 브라우저/Google 공식 인증 흐름을 사용합니다.
 
-## UI 흐름
-
-### YT 미디어
+## YT 미디어 흐름
 
 1. 영상 / 음성 선택
-2. 실제 가능한 품질 선택
+2. 실제 가능한 화질 / 음질 선택
 3. 로컬 / Drive 선택
-4. 저장
+4. 로컬이면 YouTube 페이지의 코어가 직접 저장
+5. Drive이면 코어가 현재 선택 스트림의 임시 URL만 UI에 전달
+6. 공개 UI가 Google 공식 `Save to Drive` 버튼을 즉시 렌더링
+7. 파일 URL은 공개 UI에 영구 저장하지 않음
 
-### YT 수집
+`Save to Drive` 1차 방식은 별도 OAuth Client ID/API Key를 북마클릿에 넣지 않습니다. 저장 위치는 `My Drive`이며 특정 폴더 지정은 지원 대상이 아닙니다.
 
-1. 영상 / 음성 / 데이터 중 가져올 항목 선택
-2. 데이터 선택 시 세부 항목 선택
-3. 데이터 형식: 원문(TXT) / JSON
-4. 저장 위치: 로컬 / Drive
-5. Drive 선택 시: 파일 → 시트 → 카테고리 순차 선택
-6. 태그 / 중요도(1~3) / 상태 / 메모
-7. 저장
+## YT 수집 흐름
 
-## 공개 UI 연결 방식
+1. 데이터 항목 선택
+2. 데이터 형식: 원문(TXT) / JSON
+3. 출력: 복사 / 로컬 / Drive
+4. Drive/Sheets 기능을 붙일 경우 파일 → 시트 → 카테고리 순차 선택
+5. 태그 / 중요도(1~3) / 상태 / 메모
+6. 저장
 
-현재 `dev-lab` 저장소는 GitHub Pages를 사용하지 않습니다.
+## 공개 UI 실행 방식
 
-따라서 우선 `bridge.svg`를 raw SVG 문서/iframe 브리지로 사용하도록 설계합니다. 북마클릿의 YouTube 전용 핵심 로직은 페이지 안에 남고, 공개 UI는 별도 origin에서 실행되며 `postMessage`로만 통신합니다.
+`raw.githubusercontent.com`의 원본 파일은 코드 저장·배포 원본으로는 적합하지만, HTML/SVG 안의 스크립트를 실행하는 최종 UI 호스트로 신뢰하지 않습니다. 응답 MIME/CSP 정책 때문에 브라우저에서 실행이 제한될 수 있기 때문입니다.
 
-이 방식의 목적은 다음과 같습니다.
+따라서 최종 구조는 **백엔드 없는 정적 GitHub 호스팅**을 사용합니다.
 
-- 북마크 URL 길이 축소
-- YouTube CSP/Trusted Types와 공개 UI 코드의 충돌 최소화
-- UI 수정 시 북마크 URL을 다시 배포하지 않아도 되는 구조 확보
-- YouTube 전용 핵심 추출 로직은 공개 저장소에 두지 않기
+- 소스: 이 공개 저장소
+- 실행 UI: GitHub Pages 같은 정적 호스트
+- 백엔드/API 서버: 없음
+- YouTube 전용 추출 코어: 북마클릿 내부
 
-`bridge.html`은 동일 UI의 HTML 버전이며, 향후 정적 호스팅이 필요한 경우 사용할 수 있습니다.
+현재 저장소에서 Pages가 아직 활성화되지 않았으므로 `media.html`은 구현 완료 상태이고, 실제 iframe 연결은 정적 URL이 준비되면 연결합니다.
+
+기존 `bridge.svg`/`bridge.html`은 구조 실험 파일로 유지합니다. 최종 미디어 UI는 `media.html` 기준으로 진행합니다.
 
 ## 현재 검증 상태
 
@@ -104,13 +107,15 @@ Android 모바일 Whale + YouTube 모바일 웹에서 다음을 확인했습니�
 - 음성 전용 로컬 저장 성공
 - 통합 MP4의 검증된 화질은 현재 360p
 - 고화질 영상은 영상/음성 분리 스트림 병합이 필요하므로 별도 과제
-- Google Drive 직접 저장은 별도 검증 단계
-- raw SVG bridge는 구현 완료, 실제 모바일 브라우저 연결 검증 필요
+- `media.html`: 영상/음성 → 품질 → 로컬/Drive UI 구현 완료
+- Drive: Google 공식 Save to Drive 연결 코드 구현 완료, 실제 GoogleVideo 스트림 저장 검증 대기
+- 실제 북마클릿 ↔ 공개 UI 연결: 정적 UI URL 준비 후 검증
 
 ## 파일
 
-- `bridge.svg` : GitHub Pages 없이 사용할 수 있도록 만든 모바일 UI 브리지
-- `bridge.html` : 동일 역할의 HTML UI 버전
+- `media.html` : YT 미디어 전용 공개 UI. 로컬 저장 요청과 Google Save to Drive 렌더링 담당
 - `PROTOCOL.md` : 북마클릿 코어와 공개 UI 사이 메시지 규격
+- `bridge.svg` : raw SVG 브리지 실험본
+- `bridge.html` : 초기 통합 UI 실험본
 
 핵심 YouTube 추출 코드는 이 폴더에 저장하지 않습니다.
