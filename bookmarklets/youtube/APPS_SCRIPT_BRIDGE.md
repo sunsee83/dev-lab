@@ -13,65 +13,46 @@
 └─ Code.gs
 ```
 
-사용자 Google Sheets는 이 프로젝트의 부모 파일이 아니라 `SpreadsheetApp.openById(...)`로 여는 데이터 저장 대상입니다.
-
-## 2. 모바일 북마크에 들어가는 공용 엔드포인트
+## 2. 모바일 북마크의 공용 엔드포인트
 
 ```text
 https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec
 ```
 
-정확한 배치 위치:
-
-```text
-Android 모바일 브라우저 북마크
-→ URL 칸의 javascript: 북마클릿
-→ JavaScript 내부 GAS_WEBAPP_URL 상수
-```
-
-```js
-const GAS_WEBAPP_URL='https://script.google.com/macros/s/AKfycbxj-jUt6mYeQMKqIR5d0hloyP7NqbBlZUwjbmctPovwxmApqWuius0WGpdsn21aMuOx/exec';
-```
-
-이 값은 공용 Apps Script 주소입니다. 개인 Google Sheets URL은 이 상수에 넣지 않습니다.
+이 값은 `bookmarklet.js` 내부 `GAS_WEBAPP_URL`에 들어갑니다.
 
 ## 3. 전송 구조
 
 ```text
-YouTube 페이지의 북마클릿 코어
-→ 숨은 iframe 생성
-→ form POST를 GAS_WEBAPP_URL로 전송
+YouTube 페이지의 북마클릿
+→ 숨은 iframe
+→ form POST
 → Transport.gs / doPost(e)
-→ Code.gs / dispatch(...)
-→ Apps Script HTML 응답
+→ bridgeDispatch_
+   ├─ create-storage : 최초 저장공간 자동 생성
+   └─ 그 외 action : Code.gs / dispatch(...)
+→ HTML 응답
 → window.top.postMessage(...)
-→ 원래 YouTube 페이지의 북마클릿 코어가 결과 수신
+→ YouTube 페이지의 북마클릿이 결과 수신
 ```
 
 실제 데이터 요청에는 `window.opener`를 사용하지 않습니다.
 
 ## 4. Google 권한 승인
 
-처음 사용하는 Google 계정은 새 독립형 Apps Script 프로젝트에 대해 권한 승인을 한 번 진행합니다.
+처음 사용하는 Google 계정은 독립형 Apps Script 프로젝트에 대해 권한 승인을 한 번 진행합니다.
 
-```text
-설정 UI의 Google 계정으로 계속
-→ 북마클릿이 GAS_WEBAPP_URL을 일반 창으로 열기
-→ Google 승인
-→ 이후 실제 요청은 숨은 iframe + POST 사용
-```
+승인 후 실제 호출은 숨은 iframe + POST를 사용합니다.
 
 ## 5. 브리지 세션
 
-각 북마클릿 실행마다 임의 `token`을 생성합니다.
-
 ```text
 init
-→ 사용자별 임시 bridgeNonce 발급
+→ 사용자별 bridgeNonce 발급
 
 request
 → bridgeNonce 검증
-→ 실제 GAS action 실행
+→ action 실행
 ```
 
 - nonce 저장: `PropertiesService.getUserProperties()`
@@ -79,123 +60,7 @@ request
 - 사용자별 분리
 - OAuth access/refresh token을 북마클릿에 전달하지 않음
 
-## 6. 북마클릿 코어 기준 구현
-
-```js
-function createGasBridge(GAS_WEBAPP_URL,token){
-  const frameName='ytGas_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
-  const frame=document.createElement('iframe');
-  frame.name=frameName;
-  frame.style.display='none';
-  document.documentElement.append(frame);
-
-  let nonce='';
-  let seq=0;
-  const pending=new Map();
-  const requestId=p=>(p||'r')+Date.now().toString(36)+(++seq).toString(36)+Math.random().toString(36).slice(2,9);
-  const errorOf=r=>new Error(r&&r.error&&r.error.message||'Google 연결 요청 실패');
-
-  const onMessage=e=>{
-    const d=e.data||{};
-    if(d.type!=='YT_GAS_RESPONSE'||d.token!==token)return;
-    const x=pending.get(d.requestId);
-    if(!x)return;
-    clearTimeout(x.timer);
-    pending.delete(d.requestId);
-    x.resolve(d.result||{ok:false,error:{code:'BRIDGE_FAILURE',message:'응답 형식이 올바르지 않습니다.'}});
-  };
-  addEventListener('message',onMessage);
-
-  function post(fields){
-    const form=document.createElement('form');
-    form.method='POST';
-    form.action=GAS_WEBAPP_URL;
-    form.target=frameName;
-    form.style.display='none';
-    for(const [k,v] of Object.entries(fields)){
-      const input=document.createElement('input');
-      input.type='hidden';
-      input.name=k;
-      input.value=String(v==null?'':v);
-      form.append(input);
-    }
-    document.body.append(form);
-    form.submit();
-    form.remove();
-  }
-
-  function send(fields,id,timeout=20000){
-    return new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>{
-        pending.delete(id);
-        reject(new Error('Google 연결 응답 없음'));
-      },timeout);
-      pending.set(id,{resolve,reject,timer});
-      post(fields);
-    });
-  }
-
-  async function init(){
-    const id=requestId('i');
-    const result=await send({mode:'init',origin:location.origin,token,requestId:id},id);
-    if(!result.ok)throw errorOf(result);
-    nonce=String(result.data&&result.data.bridgeNonce||'');
-    if(!nonce)throw new Error('Google 연결 nonce를 받지 못했습니다.');
-    return result.data||{};
-  }
-
-  async function call(action,payload={}){
-    if(!nonce)await init();
-    for(let retry=0;retry<2;retry++){
-      const id=requestId('r');
-      const result=await send({
-        mode:'request',
-        origin:location.origin,
-        token,
-        requestId:id,
-        bridgeNonce:nonce,
-        request:JSON.stringify({action,payload})
-      },id);
-      if(result&&result.ok)return result.data;
-      if(retry===0&&result&&result.error&&result.error.code==='BRIDGE_EXPIRED'){
-        nonce='';
-        await init();
-        continue;
-      }
-      throw errorOf(result);
-    }
-  }
-
-  function authorize(){
-    return open(
-      GAS_WEBAPP_URL+'?origin='+encodeURIComponent(location.origin)+'&token='+encodeURIComponent(token),
-      'ytGasAuth'
-    );
-  }
-
-  function close(){
-    removeEventListener('message',onMessage);
-    for(const x of pending.values()){
-      clearTimeout(x.timer);
-      x.reject(new Error('Google 연결 종료'));
-    }
-    pending.clear();
-    frame.remove();
-  }
-
-  return {init,call,authorize,close};
-}
-```
-
-사용 예:
-
-```js
-const gas=createGasBridge(GAS_WEBAPP_URL,token);
-const state=await gas.call('get-state',{});
-const sheets=await gas.call('list-sheets',{fileId});
-```
-
-## 7. POST 형식
+## 6. POST 형식
 
 ### init
 
@@ -217,9 +82,10 @@ bridgeNonce=<init에서 받은 nonce>
 request=<JSON 문자열>
 ```
 
-`request` 예:
+예:
 
 ```js
+{action:'create-storage',payload:{}}
 {action:'list-sheets',payload:{fileId}}
 ```
 
@@ -231,84 +97,64 @@ token 일치
 requestId 일치
 ```
 
-Apps Script HTML Service의 내부 sandbox frame 구조는 브라우저에 따라 달라질 수 있으므로 `event.source`를 특정 iframe으로 고정하지 않습니다.
+## 7. 최초 저장공간 자동 생성
 
-## 8. 허용 GAS action
-
-```text
-ping
-get-state
-connect-file
-unlink-file
-list-sheets
-create-sheet
-list-categories
-add-category
-check-duplicate
-save-record
-```
-
-## 9. UI action → GAS action
+연결 파일이 없는 사용자는 `create-storage`를 호출합니다.
 
 ```text
-Google 계정으로 계속
-→ GAS_WEBAPP_URL 일반 창 열기
-
-파일 연결
-→ connect-file {sheetUrl}
-
-파일 선택
-→ list-sheets {fileId}
-
-시트 선택
-→ list-categories {fileId,sheetName}
-
-새 시트
-→ create-sheet {fileId,sheetName}
-→ 성공 후 list-sheets 갱신
-
-새 카테고리
-→ add-category {fileId,sheetName,category}
-
-데이터 저장
-→ save-record
+create-storage
+→ SpreadsheetApp.create('YouTube 수집')
+→ 첫 시트 이름을 '수집'으로 변경
+→ 데이터 시트 형식 적용
+→ '안내' 시트 생성
+→ 기본 카테고리 '기본' 등록
+→ 생성 파일을 사용자별 UserProperties에 연결
 ```
 
-## 10. 초기 상태 복원
+사용자는 최초 설정에서 Google Sheets URL을 입력하지 않습니다.
+
+## 8. action
+
+```text
+create-storage     최초 기본 Sheets 자동 생성
+ping               연결 확인
+get-state          사용자 연결 상태
+connect-file       기존 Sheets 추가 연결
+unlink-file        연결 해제
+list-sheets        데이터 시트 조회
+create-sheet       데이터 시트 생성
+list-categories    카테고리 조회
+add-category       카테고리 추가
+check-duplicate    영상 ID 중복 확인
+save-record        데이터 저장/업데이트
+```
+
+`create-storage`는 최초 생성 진입을 위해 `Transport.gs`에서 처리하며 기존 Sheets 처리는 `Code.gs`의 action을 사용합니다.
+
+## 9. 이후 실행
 
 ```text
 get-state
-→ 연결 파일 목록 확인
-→ defaultFileId 또는 첫 파일 선택
+→ 연결 파일 있음
+→ defaultFileId
 → list-sheets
-→ 첫 selectable 데이터 시트 선택
 → list-categories
-→ YT_TOOL_INIT으로 UI 전달
+→ 저장 계속
 ```
 
-연결 파일이 없으면 설정 화면을 표시합니다.
+기존 Sheets 추가 연결이 필요한 경우에만 `connect-file {sheetUrl}`을 사용합니다.
 
-## 11. 개인 Sheets 연결
-
-```text
-설정 UI에서 사용자가 자기 Sheets URL 입력
-→ connect-file payload
-→ Apps Script가 Spreadsheet ID 추출/검증
-→ 사용자별 UserProperties에 연결 파일 정보 저장
-```
-
-공용 `GAS_WEBAPP_URL`과 개인 `sheetUrl`은 서로 다른 값입니다.
-
-## 12. 파일 책임
+## 10. 파일 책임
 
 ```text
 apps-script/Transport.gs
-→ doPost
-→ bridge nonce
-→ iframe 응답/postMessage
+→ iframe POST
+→ nonce
+→ create-storage 최초 생성 진입
+→ 응답 postMessage
 
 apps-script/Code.gs
-→ dispatch
-→ SpreadsheetApp
-→ 파일/시트/카테고리/레코드 처리
+→ 기존/연결된 Sheets 처리
+→ SpreadsheetApp.openById
+→ 시트/카테고리/레코드
 ```
