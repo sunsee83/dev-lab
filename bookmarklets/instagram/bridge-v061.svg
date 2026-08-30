@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="80"><rect width="100%" height="100%" fill="#111"/><text id="s" x="12" y="44" fill="#eee" font-family="sans-serif" font-size="14">RI loading…</text><script><![CDATA[
+(async()=>{const token=(location.hash||'').slice(1),s=document.getElementById('s');try{const r=await fetch('./media-v061.js?x='+Date.now(),{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const code=await r.text(),m={type:'RI_MEDIA061_CODE',token,code};if(parent&&parent!==self)parent.postMessage(m,'*');if(opener)opener.postMessage(m,'*');s.textContent='RI code sent'}catch(e){s.textContent='RI load fail: '+e.message}})()
+]]></script></svg>
