@@ -1,4 +1,4 @@
-/* YouTube 수집도구 - Apps Script iframe POST transport */
+/* 유튜브다운로드 - Apps Script iframe POST transport */
 
 const BRIDGE_ = Object.freeze({
   STATE_KEY: 'ytCollector.bridge.v1',
@@ -50,6 +50,15 @@ function doPost(e) {
 }
 
 function bridgeDispatch_(request) {
+  if (request && request.action === 'get-ui') {
+    try {
+      const html = HtmlService.createHtmlOutputFromFile('ui').getContent();
+      return ok_({ html: html });
+    } catch (err) {
+      return bridgeError_('UI_MISSING', 'Apps Script에 ui.html 파일이 없습니다.');
+    }
+  }
+
   if (request && request.action === 'create-storage') {
     try {
       const payload = plain_(request.payload) ? request.payload : {};
@@ -59,6 +68,7 @@ function bridgeDispatch_(request) {
       return bridgeError_('FILE_CREATE_FAILED', 'Google Sheets 파일을 자동으로 만들 수 없습니다.');
     }
   }
+
   return dispatch(request);
 }
 
