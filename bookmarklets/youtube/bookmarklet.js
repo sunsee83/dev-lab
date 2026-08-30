@@ -14,12 +14,12 @@ async function call(action,payload={}){if(!nonce)await init();for(let k=0;k<2;k+
 const close=()=>{removeEventListener('message',onMsg);for(const x of pending.values()){clearTimeout(x.timer);x.reject(new Error('종료'))}pending.clear();F.remove()};
 try{
 let state=await call('get-state',{});
-if(!state.files?.length){const sheetUrl=prompt('저장할 Google Sheets 링크를 붙여넣어 주세요.');if(!sheetUrl?.trim())throw new Error('취소됨');await call('connect-file',{sheetUrl:sheetUrl.trim()});state=await call('get-state',{})}
-const fileId=state.defaultFileId||state.files?.[0]?.id;if(!fileId)throw new Error('연결된 Sheets가 없습니다.');
-const sheetName='YouTube 수집';await call('create-sheet',{fileId,sheetName});
+if(!state.files?.length){await call('create-storage',{fileName:'YouTube 수집',sheetName:'수집',category:'기본'});state=await call('get-state',{})}
+const fileId=state.defaultFileId||state.files?.[0]?.id;if(!fileId)throw new Error('저장공간을 만들지 못했습니다.');
+const sheetName='수집';await call('create-sheet',{fileId,sheetName});
 const videoId=new URLSearchParams(location.search).get('v')||(location.pathname.match(/^\/shorts\/([A-Za-z0-9_-]+)/)||[])[1];if(!videoId)throw new Error('YouTube 영상 페이지에서 실행해 주세요.');
 const title=(document.querySelector('meta[property="og:title"]')?.content||document.title.replace(/\s*-\s*YouTube\s*$/,'')).trim()||'YouTube 영상';
-const r=await call('save-record',{fileId,sheetName,videoId,record:{title},management:{},clearManagement:[]});
+const r=await call('save-record',{fileId,sheetName,videoId,record:{title},management:{category:'기본'},clearManagement:[]});
 if(r.status==='duplicate')alert('이미 저장된 영상입니다.');else alert('저장 성공 · '+sheetName+' · '+(r.status==='updated'?'수정':'새 행'));
-}catch(e){if(e?.message!=='취소됨')alert('저장 실패 · '+(e?.message||e))}finally{close()}
+}catch(e){alert('저장 실패 · '+(e?.message||e))}finally{close()}
 })()
