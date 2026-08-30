@@ -34,7 +34,7 @@ function doPost(e) {
         result = bridgeError_('REQUEST_TOO_LARGE', '데이터가 너무 큽니다.');
       } else {
         try {
-          result = dispatch(JSON.parse(raw));
+          result = bridgeDispatch_(JSON.parse(raw));
         } catch (err) {
           result = bridgeError_('INVALID_REQUEST', '요청 형식이 올바르지 않습니다.');
         }
@@ -47,6 +47,59 @@ function doPost(e) {
   return HtmlService.createHtmlOutput(bridgePostHtml_(origin, token, requestId, result))
     .setTitle('Google Sheets 연결')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function bridgeDispatch_(request) {
+  if (request && request.action === 'create-storage') {
+    try {
+      const payload = plain_(request.payload) ? request.payload : {};
+      return ok_(bridgeCreateStorage_(payload));
+    } catch (err) {
+      if (err && err.ytCode) return errorResult_(err);
+      return bridgeError_('FILE_CREATE_FAILED', 'Google Sheets 파일을 자동으로 만들 수 없습니다.');
+    }
+  }
+  return dispatch(request);
+}
+
+function bridgeCreateStorage_(p) {
+  const state = loadState_();
+  if (state.files.length) {
+    return { created: false, state: publicState_() };
+  }
+
+  const fileName = trim_(p.fileName || 'YouTube 수집', 120) || 'YouTube 수집';
+  const sheetName = dataSheetName_(p.sheetName || '수집');
+  const category = trim_(p.category || '기본', 60) || '기본';
+
+  let ss;
+  try {
+    ss = SpreadsheetApp.create(fileName);
+    const first = ss.getSheets()[0];
+    first.setName(sheetName);
+    initDataSheet_(first);
+  } catch (err) {
+    return bridgeCreateStorageFail_();
+  }
+
+  const connected = connectFile_({ sheetUrl: ss.getUrl() });
+  ensureCategoryGroup_(connected.file.id, sheetName);
+  const categories = addCategory_({ fileId: connected.file.id, sheetName: sheetName, category: category }).categories;
+
+  return {
+    created: true,
+    file: connected.file,
+    sheets: connected.sheets,
+    sheetName: sheetName,
+    categories: categories,
+    state: publicState_()
+  };
+}
+
+function bridgeCreateStorageFail_() {
+  const e = new Error('Google Sheets 파일을 자동으로 만들 수 없습니다.');
+  e.ytCode = 'FILE_NOT_WRITABLE';
+  throw e;
 }
 
 function bridgeStart_(origin, token) {
