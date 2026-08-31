@@ -1,7 +1,7 @@
 /* 유튜브다운로드 - Apps Script / SpreadsheetApp */
 
 const APP_ = Object.freeze({
-  VERSION: '0.4.1',
+  VERSION: '0.4.2',
   STATE_KEY: 'ytCollector.state.v2',
   MAX_REQUEST_CHARS: 1000000,
   MAX_STATE_CHARS: 9000,
@@ -44,11 +44,8 @@ const MANAGEMENT_COLUMNS_ = Object.freeze({
   commentSummary: '댓글 반응 요약', timestampSummary: '타임스탬프 핵심'
 });
 
-function doGet(e) {
-  const p = e && e.parameter ? e.parameter : {};
-  const origin = allowedOrigin_(p.origin);
-  const token = sessionToken_(p.token);
-  return HtmlService.createHtmlOutput(bridgeHtml_(origin, token)).setTitle('유튜브다운로드 - Google 연결');
+function doGet() {
+  return HtmlService.createHtmlOutput(authReadyHtml_()).setTitle('유튜브다운로드 - Google 승인');
 }
 
 function dispatch(request) {
@@ -74,7 +71,16 @@ function dispatch(request) {
 }
 
 function limits_() {
-  return { maxFiles: APP_.MAX_FILES, guideSheets: 1, maxDataSheets: APP_.MAX_DATA_SHEETS, maxTotalSheets: APP_.MAX_DATA_SHEETS + 1, maxRows: APP_.MAX_ROWS, warnRows: APP_.WARN_ROWS };
+  return {
+    maxFiles: APP_.MAX_FILES,
+    guideSheets: 1,
+    maxDataSheets: APP_.MAX_DATA_SHEETS,
+    maxTotalSheets: APP_.MAX_DATA_SHEETS + 1,
+    maxRows: APP_.MAX_ROWS,
+    warnRows: APP_.WARN_ROWS,
+    maxCellChars: APP_.MAX_CELL_CHARS,
+    longDataPolicy: 'truncate-with-marker'
+  };
 }
 
 function connectFile_(p) {
@@ -200,23 +206,25 @@ function saveRecord_(p) {
       if (duplicates.indexOf(rowNumber) < 0) fail_('ROW_MISMATCH', '선택한 행과 영상 ID가 일치하지 않습니다.');
       const current = sheet.getRange(rowNumber, 1, 1, APP_.HEADERS.length).getValues()[0];
       const changed = {};
-      const next = buildRow_(current, videoId, record, management, clearManagement, false, changed);
+      const truncatedFields = [];
+      const next = buildRow_(current, videoId, record, management, clearManagement, false, changed, truncatedFields);
       const changedIndexes = Object.keys(changed).map(Number).sort(function (a, b) { return a - b; });
       if (!changedIndexes.length) {
-        return { status: 'unchanged', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet) };
+        return { status: 'unchanged', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet), truncatedFields: truncatedFields };
       }
       writeChangedCells_(sheet, rowNumber, next, changedIndexes);
       applyPresentation_(sheet, rowNumber, record, videoId, false);
-      return { status: 'updated', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet) };
+      return { status: 'updated', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet), truncatedFields: truncatedFields };
     }
     const cap = sheetCapacity_(sheet);
     if (cap.used >= APP_.MAX_ROWS) fail_('ROW_LIMIT', '이 시트는 2,000개 한도에 도달했습니다.');
     const rowNumber = nextRecordRow_(sheet);
     ensureRows_(sheet, rowNumber);
-    const next = buildRow_(new Array(APP_.HEADERS.length).fill(''), videoId, record, management, clearManagement, true);
+    const truncatedFields = [];
+    const next = buildRow_(new Array(APP_.HEADERS.length).fill(''), videoId, record, management, clearManagement, true, null, truncatedFields);
     sheet.getRange(rowNumber, 1, 1, APP_.HEADERS.length).setValues([next]);
     applyPresentation_(sheet, rowNumber, record, videoId, true);
-    return { status: 'created', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet) };
+    return { status: 'created', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet), truncatedFields: truncatedFields };
   });
 }
 
@@ -224,7 +232,7 @@ function duplicateLinks_(ss, sheet, rows) {
   return rows.map(function (r) { return { row: r, url: rangeUrl_(ss, sheet, 'B' + r) }; });
 }
 
-function buildRow_(base, videoId, record, management, clearManagement, isNew, changed) {
+function buildRow_(base, videoId, record, management, clearManagement, isNew, changed, truncatedFields) {
   const row = base.slice(0, APP_.HEADERS.length);
   while (row.length < APP_.HEADERS.length) row.push('');
   const ix = indexes_();
@@ -236,7 +244,7 @@ function buildRow_(base, videoId, record, management, clearManagement, isNew, ch
     if (!Object.prototype.hasOwnProperty.call(record, key)) return;
     const value = record[key];
     if (value == null) return;
-    assignRowValue_(row, ix[RECORD_COLUMNS_[key]], serializeRecord_(key, value), changed);
+    assignRowValue_(row, ix[RECORD_COLUMNS_[key]], serializeRecord_(key, value, truncatedFields), changed);
   });
   Object.keys(MANAGEMENT_COLUMNS_).forEach(function (key) {
     const header = MANAGEMENT_COLUMNS_[key];
@@ -244,7 +252,7 @@ function buildRow_(base, videoId, record, management, clearManagement, isNew, ch
     if (!Object.prototype.hasOwnProperty.call(management, key)) return;
     const value = management[key];
     if (value === '' || value == null) return;
-    assignRowValue_(row, ix[header], managementValue_(key, value), changed);
+    assignRowValue_(row, ix[header], managementValue_(key, value, truncatedFields), changed);
   });
   const now = new Date().toISOString();
   const hasContentChange = isNew || Object.keys(changed || {}).length > 0 || Object.prototype.hasOwnProperty.call(record, 'thumbnail');
@@ -275,22 +283,32 @@ function writeChangedCells_(sheet, rowNumber, row, indexes) {
   write_();
 }
 
-function serializeRecord_(key, value) {
-  if (key === 'tags') return safe_(listText_(value));
-  if (key === 'transcript') return safe_(plain_(value) && typeof value.text === 'string' ? value.text : json_(value));
-  if (key === 'comments' || key === 'rawCaptions' || key === 'rawMetadata') return safe_(json_(value));
-  return safe_(value);
+function serializeRecord_(key, value, truncatedFields) {
+  let out = value;
+  if (key === 'tags') out = listText_(value);
+  else if (key === 'transcript') out = plain_(value) && typeof value.text === 'string' ? value.text : json_(value);
+  else if (key === 'comments' || key === 'rawCaptions' || key === 'rawMetadata') out = json_(value);
+  noteTruncation_(out, RECORD_COLUMNS_[key], truncatedFields);
+  return safe_(out);
 }
 
-function managementValue_(key, value) {
+function managementValue_(key, value, truncatedFields) {
   if (key === 'priority') { const n = Number(value); if (!Number.isInteger(n) || n < 1 || n > 5) fail_('INVALID_PRIORITY', '중요도는 1~5입니다.'); return n; }
   if (key === 'purpose') { const s = String(value); if (APP_.PURPOSES.indexOf(s) < 0) fail_('INVALID_PURPOSE', '활용 목적 값이 올바르지 않습니다.'); return s; }
   if (key === 'status') { const s = String(value); if (APP_.STATUSES.indexOf(s) < 0) fail_('INVALID_STATUS', '상태 값이 올바르지 않습니다.'); return s; }
   if (key === 'aiSend') return Boolean(value);
-  if (['tags', 'highlights', 'keyKeywords'].indexOf(key) >= 0) return safe_(listText_(value));
-  if (Array.isArray(value)) return safe_(value.map(String).join('\n'));
-  if (plain_(value)) return safe_(json_(value));
-  return safe_(value);
+  let out = value;
+  if (['tags', 'highlights', 'keyKeywords'].indexOf(key) >= 0) out = listText_(value);
+  else if (Array.isArray(value)) out = value.map(String).join('\n');
+  else if (plain_(value)) out = json_(value);
+  noteTruncation_(out, MANAGEMENT_COLUMNS_[key], truncatedFields);
+  return safe_(out);
+}
+
+function noteTruncation_(value, label, truncatedFields) {
+  if (!Array.isArray(truncatedFields) || value == null || typeof value === 'number' || typeof value === 'boolean' || value instanceof Date) return;
+  const text = String(value).replace(/\u0000/g, '');
+  if (text.length > APP_.MAX_CELL_CHARS && truncatedFields.indexOf(label) < 0) truncatedFields.push(label);
 }
 
 function ensureGuide_(ss) {
@@ -597,26 +615,14 @@ function errorResult_(err) {
   return { ok: false, error: { code: code, message: messages[code] || '요청을 처리하지 못했습니다.' } };
 }
 
-function bridgeHtml_(origin, token) {
-  const o = JSON.stringify(origin);
-  const t = JSON.stringify(token);
+function authReadyHtml_() {
   return '<!doctype html><html lang="ko"><head>' +
     '<meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<meta name="referrer" content="no-referrer">' +
-    '<title>Google 연결</title>' +
-    '<style>body{margin:0;background:#111;color:#eee;font:15px/1.5 system-ui;padding:24px}.box{max-width:520px;margin:auto;padding:18px;border:1px solid #333;border-radius:14px;background:#181818}h1{font-size:18px}</style>' +
+    '<title>유튜브다운로드 - Google 승인</title>' +
+    '<style>body{margin:0;background:#111;color:#eee;font:15px/1.5 system-ui;padding:24px}.box{max-width:520px;margin:auto;padding:18px;border:1px solid #333;border-radius:14px;background:#181818}h1{font-size:18px;margin-top:0}</style>' +
     '</head><body>' +
-    '<div class="box"><h1>Google 연결</h1><div id="s">연결 확인 중...</div></div>' +
-    '<script>(function(){"use strict";' +
-    'const O=' + o + ',T=' + t + ',S=document.getElementById("s");' +
-    'function status(x){S.textContent=String(x||"")}' +
-    'function getOpener(){try{if(window.opener)return window.opener}catch(e){}try{if(window.top&&window.top.opener)return window.top.opener}catch(e){}try{if(window.parent&&window.parent.opener)return window.parent.opener}catch(e){}return null}' +
-    'const P=getOpener();' +
-    'function send(m){if(O&&T&&P){try{P.postMessage(m,O)}catch(e){}}}' +
-    'if(!O||!T){status("잘못된 연결 요청입니다.");return}' +
-    'if(!P){status("Google 승인이 완료되었습니다. 이 창을 닫고 YouTube로 돌아가세요.");return}' +
-    'status("Google 연결 준비됨");send({type:"YT_GAS_READY",token:T});' +
-    'window.addEventListener("message",function(e){if(e.origin!==O||e.source!==P)return;const m=e.data;if(!m||m.type!=="YT_GAS_REQUEST"||m.token!==T)return;const id=String(m.requestId||"");if(!/^[A-Za-z0-9_-]{8,128}$/.test(id)||!m.request||typeof m.request!=="object")return;status("처리 중...");google.script.run.withSuccessHandler(function(r){status(r&&r.ok?"연결됨":"요청 실패");send({type:"YT_GAS_RESPONSE",token:T,requestId:id,result:r})}).withFailureHandler(function(){status("요청 실패");send({type:"YT_GAS_RESPONSE",token:T,requestId:id,result:{ok:false,error:{code:"BRIDGE_FAILURE",message:"Google 연결 요청을 처리하지 못했습니다."}}})}).dispatch(m.request)});})();<\/script>' +
+    '<div class="box"><h1>Google 승인 완료</h1><div>이 페이지를 닫고 YouTube로 돌아가 유튜브다운로드를 다시 실행해 주세요.</div></div>' +
     '</body></html>';
 }

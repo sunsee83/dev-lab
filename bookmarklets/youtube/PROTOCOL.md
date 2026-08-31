@@ -61,6 +61,8 @@ bookmarklet.js
 → 본 화면 표시
 ```
 
+최초 미승인 계정에서 `get-ui` 응답이 없으면 로더가 공용 `/exec` 승인 페이지로 이동할지 확인합니다. 승인 후 YouTube로 돌아와 다시 실행하며, 승인 이후의 모든 action은 기존 숨은 iframe POST 브리지를 사용합니다.
+
 ## 4. 사용자 저장 입력
 
 ```js
@@ -115,5 +117,8 @@ Drive 미디어는 Google 버튼을 렌더링한 시점에 저장 완료로 처�
 → Blob URL UI 제거
 → Blob URL 해제
 → POST 브리지 iframe 제거
-→ pending request와 listener 정리
+→ 진행 중 요청은 늦은 응답 무시
+→ 요청 listener는 응답 또는 timeout 시 정리
 ```
+
+이전 실행이 닫힌 뒤 늦게 도착한 응답은 새 UI를 만들거나 오류 알림을 표시하지 않습니다. POST 응답은 숨은 브리지 iframe의 `contentWindow`, 실행 token, requestId가 모두 일치할 때만 처리합니다.

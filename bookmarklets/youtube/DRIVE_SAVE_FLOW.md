@@ -8,10 +8,8 @@
 
 ```text
 영상/음성
-YouTube 북마클릿 코어
-→ 선택 미디어 URL/파일명
-→ YT_TOOL_DRIVE_MEDIA
 → ui.html
+→ Android player 응답에서 선택 미디어 URL/파일명 준비
 → Google 공식 Save to Drive 버튼
 → 사용자가 버튼을 눌러 My Drive 저장
 ```
@@ -27,28 +25,26 @@ YouTube 북마클릿 코어
 
 두 경로를 혼합하지 않습니다.
 
-## 2. 미디어 URL 전달
+## 2. 미디어 URL 보관
 
-실제 YouTube 미디어 URL은 저장 버튼을 준비하는 순간에만 UI로 전달합니다.
+실제 YouTube 미디어 URL은 `ui.html`의 현재 실행 메모리에만 보관합니다.
 
-```js
-{
-  type:'YT_TOOL_DRIVE_MEDIA',
-  token,
-  kind:'video'|'audio',
-  src:'현재 저장 동작에만 사용하는 HTTPS 미디어 URL',
-  filename:'저장 파일명.mp4'
-}
+```text
+player()
+→ media.video / media.audio Map
+→ 사용자가 고른 후보 확인
+→ gapi.savetodrive.render()의 src로 전달
 ```
 
 실제 URL은 localStorage, IndexedDB, GitHub 파일, 문서에 저장하지 않습니다.
 
 ## 3. UI 처리
 
-`ui.html`은 `YT_TOOL_DRIVE_MEDIA`를 받으면:
+`ui.html`은 사용자가 Drive 저장을 실행하면:
 
 ```text
-src HTTPS 확인
+선택 미디어 URL 확인
+window.___gcfg.parsetags = explicit
 → https://apis.google.com/js/platform.js 로드
 → gapi.savetodrive.render()
 → 영상/음성별 공식 저장 버튼 렌더링
@@ -65,6 +61,7 @@ src HTTPS 확인
 - 대상은 `My Drive`
 - 특정 Drive 폴더를 프로그램으로 지정하지 않음
 - 사용자가 수집도구의 `[저장]` 후 Google 공식 저장 버튼을 한 번 더 누름
+- 공식 버튼 렌더링은 저장 완료가 아니라 저장 준비 상태
 
 따라서 Sheets의 `파일 → 시트 → 카테고리` 선택 구조는 영상/음성 Drive 버튼에 적용하지 않습니다.
 
@@ -86,5 +83,9 @@ src HTTPS 확인
 - Drive 버튼 실패 → 로컬 저장 경로 유지
 
 GoogleVideo 스트림의 실제 Save to Drive 성공 여부는 브라우저/CORS/Range 조건에 영향을 받을 수 있습니다.
+
+Google 공식 규격상 다른 도메인의 원본은 CORS와 `Range` 요청을 허용하고 `Content-Range` 등을 노출해야 합니다. 공식 버튼 API는 렌더링 함수만 제공하므로 `ui.html`은 버튼 생성 시점을 실제 저장 완료로 판정하지 않습니다.
+
+Android Whale 최종 검증에서는 버튼 표시와 실제 My Drive 파일 생성 여부를 각각 확인합니다.
 
 UI 동작은 `UI_SPEC.md`, 메시지 형식은 `PROTOCOL.md`를 따릅니다.
