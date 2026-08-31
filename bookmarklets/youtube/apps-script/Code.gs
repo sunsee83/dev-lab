@@ -1,7 +1,7 @@
 /* 유튜브다운로드 - Apps Script / SpreadsheetApp */
 
 const APP_ = Object.freeze({
-  VERSION: '0.4.0',
+  VERSION: '0.4.1',
   STATE_KEY: 'ytCollector.state.v2',
   MAX_REQUEST_CHARS: 1000000,
   MAX_STATE_CHARS: 9000,
@@ -132,9 +132,11 @@ function createSheet_(p) {
 function listCategories_(p) {
   const fileId = linkedFileId_(p.fileId);
   const sheetName = dataSheetName_(p.sheetName);
-  const ss = openLinked_(fileId);
-  getDataSheet_(ss, sheetName);
-  return { fileId: fileId, sheetName: sheetName, categories: categoriesFor_(ss, fileId, sheetName) };
+  return locked_(function () {
+    const ss = openLinked_(fileId);
+    getDataSheet_(ss, sheetName);
+    return { fileId: fileId, sheetName: sheetName, categories: categoriesFor_(ss, fileId, sheetName) };
+  });
 }
 
 function addCategory_(p) {
@@ -172,7 +174,9 @@ function saveRecord_(p) {
   const sheetName = dataSheetName_(p.sheetName);
   const record = plain_(p.record) ? p.record : {};
   const management = plain_(p.management) ? p.management : {};
-  const clearManagement = Array.isArray(p.clearManagement) ? p.clearManagement.map(String) : [];
+  const clearManagement = Array.isArray(p.clearManagement) ? p.clearManagement.map(String).filter(function (key, i, all) {
+    return Object.prototype.hasOwnProperty.call(MANAGEMENT_COLUMNS_, key) && all.indexOf(key) === i;
+  }) : [];
   const videoId = videoId_(p.videoId || record.videoId);
   const mode = p.duplicateMode == null ? '' : String(p.duplicateMode);
   const targetRow = p.targetRow == null ? null : Number(p.targetRow);
@@ -195,8 +199,13 @@ function saveRecord_(p) {
       }
       if (duplicates.indexOf(rowNumber) < 0) fail_('ROW_MISMATCH', '선택한 행과 영상 ID가 일치하지 않습니다.');
       const current = sheet.getRange(rowNumber, 1, 1, APP_.HEADERS.length).getValues()[0];
-      const next = buildRow_(current, videoId, record, management, clearManagement, false);
-      sheet.getRange(rowNumber, 1, 1, APP_.HEADERS.length).setValues([next]);
+      const changed = {};
+      const next = buildRow_(current, videoId, record, management, clearManagement, false, changed);
+      const changedIndexes = Object.keys(changed).map(Number).sort(function (a, b) { return a - b; });
+      if (!changedIndexes.length) {
+        return { status: 'unchanged', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet) };
+      }
+      writeChangedCells_(sheet, rowNumber, next, changedIndexes);
       applyPresentation_(sheet, rowNumber, record, videoId, false);
       return { status: 'updated', row: rowNumber, url: rangeUrl_(ss, sheet, 'B' + rowNumber), capacity: sheetCapacity_(sheet) };
     }
@@ -215,30 +224,55 @@ function duplicateLinks_(ss, sheet, rows) {
   return rows.map(function (r) { return { row: r, url: rangeUrl_(ss, sheet, 'B' + r) }; });
 }
 
-function buildRow_(base, videoId, record, management, clearManagement, isNew) {
+function buildRow_(base, videoId, record, management, clearManagement, isNew, changed) {
   const row = base.slice(0, APP_.HEADERS.length);
   while (row.length < APP_.HEADERS.length) row.push('');
   const ix = indexes_();
-  row[ix['영상 ID']] = safe_(videoId);
-  row[ix['영상 URL']] = safe_('https://www.youtube.com/watch?v=' + videoId);
+  if (isNew) {
+    assignRowValue_(row, ix['영상 ID'], videoId, changed);
+    assignRowValue_(row, ix['영상 URL'], 'https://www.youtube.com/watch?v=' + videoId, changed);
+  }
   Object.keys(RECORD_COLUMNS_).forEach(function (key) {
     if (!Object.prototype.hasOwnProperty.call(record, key)) return;
     const value = record[key];
     if (value == null) return;
-    row[ix[RECORD_COLUMNS_[key]]] = serializeRecord_(key, value);
+    assignRowValue_(row, ix[RECORD_COLUMNS_[key]], serializeRecord_(key, value), changed);
   });
   Object.keys(MANAGEMENT_COLUMNS_).forEach(function (key) {
     const header = MANAGEMENT_COLUMNS_[key];
-    if (clearManagement.indexOf(key) >= 0) { row[ix[header]] = ''; return; }
+    if (clearManagement.indexOf(key) >= 0) { assignRowValue_(row, ix[header], '', changed); return; }
     if (!Object.prototype.hasOwnProperty.call(management, key)) return;
     const value = management[key];
     if (value === '' || value == null) return;
-    row[ix[header]] = managementValue_(key, value);
+    assignRowValue_(row, ix[header], managementValue_(key, value), changed);
   });
   const now = new Date().toISOString();
-  if (isNew || !row[ix['수집일시']]) row[ix['수집일시']] = now;
-  row[ix['수정일시']] = now;
+  const hasContentChange = isNew || Object.keys(changed || {}).length > 0 || Object.prototype.hasOwnProperty.call(record, 'thumbnail');
+  if (isNew || !row[ix['수집일시']]) assignRowValue_(row, ix['수집일시'], now, changed);
+  if (hasContentChange) assignRowValue_(row, ix['수정일시'], now, changed);
   return row.map(safe_);
+}
+
+function assignRowValue_(row, index, value, changed) {
+  const next = safe_(value);
+  const current = row[index];
+  if (current === next || String(current == null ? '' : current) === String(next == null ? '' : next)) return;
+  row[index] = next;
+  if (changed) changed[index] = true;
+}
+
+function writeChangedCells_(sheet, rowNumber, row, indexes) {
+  if (!indexes.length) return;
+  let start = indexes[0], end = start;
+  function write_() {
+    sheet.getRange(rowNumber, start + 1, 1, end - start + 1).setValues([row.slice(start, end + 1)]);
+  }
+  for (let i = 1; i < indexes.length; i++) {
+    if (indexes[i] === end + 1) { end = indexes[i]; continue; }
+    write_();
+    start = end = indexes[i];
+  }
+  write_();
 }
 
 function serializeRecord_(key, value) {
@@ -399,9 +433,11 @@ function applyPresentation_(sheet, rowNumber, record, videoId, isNew) {
     sheet.setRowHeight(rowNumber, 68);
   }
   if (isNew || Object.prototype.hasOwnProperty.call(record, 'title')) setLink_(sheet.getRange(rowNumber, ix['제목'] + 1), record.title || '', 'https://www.youtube.com/watch?v=' + videoId);
-  if ((isNew || Object.prototype.hasOwnProperty.call(record, 'channel')) && record.channel) {
-    const channelId = channelIdSoft_(record.channelId);
-    if (channelId) setLink_(sheet.getRange(rowNumber, ix['채널명'] + 1), record.channel, 'https://www.youtube.com/channel/' + channelId);
+  if (isNew || Object.prototype.hasOwnProperty.call(record, 'channel') || Object.prototype.hasOwnProperty.call(record, 'channelId')) {
+    const channelRange = sheet.getRange(rowNumber, ix['채널명'] + 1);
+    const channel = Object.prototype.hasOwnProperty.call(record, 'channel') ? record.channel : channelRange.getDisplayValue();
+    const channelId = channelIdSoft_(Object.prototype.hasOwnProperty.call(record, 'channelId') ? record.channelId : sheet.getRange(rowNumber, ix['채널 ID'] + 1).getDisplayValue());
+    if (channel && channelId) setLink_(channelRange, channel, 'https://www.youtube.com/channel/' + channelId);
   }
   setLink_(sheet.getRange(rowNumber, ix['영상 URL'] + 1), 'https://www.youtube.com/watch?v=' + videoId, 'https://www.youtube.com/watch?v=' + videoId);
 }

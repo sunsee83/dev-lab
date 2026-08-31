@@ -62,7 +62,7 @@ bookmarklet.js
 → Transport.gs
 → HtmlService.createHtmlOutputFromFile('ui').getContent()
 → ui.html 문자열 반환
-→ bookmarklet.js가 iframe.srcdoc으로 표시
+→ bookmarklet.js가 ui.html의 Blob URL을 만들고 iframe.src로 표시
 ```
 
 UI 전체를 북마크 URL에 넣지 않기 위한 경로입니다.

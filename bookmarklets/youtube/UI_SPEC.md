@@ -132,6 +132,8 @@ AI에게 보낼 항목 표시
 
 중요도 미선택은 `0`을 Sheets에 쓰는 것이 아니라 해당 값을 전달하지 않는 방식으로 처리합니다.
 
+중복 업데이트에서는 이번 실행에서 사용자가 직접 바꾼 관리정보만 갱신합니다. 건드리지 않은 관리정보는 기존값을 유지하며, 사용자가 직접 비운 값만 명시적 삭제로 전달합니다.
+
 ## 8. 중복
 
 ```text
@@ -153,8 +155,18 @@ AI에게 보낼 항목 표시
 Apps Script의 ui.html
 → get-ui
 → bookmarklet.js
-→ iframe.srcdoc
+→ ui.html Blob URL 생성
+→ iframe.src
 → YouTube 페이지에 전체 화면 UI 표시
 ```
 
 이 구조로 북마크 URL에는 UI 전체 HTML을 넣지 않습니다.
+
+YouTube Trusted Types 정책 때문에 `iframe.srcdoc`은 사용하지 않습니다.
+
+## 11. 저장 결과 표시
+
+- Sheets 데이터가 기록된 경우만 `데이터 저장 완료`로 표시
+- Google Save to Drive 버튼만 렌더링된 경우 `Drive 버튼 준비됨`으로 표시
+- 수집하지 못한 선택 필드는 성공한 저장 결과와 분리해 표시
+- 복수 항목 중 일부 실패 시 성공 항목과 실패 항목을 함께 표시

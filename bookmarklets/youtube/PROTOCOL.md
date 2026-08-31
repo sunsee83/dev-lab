@@ -4,7 +4,7 @@
 
 ## 1. bookmarklet.js가 제공하는 값
 
-`ui.html`은 `iframe.srcdoc`으로 실행되며 부모 YouTube 페이지에서 다음 값을 사용합니다.
+`ui.html`은 YouTube 페이지가 만든 Blob URL을 `iframe.src`로 열어 실행하며 부모 YouTube 페이지에서 다음 값을 사용합니다.
 
 ```js
 parent.__YTDL_TOKEN
@@ -50,7 +50,8 @@ save-record
 ```text
 bookmarklet.js
 → get-ui
-→ iframe.srcdoc = ui.html
+→ ui.html로 Blob URL 생성
+→ iframe.src = Blob URL
 → ui.html start()
 → create-storage
 → get-state
@@ -70,12 +71,16 @@ bookmarklet.js
   audio:{id},
   data:{fields:[],format:'original'|'txt'|'json',comments:{count,sort}},
   drive:{fileId,sheetName,category},
-  management:{tags,purpose,priority,status,memo,aiSend},
-  duplicateMode:'update'|'new'
+  management:{category,tags,purpose,priority,status,memo,aiSend},
+  clearManagement:['tags','purpose','priority','status','memo','aiSend','category'],
+  duplicateMode:'update'|'new',
+  targetRow:2
 }
 ```
 
 영상/음성 `id`는 실제 URL이 아니라 현재 실행 메모리의 후보 ID입니다.
+
+중복 업데이트에서는 사용자가 이번 실행에서 바꾼 관리정보만 `management`에 넣습니다. 사용자가 값을 직접 비운 항목만 `clearManagement`에 넣고, 건드리지 않은 항목은 두 곳 모두에서 제외해 기존값을 보존합니다.
 
 ## 5. 로컬 저장
 
@@ -100,12 +105,15 @@ UI의 `저장` 클릭 핸들러가 직접 File System Access API를 호출합니
 
 중복이면 UI 내부 `dup` 상태를 갱신하고 업데이트/새 기록 선택 영역을 표시합니다.
 
+Drive 미디어는 Google 버튼을 렌더링한 시점에 저장 완료로 처리하지 않습니다. UI는 `데이터 저장 완료`, `Drive 버튼 준비됨`, `일부 데이터 미수집`, `실패`를 각각 구분해 표시합니다.
+
 ## 7. 종료
 
 ```text
 닫기
 → parent.__YTDL_CLOSE()
-→ srcdoc UI 제거
+→ Blob URL UI 제거
+→ Blob URL 해제
 → POST 브리지 iframe 제거
 → pending request와 listener 정리
 ```
