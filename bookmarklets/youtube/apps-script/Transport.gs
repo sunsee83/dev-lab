@@ -12,8 +12,26 @@ function doPost(e) {
   const token = sessionToken_(p.token);
   const requestId = bridgeRequestId_(p.requestId);
   const mode = String(p.mode || '');
-  let result;
 
+  if (mode === 'ui') {
+    const nonce = bridgeNonce_(p.bridgeNonce);
+    if (!origin || !token || !requestId || !nonce || !bridgeSessionValid_(origin, token, nonce)) {
+      return HtmlService.createHtmlOutput(bridgeUiErrorHtml_('Google 연결이 만료되었습니다. YouTube에서 유튜브다운로드를 다시 실행해 주세요.'))
+        .setTitle('유튜브다운로드')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+    try {
+      return HtmlService.createHtmlOutput(bridgeUiHtml_(origin, token))
+        .setTitle('유튜브다운로드')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    } catch (err) {
+      return HtmlService.createHtmlOutput(bridgeUiErrorHtml_('유튜브다운로드 UI를 불러오지 못했습니다.'))
+        .setTitle('유튜브다운로드')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+  }
+
+  let result;
   if (!origin || !token || !requestId) {
     result = bridgeError_('INVALID_BRIDGE', '연결 정보가 올바르지 않습니다.');
   } else if (mode === 'init') {
@@ -47,6 +65,44 @@ function doPost(e) {
   return HtmlService.createHtmlOutput(bridgePostHtml_(origin, token, requestId, result))
     .setTitle('Google Sheets 연결')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function bridgeUiHtml_(origin, token) {
+  const html = HtmlService.createHtmlOutputFromFile('ui').getContent();
+  const start = '<script>\n(()=>{';
+  const end = '\n})();\n</script>';
+  const i = html.indexOf(start);
+  const j = html.lastIndexOf(end);
+  if (i < 0 || j <= i) throw new Error('UI_SCRIPT_NOT_FOUND');
+  const shim = '<script>' + bridgeUiShim_(origin, token) + '</script>\n';
+  const body = html.slice(i + start.length, j);
+  return html.slice(0, i) + shim + '<script>\nwindow.__YTDL_BOOT.then(()=>{const parent=window.__YTDL_PARENT;' + body + '\n});\n</script>' + html.slice(j + end.length);
+}
+
+function bridgeUiShim_(origin, token) {
+  const o = jsLiteral_(origin);
+  const t = jsLiteral_(token);
+  return `(function(){"use strict";
+const O=${o},T=${t},P=new Map();let s=0,bootResolve,C={};
+function rid(){return'u'+Date.now().toString(36)+(++s).toString(36)}
+function rpc(action,payload){return new Promise((resolve,reject)=>{const id=rid(),z=setTimeout(()=>{P.delete(id);reject(new Error('YouTube 연결 응답이 없습니다.'))},1800000);P.set(id,{resolve,reject,z});window.top.postMessage({type:'YTDL_HOST_REQUEST',token:T,id,action,payload:payload||{}},O)})}
+function opts(x){x=x||{};return{method:x.method||'GET',credentials:x.credentials||'omit',headers:x.headers||{},body:x.body==null?null:String(x.body)}}
+function mediaUrl(u){try{const h=new URL(String(u)).hostname;return h==='googlevideo.com'||h.endsWith('.googlevideo.com')}catch(e){return false}}
+function fakeFile(id){return{__id:id,createWritable:async()=>({__id:id,write:async v=>rpc('write-text',{handleId:id,text:String(v==null?'':v)}),close:async()=>{},abort:async()=>{}})}}
+function fakeDir(id){return{getFileHandle:async name=>{const r=await rpc('dir-file',{dirId:id,name:String(name||'유튜브다운로드')});return fakeFile(r.id)}}}
+async function hostFetch(url,o){url=String(url);if(mediaUrl(url))return{ok:true,status:206,body:{pipeTo:async w=>rpc('write-media',{handleId:w&&w.__id||'',url})},json:async()=>{throw new Error('미디어 JSON 없음')},text:async()=>''};const r=await rpc('fetch',{url,options:opts(o)});return{ok:!!r.ok,status:Number(r.status)||0,body:null,text:async()=>String(r.body||''),json:async()=>JSON.parse(String(r.body||''))}}
+function metaDoc(){const M=C.meta||{},map={'meta[property="og:title"]':'ogTitle','meta[property="og:image"]':'ogImage','meta[itemprop="datePublished"]':'datePublished','meta[name="description"]':'description'};return{title:String(C.title||''),querySelector:q=>{const k=map[q];return k?{content:String(M[k]||'')}:null},querySelectorAll:()=>((C.likeTexts||[]).map(v=>({textContent:String(v),getAttribute:n=>n==='aria-label'?String(v):n==='title'?String(v):''})))}}
+function makeParent(){const y=C.ytcfg||{};return{document:metaDoc(),location:{href:String(C.href||''),search:String(C.search||''),pathname:String(C.pathname||''),origin:O},fetch:hostFetch,ytcfg:{get:n=>y[n]},ytInitialData:{},open:(url,target)=>rpc('open',{url:String(url||''),target:String(target||'_blank')}),__YTDL_CALL:(a,p)=>rpc('gas',{action:a,payload:p||{}}),__YTDL_WEBAPP_URL:String(C.webapp||''),__YTDL_TOKEN:T,__YTDL_CLOSE:()=>rpc('close',{})}}
+window.__YTDL_BOOT=new Promise(r=>bootResolve=r);
+try{Object.defineProperty(window,'showSaveFilePicker',{configurable:true,value:async o=>{const r=await rpc('pick-file',{options:o||{}});return fakeFile(r.id)}})}catch(e){window.showSaveFilePicker=async o=>{const r=await rpc('pick-file',{options:o||{}});return fakeFile(r.id)}}
+try{Object.defineProperty(window,'showDirectoryPicker',{configurable:true,value:async()=>{const r=await rpc('pick-dir',{});return fakeDir(r.id)}})}catch(e){window.showDirectoryPicker=async()=>{const r=await rpc('pick-dir',{});return fakeDir(r.id)}}
+window.addEventListener('message',e=>{if(e.source!==window.top||e.origin!==O)return;const m=e.data;if(!m||m.token!==T)return;if(m.type==='YTDL_HOST_INIT'){C=m.context||{};window.__YTDL_PARENT=makeParent();bootResolve();return}if(m.type!=='YTDL_HOST_RESPONSE')return;const p=P.get(String(m.id||''));if(!p)return;P.delete(String(m.id));clearTimeout(p.z);m.ok?p.resolve(m.data):p.reject(new Error(m.error&&m.error.message||'YouTube 연결 실패'))});
+window.top.postMessage({type:'YTDL_UI_READY',token:T},O);
+})();`;
+}
+
+function bridgeUiErrorHtml_(message) {
+  return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#111;color:#eee;font:15px/1.5 system-ui;padding:24px}.box{max-width:520px;margin:auto;padding:18px;border:1px solid #333;border-radius:14px;background:#181818}</style></head><body><div class="box"><b>유튜브다운로드</b><div style="margin-top:8px">' + String(message || 'UI를 불러오지 못했습니다.') + '</div></div></body></html>';
 }
 
 function bridgeDispatch_(request) {
