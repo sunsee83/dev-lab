@@ -5,15 +5,15 @@
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
-// @updateURL    https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js
-// @downloadURL  https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js
+// @updateURL    https://github.com/sunsee83/open_lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js
+// @downloadURL  https://github.com/sunsee83/open_lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js
 // ==/UserScript==
 
 (function () {
     'use strict';
 
     var VERSION = '3.1.6';
-    var UPDATE_URL = 'https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
+    var UPDATE_URL = 'https://github.com/sunsee83/open_lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js';
     var CACHE_KEY = 'ri311:items:v1';
     var SNAP_KEY = 'ri311:snap:v1';
     var POST_KEY = 'ri311:posts:v1';
