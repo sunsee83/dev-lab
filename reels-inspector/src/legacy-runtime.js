@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Reels Inspector Mobile
-// @namespace    dev-lab/reels-inspector
+// @namespace    open_lab/reels-inspector
 // @version      3.1.6
 // @match        *://*.instagram.com/*
 // @grant        none
