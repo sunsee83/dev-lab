@@ -26,14 +26,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Migrate userscript namespace
-        shell: bash
-        run: |
-          git grep -Il 'dev-lab/reels-inspector' -- ':!.github/**' | while IFS= read -r file; do
-            sed -i 's#dev-lab/reels-inspector#open_lab/reels-inspector#g' "$file"
-          done
-          sed -i "s/export const VERSION = '3.2.15';/export const VERSION = '3.2.16';/" reels-inspector/src/version.js
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -55,17 +47,17 @@ jobs:
         working-directory: reels-inspector
         run: npm run check && node --check ri-retry.user.js
 
-      - name: Commit namespace migration and generated userscript
+      - name: Commit generated userscript
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          git add -u reels-inspector
-          if git diff --cached --quiet; then
-            echo 'Namespace migration is already current.'
+          if git diff --quiet -- reels-inspector/ri-retry.user.js; then
+            echo 'Generated userscript is already current.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore(reels-inspector): migrate namespace to open_lab'
+          git add reels-inspector/ri-retry.user.js
+          git commit -m 'build(reels-inspector): generate userscript'
           git pull --rebase origin main
           git push
