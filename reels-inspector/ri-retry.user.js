@@ -5,8 +5,8 @@
 // @match        *://*.instagram.com/*
 // @grant        none
 // @run-at       document-start
-// @updateURL    https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js
-// @downloadURL  https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js
+// @updateURL    https://github.com/sunsee83/open_lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js
+// @downloadURL  https://github.com/sunsee83/open_lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js
 // ==/UserScript==
 // GENERATED FILE — DO NOT EDIT DIRECTLY.
 // Source: reels-inspector/src/*
@@ -15,7 +15,7 @@
 (() => {
   // src/version.js
   var VERSION = "3.2.15";
-  var UPDATE_URL = "https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
+  var UPDATE_URL = "https://github.com/sunsee83/open_lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js";
   function updateInstallUrl(cacheBust = Date.now()) {
     const value = Number(cacheBust);
     const stamp = Number.isFinite(value) ? Math.trunc(value) : Date.now();
