@@ -4,7 +4,7 @@
 
 ## Current Release
 
-- Runtime version: **v3.2.15**
+- Runtime version: **v3.2.16**
 - Environment: Android Microsoft Edge + Tampermonkey + Instagram mobile web
 - Source of truth: `src/*`
 - Artifact: `ri-retry.user.js` (generated, 직접 수정 금지)
@@ -52,7 +52,7 @@ Caption은 편집 가능하므로 같은/더 강한 verified source의 변경은
 ## Automated Checkpoint
 
 - unit: **61 / 61 pass**
-- build: **v3.2.15 success**
+- build: **v3.2.16 success**
 - architecture/syntax: **success**
 - source files: **39**
 - architecture warnings: **0**
