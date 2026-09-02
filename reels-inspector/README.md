@@ -4,7 +4,7 @@ Android Edge + Tampermonkey + Instagram 모바일 웹에서 **발굴 → 비교 
 
 ## 설치 / 업데이트
 
-`https://github.com/sunsee83/dev-lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js`
+`https://github.com/sunsee83/open_lab/raw/refs/heads/main/reels-inspector/ri-retry.user.js`
 
 Instagram 새로고침만으로 userscript가 갱신되는 것은 아닙니다. raw `.user.js`를 열어 Tampermonkey에서 설치/업데이트합니다.
 
