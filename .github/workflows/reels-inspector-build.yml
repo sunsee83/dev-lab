@@ -29,7 +29,7 @@ jobs:
       - name: Normalize renamed repository URLs
         shell: bash
         run: |
-          git grep -Il 'https://github.com/sunsee83/dev-lab/' | while IFS= read -r file; do
+          git grep -Il 'https://github.com/sunsee83/dev-lab/' | grep -v '^\.github/' | while IFS= read -r file; do
             sed -i 's#https://github.com/sunsee83/dev-lab/#https://github.com/sunsee83/open_lab/#g' "$file"
           done
 
