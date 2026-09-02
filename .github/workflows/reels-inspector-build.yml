@@ -26,13 +26,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Normalize renamed repository URLs
-        shell: bash
-        run: |
-          git grep -Il 'https://github.com/sunsee83/dev-lab/' | grep -v '^\.github/' | while IFS= read -r file; do
-            sed -i 's#https://github.com/sunsee83/dev-lab/#https://github.com/sunsee83/open_lab/#g' "$file"
-          done
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -54,17 +47,17 @@ jobs:
         working-directory: reels-inspector
         run: npm run check && node --check ri-retry.user.js
 
-      - name: Commit generated userscript and URL migration
+      - name: Commit generated userscript
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          git add -u
-          if git diff --cached --quiet; then
-            echo 'Generated userscript and repository URLs are already current.'
+          if git diff --quiet -- reels-inspector/ri-retry.user.js; then
+            echo 'Generated userscript is already current.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore: migrate renamed repository URLs'
+          git add reels-inspector/ri-retry.user.js
+          git commit -m 'build(reels-inspector): generate userscript'
           git pull --rebase origin main
           git push
